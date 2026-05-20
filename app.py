@@ -1141,6 +1141,208 @@ def generate_thumbnail_prompts(
 
 
 # ---------------------------------------------------------------------------
+# AI storytelling — Gemini / OpenAI 추상화 + 프롬프트 체인
+# ---------------------------------------------------------------------------
+
+# 사용자 입력 톤을 모든 프롬프트에 공통 주입하기 위한 시스템 메시지.
+TONE_GUIDE = """
+[글쓰기 톤 가이드 — 반드시 준수]
+- 공감 · 위로 · 평안함을 전하는 언어
+- "당신은 사랑받고 있다"는 느낌이 자연스럽게 스며들도록
+- 강요·자극·단정형 지양, 청유형·서술형·물음형 위주
+- 청취자의 마음(감정)과 육신(몸의 건강·컨디션)을 묻는 따뜻한 질문을
+  반드시 한 곳에 자연스럽게 포함시킬 것
+- 부드럽고 시적이지만, 누구나 한 번에 이해되는 어휘를 사용
+"""
+
+
+def _prompt_seo(theme: str) -> str:
+    return f"""당신은 한국어 유튜브 음악 채널의 SEO 카피라이터입니다.
+
+[채널의 주제 및 감정]
+{theme}
+
+{TONE_GUIDE}
+
+위 톤을 유지하면서, 다음 항목을 한국어로 작성해 **JSON 객체 하나로만** 응답하세요.
+JSON 외의 설명·코드펜스(```)는 출력하지 마세요.
+
+스키마:
+{{
+  "thumbnail_headlines": ["12자 이내 헤드라인", "...", "..."],
+  "titles": ["50자 이내 제목", "...", "...", "...", "..."],
+  "description": "180~280자 영상 설명. 자연스럽게 검색 키워드를 포함하고, 청취자의 마음과 몸 컨디션을 묻는 따뜻한 한 줄을 마지막 근처에 넣을 것.",
+  "hashtags": ["#한글태그", "#english_tag", "..."]
+}}
+
+지침:
+- thumbnail_headlines 는 3개
+- titles 5개는 각각 다른 진입각(감정형 / 시간대형 / 상황형 / 활동형 / 의문형)
+- hashtags 는 12~15개, 한·영 혼합
+"""
+
+
+def _prompt_opening(theme: str) -> str:
+    return f"""당신은 한국어로 글을 쓰는 작가이며, 청취자를 깊이 위로하는 사람입니다.
+
+[채널의 주제 및 감정]
+{theme}
+
+{TONE_GUIDE}
+
+위 톤을 그대로 살려, 영상 초반 **15~30초 분량 (약 70~110자, 6~8개 짧은 문장)** 의
+오프닝 내레이션 대본을 한국어로 써주세요. AI 음성 더빙용입니다.
+
+형식:
+- 한 줄에 한 문장씩, 호흡 단위로 줄바꿈
+- 마지막은 부드럽게 음악으로 넘어가는 연결 한 줄
+- 별도 설명/제목/마크다운 없이 **대본 본문만** 출력
+"""
+
+
+def _prompt_lyrics(theme: str) -> str:
+    return f"""당신은 따뜻한 위로를 전하는 한국어 노래 작사가입니다.
+
+[채널의 주제 및 감정]
+{theme}
+
+{TONE_GUIDE}
+
+다음 구조로 **완벽하게 구조화된** 한국어 가사를 써주세요. 각 섹션 헤더([Verse 1] 등)는
+대괄호 그대로 출력하고, 헤더와 가사 사이는 한 줄 띄움.
+
+[Verse 1]
+…
+
+[Pre-Chorus]
+…
+
+[Chorus]
+…
+
+[Verse 2]
+…
+
+[Bridge]
+…
+
+[Outro]
+…
+
+조건:
+- 청취자의 마음(감정)과 육신(몸의 건강·컨디션)을 묻는 한 줄을 가사 어딘가에 자연스럽게 포함
+- 한 섹션은 3~6줄로 간결하게
+- 어휘는 시적이지만 누구나 이해 가능하게
+
+마지막 줄에 다음 정확한 형식으로 음악 스타일 태그를 영문 8~12개 제시 (Suno/Udio 호환):
+Style Prompts: tag1, tag2, tag3, ...
+
+예) Style Prompts: lo-fi, soft piano, warm pad, 70 BPM, breathy female vocal, healing, intimate, gentle reverb
+
+가사 본문과 'Style Prompts: …' 한 줄 외에 다른 설명/마크다운은 포함하지 마세요.
+"""
+
+
+def _call_gemini(
+    api_key: str, prompt: str, *, model: str, response_json: bool
+) -> str:
+    try:
+        import google.generativeai as genai  # type: ignore
+    except ImportError as e:
+        raise RuntimeError(
+            "google-generativeai 패키지가 설치되어 있지 않습니다. "
+            "`pip install google-generativeai` 후 다시 시도하세요."
+        ) from e
+    genai.configure(api_key=api_key)
+    gen_cfg: dict = {"temperature": 0.9}
+    if response_json:
+        gen_cfg["response_mime_type"] = "application/json"
+    m = genai.GenerativeModel(model_name=model, generation_config=gen_cfg)
+    resp = m.generate_content(prompt)
+    return (resp.text or "").strip()
+
+
+def _call_openai(
+    api_key: str, prompt: str, *, model: str, response_json: bool
+) -> str:
+    try:
+        from openai import OpenAI  # type: ignore
+    except ImportError as e:
+        raise RuntimeError(
+            "openai 패키지가 설치되어 있지 않습니다. "
+            "`pip install openai` 후 다시 시도하세요."
+        ) from e
+    client = OpenAI(api_key=api_key)
+    kwargs: dict = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.9,
+    }
+    if response_json:
+        kwargs["response_format"] = {"type": "json_object"}
+    resp = client.chat.completions.create(**kwargs)
+    return (resp.choices[0].message.content or "").strip()
+
+
+def call_llm(
+    provider: str,
+    api_key: str,
+    prompt: str,
+    *,
+    model: str,
+    response_json: bool = False,
+) -> str:
+    if provider == "gemini":
+        return _call_gemini(api_key, prompt, model=model, response_json=response_json)
+    if provider == "openai":
+        return _call_openai(api_key, prompt, model=model, response_json=response_json)
+    raise ValueError(f"Unknown provider: {provider}")
+
+
+def _parse_seo_payload(raw: str) -> dict:
+    """LLM 이 JSON 외 텍스트(코드펜스 등)를 섞어 보내도 견디게 파싱."""
+    import json
+
+    text = raw.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # 텍스트 안에 떠 있는 첫 JSON 블록을 추출 시도.
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except json.JSONDecodeError:
+                pass
+    return {"_raw": raw}
+
+
+def generate_story_package(
+    provider: str,
+    api_key: str,
+    theme: str,
+    *,
+    model: str,
+) -> dict:
+    """SEO · 오프닝 · 가사 3개를 순차 호출해 한 묶음으로 돌려준다."""
+    seo_raw = call_llm(
+        provider, api_key, _prompt_seo(theme), model=model, response_json=True
+    )
+    seo = _parse_seo_payload(seo_raw)
+
+    opening = call_llm(
+        provider, api_key, _prompt_opening(theme), model=model, response_json=False
+    )
+    lyrics = call_llm(
+        provider, api_key, _prompt_lyrics(theme), model=model, response_json=False
+    )
+    return {"seo": seo, "opening": opening, "lyrics": lyrics}
+
+
+# ---------------------------------------------------------------------------
 # Pipeline (cached)
 # ---------------------------------------------------------------------------
 
@@ -1707,21 +1909,13 @@ def render_title_patterns(filtered: pd.DataFrame, full: pd.DataFrame) -> None:
             st.bar_chart(df_diff.set_index("단어")["Lift"], height=320)
 
 
-def main() -> None:
-    st.set_page_config(
-        page_title="급상승 레퍼런스 채널 발굴",
-        page_icon="🎵",
-        layout="wide",
-    )
-
-    st.title("🎵 급상승 레퍼런스 채널 발굴 대시보드")
+def render_discovery_tab() -> None:
+    """기존의 '레퍼런스 발굴' 화면 — 사이드바 + 결과 표 + 분석 + 추천 + 썸네일."""
     st.caption(
         "YouTube Data API v3 기반. 상황/감정 키워드로 최근 업로드된 영상 중 "
         "'구독자 수 대비 조회수'가 폭발적인 신규 채널을 찾아냅니다."
     )
 
-    # 사이드바의 '발굴 시작' 클릭에서만 cfg 가 새로 만들어진다. 그 후에는
-    # session_state 에 보존돼, 추천 재생성 같은 보조 버튼이 결과를 날리지 않는다.
     new_cfg = render_sidebar()
     if new_cfg is not None:
         st.session_state.active_cfg = new_cfg
@@ -1746,6 +1940,237 @@ def main() -> None:
 
     filtered = filter_breakout_channels(df, cfg)
     render_results(df, filtered, cfg)
+
+
+# ---------------------------------------------------------------------------
+# AI storytelling tab
+# ---------------------------------------------------------------------------
+
+# 프로바이더별 기본 모델. 사용자가 직접 바꿀 수도 있음.
+DEFAULT_MODELS: dict[str, str] = {
+    "gemini": "gemini-2.0-flash",
+    "openai": "gpt-4o",
+}
+
+
+def _render_seo_card(seo: dict) -> None:
+    st.markdown("#### 🔎 [유튜브 SEO]")
+    if "_raw" in seo:
+        st.warning("JSON 파싱에 실패해 원문을 그대로 표시합니다. 다시 생성을 시도해보세요.")
+        st.code(seo["_raw"], language=None)
+        return
+
+    headlines = seo.get("thumbnail_headlines", []) or []
+    titles = seo.get("titles", []) or []
+    description = seo.get("description", "") or ""
+    hashtags = seo.get("hashtags", []) or []
+
+    st.markdown("**썸네일 헤드라인**")
+    for h in headlines:
+        st.markdown(f"- {h}")
+    if headlines:
+        st.code("\n".join(headlines), language=None)
+
+    st.markdown("**영상 제목 5개**")
+    for i, t in enumerate(titles, 1):
+        st.markdown(f"{i}. {t}")
+    if titles:
+        st.code("\n".join(titles), language=None)
+
+    st.markdown("**설명란**")
+    st.code(description, language=None)
+
+    st.markdown("**해시태그**")
+    tag_line = " ".join(hashtags) if hashtags else ""
+    st.code(tag_line, language=None)
+
+    bundle = (
+        "## 썸네일 헤드라인\n" + "\n".join(headlines)
+        + "\n\n## 영상 제목 5개\n" + "\n".join(f"{i}. {t}" for i, t in enumerate(titles, 1))
+        + "\n\n## 설명란\n" + description
+        + "\n\n## 해시태그\n" + tag_line
+    )
+    st.download_button(
+        "📥 SEO 묶음 다운로드 (.md)",
+        data=bundle.encode("utf-8"),
+        file_name=f"seo_{datetime.now():%Y%m%d_%H%M%S}.md",
+        mime="text/markdown",
+        key="story_dl_seo",
+    )
+
+
+def _render_opening_card(opening: str) -> None:
+    st.markdown("#### 🎙️ [오프닝 대본]")
+    st.caption("AI 음성 더빙용. 한 줄 한 호흡, 마지막 줄에서 음악으로 자연스럽게 연결됩니다.")
+    st.code(opening, language=None)
+    st.download_button(
+        "📥 대본 다운로드 (.txt)",
+        data=opening.encode("utf-8"),
+        file_name=f"opening_{datetime.now():%Y%m%d_%H%M%S}.txt",
+        mime="text/plain",
+        key="story_dl_opening",
+    )
+
+
+def _render_lyrics_card(lyrics: str) -> None:
+    st.markdown("#### 🎵 [음악 맞춤형 가사 & Style Prompts]")
+    style_line = ""
+    body = lyrics
+    m = re.search(r"^\s*Style\s*Prompts\s*:\s*(.+)$", lyrics, re.MULTILINE | re.IGNORECASE)
+    if m:
+        style_line = m.group(1).strip()
+        body = lyrics[: m.start()].rstrip()
+
+    st.code(body, language=None)
+    if style_line:
+        st.markdown("**Style Prompts** (Suno/Udio 등 음악 생성용)")
+        st.code(style_line, language=None)
+
+    bundle = body + ("\n\nStyle Prompts: " + style_line if style_line else "")
+    st.download_button(
+        "📥 가사 묶음 다운로드 (.txt)",
+        data=bundle.encode("utf-8"),
+        file_name=f"lyrics_{datetime.now():%Y%m%d_%H%M%S}.txt",
+        mime="text/plain",
+        key="story_dl_lyrics",
+    )
+
+
+def render_storytelling_tab() -> None:
+    st.subheader("✍️ AI 스토리텔링 & 가사 생성")
+    st.caption(
+        "채널 컨셉(주제·감정)을 입력하면 SEO 패키지, 오프닝 내레이션, 구조화된 가사를 "
+        "한 번에 생성합니다. 대본·가사 톤은 공감·위로·평안함을 기본값으로 유지하며, "
+        "청취자의 마음과 몸 컨디션을 묻는 질문을 항상 포함합니다."
+    )
+
+    col_p, col_m = st.columns([1, 1])
+    with col_p:
+        provider_label = st.selectbox(
+            "AI 모델",
+            options=["Google Gemini (대본·가사 권장)", "OpenAI GPT"],
+            index=0,
+            key="story_provider",
+            help="대본·가사는 Gemini 로 생성하는 것이 권장됩니다.",
+        )
+    provider = "gemini" if provider_label.startswith("Google") else "openai"
+    with col_m:
+        model = st.text_input(
+            "모델 ID (선택, 비우면 기본값)",
+            value="",
+            placeholder=DEFAULT_MODELS[provider],
+            key="story_model",
+        )
+    model_final = (model.strip() or DEFAULT_MODELS[provider])
+
+    env_key = (
+        os.getenv("GEMINI_API_KEY") if provider == "gemini"
+        else os.getenv("OPENAI_API_KEY")
+    ) or ""
+    api_key = st.text_input(
+        f"{'Gemini' if provider == 'gemini' else 'OpenAI'} API 키",
+        value=env_key,
+        type="password",
+        key="story_api_key",
+        help=(
+            "Gemini: https://aistudio.google.com/app/apikey   "
+            "OpenAI: https://platform.openai.com/api-keys"
+        ),
+    )
+
+    theme = st.text_area(
+        "채널의 주제 및 감정",
+        value=(
+            "아침 산책을 하며 듣기 좋은, 지난 삶을 긍정하게 만드는 따뜻하고 철학적인 이야기. "
+            "혼자 걸으며 자신에게 다정하게 말을 거는 듯한 톤, 잔잔한 피아노와 어쿠스틱 기타를 배경으로."
+        ),
+        height=150,
+        key="story_theme",
+        help="구체적일수록 결과가 풍부해집니다. 누구를 위해, 어떤 시간/장소/감정인지 함께 적어보세요.",
+    )
+
+    col_btn, col_clear = st.columns([1, 1])
+    with col_btn:
+        run = st.button(
+            "🚀 SEO · 대본 · 가사 한 번에 생성",
+            type="primary",
+            use_container_width=True,
+            key="story_run",
+        )
+    with col_clear:
+        clear = st.button(
+            "🗑️ 결과 비우기",
+            use_container_width=True,
+            key="story_clear",
+        )
+
+    if clear:
+        st.session_state.pop("story_package", None)
+        st.session_state.pop("story_theme_used", None)
+
+    if run:
+        if not api_key.strip():
+            st.error("API 키를 입력해주세요.")
+        elif not theme.strip():
+            st.error("채널의 주제 및 감정을 입력해주세요.")
+        else:
+            try:
+                with st.spinner(
+                    f"{provider_label} 호출 중 — SEO → 오프닝 대본 → 가사 순으로 생성합니다..."
+                ):
+                    pkg = generate_story_package(
+                        provider, api_key.strip(), theme.strip(), model=model_final
+                    )
+                st.session_state.story_package = pkg
+                st.session_state.story_theme_used = theme.strip()
+                st.success("생성 완료. 아래 카드에서 확인하고 복사하세요.")
+            except RuntimeError as e:
+                st.error(str(e))
+            except Exception as e:
+                st.error(f"AI 호출 중 오류: {e}")
+
+    pkg = st.session_state.get("story_package")
+    if not pkg:
+        st.info(
+            "위에 채널 컨셉을 입력하고 **🚀 생성** 버튼을 눌러주세요. "
+            "이미 생성한 결과는 '결과 비우기' 전까지 화면에 유지됩니다."
+        )
+        return
+
+    used = st.session_state.get("story_theme_used", "")
+    if used:
+        with st.expander("이 결과를 만든 채널 컨셉", expanded=False):
+            st.code(used, language=None)
+
+    with st.container(border=True):
+        _render_seo_card(pkg.get("seo", {}))
+    with st.container(border=True):
+        _render_opening_card(pkg.get("opening", "") or "")
+    with st.container(border=True):
+        _render_lyrics_card(pkg.get("lyrics", "") or "")
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+
+def main() -> None:
+    st.set_page_config(
+        page_title="유튜브 음악 채널 자동화",
+        page_icon="🎵",
+        layout="wide",
+    )
+
+    st.title("🎵 유튜브 음악 채널 자동화 대시보드")
+
+    tab_discovery, tab_story = st.tabs(
+        ["🔍 레퍼런스 발굴", "✍️ AI 스토리텔링 & 가사 생성"]
+    )
+    with tab_discovery:
+        render_discovery_tab()
+    with tab_story:
+        render_storytelling_tab()
 
 
 if __name__ == "__main__":
