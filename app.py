@@ -8,7 +8,9 @@ YouTube Data API v3 를 사용해 특정 키워드(상황/감정 기반)로 최�
 
 from __future__ import annotations
 
+import io
 import os
+import random
 import re
 from collections import Counter
 from dataclasses import dataclass
@@ -16,8 +18,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Iterable
 
 import isodate
+import numpy as np
 import pandas as pd
+import requests
 import streamlit as st
+from PIL import Image
 from dotenv import load_dotenv
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -25,6 +30,19 @@ from googleapiclient.errors import HttpError
 load_dotenv()
 
 DEFAULT_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
+
+# OpenCV 는 얼굴 검출 전용. 미설치 시 얼굴 분석만 비활성화하고 나머지는 계속 동작.
+try:
+    import cv2  # type: ignore
+
+    _FACE_CASCADE = cv2.CascadeClassifier(
+        cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+    )
+    _HAS_CV2 = not _FACE_CASCADE.empty()
+except Exception:
+    cv2 = None  # type: ignore
+    _FACE_CASCADE = None
+    _HAS_CV2 = False
 
 # YouTube Data API v3 의 일부 엔드포인트는 한 요청당 최대 50개의 ID 만 허용한다.
 MAX_IDS_PER_REQUEST = 50
@@ -155,6 +173,15 @@ def build_dataframe(videos: list[dict], channels: dict[str, dict]) -> pd.DataFra
 
         ratio = view_count / subscriber_count if subscriber_count > 0 else float(view_count)
 
+        thumbs = snippet.get("thumbnails", {}) or {}
+        # YouTube API 가 반환하는 사이즈 중 가장 큰 것을 우선 선택.
+        thumb_url = ""
+        for size in ("maxres", "standard", "high", "medium", "default"):
+            entry = thumbs.get(size)
+            if entry and entry.get("url"):
+                thumb_url = entry["url"]
+                break
+
         rows.append(
             {
                 "video_title": snippet.get("title", ""),
@@ -170,6 +197,7 @@ def build_dataframe(videos: list[dict], channels: dict[str, dict]) -> pd.DataFra
                 "channel_country": c_snippet.get("country", ""),
                 "video_url": f"https://www.youtube.com/watch?v={v.get('id')}",
                 "channel_url": f"https://www.youtube.com/channel/{channel_id}",
+                "thumbnail_url": thumb_url,
                 "channel_id": channel_id,
                 "video_id": v.get("id"),
             }
@@ -499,6 +527,620 @@ def summarize_story(narrative: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Title & tag recommendation — 알고리즘 친화적 제목/태그 합성
+# ---------------------------------------------------------------------------
+
+# 카테고리 태그의 '제목 문장에 자연스럽게 박히는 표면형'. 템플릿에 그대로 끼워넣어도
+# 어색하지 않도록 어미·조사를 미리 붙여둔다.
+SURFACE_FORMS_KO: dict[str, dict[str, str]] = {
+    "시간": {
+        "새벽": "새벽",
+        "아침": "아침",
+        "낮/오후": "오후",
+        "저녁": "저녁 노을",
+        "밤/심야": "한밤",
+    },
+    "날씨": {
+        "비": "비 오는 날",
+        "눈": "눈 내리는 날",
+        "맑음": "햇살 좋은 날",
+        "흐림": "흐린 날",
+    },
+    "장소": {
+        "카페": "카페에서",
+        "방/침대": "침대에서",
+        "자연": "숲속에서",
+        "도시/거리": "도시 밤거리에서",
+        "차/길": "드라이브할 때",
+    },
+    "활동/상황": {
+        "공부/작업": "공부할 때",
+        "수면": "잠 안 올 때",
+        "휴식": "쉬어가고 싶을 때",
+        "운전": "운전할 때",
+        "운동": "운동할 때",
+        "독서": "책 읽을 때",
+    },
+    "감정": {
+        "위로/힐링": "위로가 필요한",
+        "슬픔/우울": "혼자인",
+        "따뜻/포근": "포근한",
+        "잔잔/평온": "잔잔한",
+        "감성/노스탤지어": "감성",
+        "행복/밝음": "기분 좋은",
+        "몽환/꿈": "몽환적인",
+    },
+    "장르/형식": {
+        "lofi": "lofi",
+        "재즈": "재즈",
+        "피아노": "피아노",
+        "어쿠스틱": "어쿠스틱 기타",
+        "앰비언트": "앰비언트",
+        "클래식": "클래식",
+        "playlist": "플레이리스트",
+    },
+}
+
+SURFACE_FORMS_EN: dict[str, dict[str, str]] = {
+    "시간": {
+        "새벽": "dawn",
+        "아침": "morning",
+        "낮/오후": "afternoon",
+        "저녁": "sunset",
+        "밤/심야": "late night",
+    },
+    "날씨": {
+        "비": "rainy",
+        "눈": "snowy",
+        "맑음": "sunny",
+        "흐림": "foggy",
+    },
+    "장소": {
+        "카페": "cafe",
+        "방/침대": "bedroom",
+        "자연": "forest",
+        "도시/거리": "city",
+        "차/길": "drive",
+    },
+    "활동/상황": {
+        "공부/작업": "studying",
+        "수면": "sleeping",
+        "휴식": "relaxing",
+        "운전": "driving",
+        "운동": "workout",
+        "독서": "reading",
+    },
+    "감정": {
+        "위로/힐링": "soothing",
+        "슬픔/우울": "melancholy",
+        "따뜻/포근": "cozy",
+        "잔잔/평온": "calm",
+        "감성/노스탤지어": "nostalgic",
+        "행복/밝음": "uplifting",
+        "몽환/꿈": "dreamy",
+    },
+    "장르/형식": {
+        "lofi": "lofi",
+        "재즈": "jazz",
+        "피아노": "piano",
+        "어쿠스틱": "acoustic",
+        "앰비언트": "ambient",
+        "클래식": "classical",
+        "playlist": "playlist",
+    },
+}
+
+# 한국어 제목 템플릿. {카테고리} 자리에는 SURFACE_FORMS_KO 의 표면형이 들어간다.
+# 자리가 비면(=해당 카테고리 태그가 데이터에 없으면) 해당 템플릿은 스킵.
+TITLE_TEMPLATES_KO: tuple[str, ...] = (
+    "{시간} {감정} {장르/형식} 모음 🎧",
+    "{날씨} {장소} 듣는 {장르/형식}",
+    "{활동/상황} 듣는 {감정} {장르/형식}",
+    "{감정} {장르/형식} | {시간} BGM",
+    "{시간} {장소} {장르/형식} 플레이리스트",
+    "{날씨} {시간}에 어울리는 {장르/형식}",
+    "{감정} {장르/형식} ({활동/상황})",
+    "{시간} 듣기 좋은 {감정} {장르/형식} 1시간",
+    "혼자 듣는 {감정} {장르/형식} · {시간}",
+    "{날씨} {시간} {장소} 잔잔한 {장르/형식}",
+)
+
+TITLE_TEMPLATES_EN: tuple[str, ...] = (
+    "{장르/형식} for {활동/상황}",
+    "{날씨} {시간} {장소} {장르/형식}",
+    "{장르/형식} to {활동/상황} to",
+    "{감정} {장르/형식} playlist",
+    "{날씨} {시간} {장르/형식} mix",
+    "{감정} {장르/형식} for a {날씨} {시간}",
+    "{시간} {장르/형식} | {활동/상황}",
+)
+
+
+def detect_dominant_language(titles: list[str]) -> str:
+    ko = sum(1 for t in titles for c in t if "가" <= c <= "힣")
+    en = sum(1 for t in titles for c in t if "a" <= c.lower() <= "z")
+    return "ko" if ko >= en else "en"
+
+
+def _pick_surface(
+    narrative: dict, category: str, lang: str, rng: random.Random
+) -> str | None:
+    """카테고리에서 빈도 가중으로 태그를 뽑아 표면형으로 변환."""
+    items = narrative.get("categories", {}).get(category, [])
+    if not items:
+        return None
+    pool = items[:3]  # 노이즈를 줄이기 위해 카테고리 상위 3개로 한정
+    tags = [t for t, _ in pool]
+    weights = [max(c, 1) for _, c in pool]
+    tag = rng.choices(tags, weights=weights, k=1)[0]
+    forms = SURFACE_FORMS_KO if lang == "ko" else SURFACE_FORMS_EN
+    return forms.get(category, {}).get(tag, tag)
+
+
+_SLOT_RE = re.compile(r"\{([^}]+)\}")
+
+
+def generate_titles(
+    narrative: dict,
+    *,
+    n: int = 5,
+    seed_theme: str | None = None,
+    random_state: int | None = None,
+    lang: str = "ko",
+    existing_titles: Iterable[str] = (),
+) -> list[dict]:
+    """추천 제목 n개를 합성한다. 반환은 {title, template, used} 리스트."""
+    if not narrative:
+        return []
+    rng = random.Random(random_state)
+    templates = TITLE_TEMPLATES_KO if lang == "ko" else TITLE_TEMPLATES_EN
+
+    # 강한 시그널이 있는 카테고리만 후보 템플릿으로 추림.
+    cat_available = {
+        cat for cat, lst in narrative.get("categories", {}).items() if lst
+    }
+    usable_templates = [
+        t for t in templates
+        if all(slot in cat_available for slot in _SLOT_RE.findall(t))
+    ]
+    if not usable_templates:
+        return []
+
+    seen_norm: set[str] = {t.strip().lower() for t in existing_titles}
+    out: list[dict] = []
+    attempts = 0
+    max_attempts = n * 20
+    while len(out) < n and attempts < max_attempts:
+        attempts += 1
+        tpl = rng.choice(usable_templates)
+        slots = _SLOT_RE.findall(tpl)
+        values: dict[str, str] = {}
+        ok = True
+        for slot in slots:
+            v = _pick_surface(narrative, slot, lang, rng)
+            if not v:
+                ok = False
+                break
+            values[slot] = v
+        if not ok:
+            continue
+        title = tpl.format(**values).strip()
+
+        if seed_theme:
+            theme = seed_theme.strip()
+            if theme and theme.lower() not in title.lower():
+                # 50% 확률로 테마를 앞 또는 뒤에 자연스럽게 결합
+                title = (
+                    f"{theme} · {title}" if rng.random() < 0.5
+                    else f"{title} - {theme}"
+                )
+
+        norm = title.lower()
+        if norm in seen_norm:
+            continue
+        seen_norm.add(norm)
+        out.append({"title": title, "template": tpl, "values": values})
+    return out
+
+
+def generate_tags(
+    narrative: dict,
+    search_keywords: Iterable[str],
+    *,
+    df: pd.DataFrame | None = None,
+    top_k: int = 25,
+) -> list[str]:
+    """YouTube 태그 후보. 검색 키워드 → 카테고리 표면형(KR+EN) → 고성과 단어 → 콤보 순."""
+    tags: list[str] = []
+    seen: set[str] = set()
+
+    def add(token: str | None) -> None:
+        if not token:
+            return
+        t = token.strip().lower()
+        if not t or t in seen or len(t) < 2:
+            return
+        seen.add(t)
+        tags.append(t)
+
+    for kw in search_keywords:
+        add(kw)
+
+    cats = narrative.get("categories", {})
+    for cat, items in cats.items():
+        for tag, _ in items[:3]:
+            add(SURFACE_FORMS_KO.get(cat, {}).get(tag))
+            add(SURFACE_FORMS_EN.get(cat, {}).get(tag))
+
+    # 데이터에서 검증된 고성과 단어가 있다면 함께 노출.
+    if df is not None and not df.empty:
+        patterns = analyze_title_patterns(df, top_k=15)
+        for word, _ in patterns.get("unigrams", [])[:10]:
+            add(word)
+        for word, _, _, _ in patterns.get("differential", [])[:5]:
+            add(word)
+
+    # 자주 검색되는 콤보 태그도 추가 (장르 × 활동, 날씨 × 장르).
+    def first(cat: str) -> str | None:
+        lst = cats.get(cat, [])
+        return lst[0][0] if lst else None
+
+    genre = first("장르/형식")
+    activity = first("활동/상황")
+    weather = first("날씨")
+    time_tag = first("시간")
+    if genre and activity:
+        en_g = SURFACE_FORMS_EN["장르/형식"].get(genre, genre)
+        en_a = SURFACE_FORMS_EN["활동/상황"].get(activity, activity)
+        add(f"{en_g} for {en_a}")
+    if weather and genre:
+        en_w = SURFACE_FORMS_EN["날씨"].get(weather, weather)
+        en_g = SURFACE_FORMS_EN["장르/형식"].get(genre, genre)
+        add(f"{en_w} {en_g}")
+    if time_tag and genre:
+        ko_t = SURFACE_FORMS_KO["시간"].get(time_tag, time_tag)
+        ko_g = SURFACE_FORMS_KO["장르/형식"].get(genre, genre)
+        add(f"{ko_t} {ko_g}")
+
+    return tags[:top_k]
+
+
+# ---------------------------------------------------------------------------
+# Thumbnail analysis — 색감 · 구도 · 인물 · 배경
+# ---------------------------------------------------------------------------
+
+# 색을 무드 단어로 매핑하기 위한 기준선. HSV 공간에서 거리 비교용.
+COLOR_MOODS: tuple[tuple[str, tuple[int, int, int]], ...] = (
+    ("warm orange",  (255, 140,  60)),
+    ("warm red",     (210,  60,  60)),
+    ("golden",       (230, 190,  90)),
+    ("pastel pink",  (240, 180, 200)),
+    ("cool blue",    ( 70, 120, 200)),
+    ("deep navy",    ( 30,  40,  90)),
+    ("cool teal",    ( 60, 160, 170)),
+    ("forest green", ( 60, 120,  80)),
+    ("muted purple", (130, 100, 160)),
+    ("neutral gray", (140, 140, 140)),
+    ("near black",   ( 25,  25,  30)),
+    ("near white",   (235, 235, 235)),
+)
+
+
+def _closest_mood(rgb: tuple[int, int, int]) -> str:
+    r, g, b = rgb
+    best, best_d = "neutral", 10**9
+    for name, (mr, mg, mb) in COLOR_MOODS:
+        d = (r - mr) ** 2 + (g - mg) ** 2 + (b - mb) ** 2
+        if d < best_d:
+            best, best_d = name, d
+    return best
+
+
+@st.cache_data(show_spinner=False, ttl=60 * 60 * 6)
+def _download_image(url: str) -> bytes | None:
+    if not url:
+        return None
+    try:
+        resp = requests.get(url, timeout=10)
+        if resp.status_code != 200 or not resp.content:
+            return None
+        return resp.content
+    except Exception:
+        return None
+
+
+def _dominant_palette(img: Image.Image, n: int = 5) -> list[tuple[int, tuple[int, int, int]]]:
+    """이미지 → (픽셀수, RGB) 리스트. 빈도순 정렬."""
+    small = img.convert("RGB").resize((128, 72))
+    q = small.quantize(colors=n, method=Image.Quantize.MEDIANCUT)
+    palette = q.getpalette() or []
+    counts = q.getcolors() or []  # [(count, palette_index), ...]
+    out: list[tuple[int, tuple[int, int, int]]] = []
+    for count, idx in counts:
+        base = idx * 3
+        rgb = tuple(palette[base : base + 3])
+        if len(rgb) == 3:
+            out.append((count, rgb))  # type: ignore[arg-type]
+    out.sort(reverse=True)
+    return out[:n]
+
+
+def _brightness_saturation(img: Image.Image) -> tuple[float, float, float]:
+    """전체 평균 (brightness 0-1, saturation 0-1, warmth -1..1)."""
+    arr = np.asarray(img.convert("RGB").resize((128, 72)), dtype=np.float32) / 255.0
+    r, g, b = arr[..., 0], arr[..., 1], arr[..., 2]
+    brightness = float(((r + g + b) / 3.0).mean())
+    max_c = arr.max(axis=-1)
+    min_c = arr.min(axis=-1)
+    saturation = float(np.where(max_c > 0, (max_c - min_c) / np.clip(max_c, 1e-6, 1), 0).mean())
+    warmth = float((r.mean() - b.mean()))  # +면 따뜻함, -면 차가움
+    return brightness, saturation, warmth
+
+
+def _composition_zone(img: Image.Image) -> str:
+    """9분할 격자에서 휘도 무게중심이 어디인지 (예: 좌하단, 정중앙)."""
+    gray = np.asarray(img.convert("L").resize((120, 90)), dtype=np.float32)
+    h, w = gray.shape
+    cells = []
+    rows = ["상단", "중단", "하단"]
+    cols = ["좌측", "중앙", "우측"]
+    for ri in range(3):
+        for ci in range(3):
+            block = gray[
+                ri * h // 3 : (ri + 1) * h // 3,
+                ci * w // 3 : (ci + 1) * w // 3,
+            ]
+            cells.append((block.mean(), rows[ri], cols[ci]))
+    cells.sort(reverse=True)
+    _, row, col = cells[0]
+    if row == "중단" and col == "중앙":
+        return "정중앙"
+    return f"{row} {col}"
+
+
+def _detect_faces(img: Image.Image) -> tuple[int, float]:
+    """(얼굴 개수, 화면 점유율). cv2 없으면 (0, 0.0)."""
+    if not _HAS_CV2 or cv2 is None:
+        return 0, 0.0
+    arr = np.asarray(img.convert("RGB").resize((480, 270)))
+    gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
+    faces = _FACE_CASCADE.detectMultiScale(
+        gray, scaleFactor=1.2, minNeighbors=4, minSize=(24, 24)
+    )
+    if len(faces) == 0:
+        return 0, 0.0
+    area = sum(int(w * h) for (_, _, w, h) in faces)
+    total = 480 * 270
+    return int(len(faces)), round(area / total, 3)
+
+
+@st.cache_data(show_spinner=False, ttl=60 * 60 * 6)
+def analyze_thumbnail(url: str) -> dict | None:
+    raw = _download_image(url)
+    if not raw:
+        return None
+    try:
+        img = Image.open(io.BytesIO(raw))
+        img.load()
+    except Exception:
+        return None
+
+    palette = _dominant_palette(img, n=5)
+    total = sum(c for c, _ in palette) or 1
+    palette_pct = [
+        {"rgb": rgb, "share": round(count / total, 3), "mood": _closest_mood(rgb)}
+        for count, rgb in palette
+    ]
+    brightness, saturation, warmth = _brightness_saturation(img)
+    zone = _composition_zone(img)
+    face_count, face_area = _detect_faces(img)
+
+    return {
+        "palette": palette_pct,
+        "brightness": round(brightness, 3),
+        "saturation": round(saturation, 3),
+        "warmth": round(warmth, 3),
+        "composition_zone": zone,
+        "face_count": face_count,
+        "face_area_ratio": face_area,
+        "width": img.width,
+        "height": img.height,
+    }
+
+
+def aggregate_thumbnail_signals(per_video: list[dict]) -> dict:
+    """여러 썸네일 분석 결과를 합쳐 '이 카테고리의 대표 비주얼' 요약."""
+    if not per_video:
+        return {}
+
+    mood_counter: Counter = Counter()
+    palette_weighted: list[tuple[float, tuple[int, int, int]]] = []
+    zone_counter: Counter = Counter()
+    brightnesses: list[float] = []
+    saturations: list[float] = []
+    warmths: list[float] = []
+    face_counts: list[int] = []
+    face_areas: list[float] = []
+    with_face = 0
+
+    for v in per_video:
+        for entry in v.get("palette", []):
+            mood_counter[entry["mood"]] += entry["share"]
+            palette_weighted.append((entry["share"], tuple(entry["rgb"])))
+        zone_counter[v["composition_zone"]] += 1
+        brightnesses.append(v["brightness"])
+        saturations.append(v["saturation"])
+        warmths.append(v["warmth"])
+        face_counts.append(v["face_count"])
+        face_areas.append(v["face_area_ratio"])
+        if v["face_count"] > 0:
+            with_face += 1
+
+    n = len(per_video)
+    avg_b = sum(brightnesses) / n
+    avg_s = sum(saturations) / n
+    avg_w = sum(warmths) / n
+
+    def label_brightness(b: float) -> str:
+        if b < 0.35:
+            return "어두운 (저조도)"
+        if b < 0.55:
+            return "은은한 미드톤"
+        return "밝은 (하이키)"
+
+    def label_saturation(s: float) -> str:
+        if s < 0.2:
+            return "탈채도/모노톤"
+        if s < 0.45:
+            return "차분한 채도"
+        return "비비드 채도"
+
+    def label_warmth(w: float) -> str:
+        if w > 0.05:
+            return "따뜻한 톤 우세"
+        if w < -0.05:
+            return "차가운 톤 우세"
+        return "중성 톤"
+
+    return {
+        "n_thumbnails": n,
+        "top_moods": mood_counter.most_common(5),
+        "top_zones": zone_counter.most_common(3),
+        "brightness_avg": round(avg_b, 3),
+        "saturation_avg": round(avg_s, 3),
+        "warmth_avg": round(avg_w, 3),
+        "brightness_label": label_brightness(avg_b),
+        "saturation_label": label_saturation(avg_s),
+        "warmth_label": label_warmth(avg_w),
+        "face_present_share": round(with_face / n, 3),
+        "avg_face_count": round(sum(face_counts) / n, 2),
+        "avg_face_area_ratio": round(sum(face_areas) / n, 3),
+        "cv_available": _HAS_CV2,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Thumbnail prompt generator — 텍스트-투-이미지 추천 프롬프트
+# ---------------------------------------------------------------------------
+
+PROMPT_STYLES: tuple[tuple[str, str], ...] = (
+    ("anime / lo-fi illustration",
+     "anime illustration, soft cel shading, lofi vibe, by studio ghibli inspired"),
+    ("cinematic photograph",
+     "cinematic photo, 35mm film grain, shallow depth of field, dramatic lighting"),
+    ("3d render / cozy diorama",
+     "isometric 3d render, cozy diorama, soft global illumination, octane render"),
+    ("minimal vector",
+     "minimal vector illustration, flat shapes, limited palette, clean lines"),
+    ("painterly / oil",
+     "painterly oil illustration, visible brushstrokes, soft edges, warm chiaroscuro"),
+)
+
+
+def _scene_clause(narrative: dict, lang: str = "en") -> str:
+    cats = narrative.get("categories", {})
+    forms = SURFACE_FORMS_EN if lang == "en" else SURFACE_FORMS_KO
+
+    def top(cat: str) -> str | None:
+        lst = cats.get(cat, [])
+        return forms.get(cat, {}).get(lst[0][0], lst[0][0]) if lst else None
+
+    parts: list[str] = []
+    time_t = top("시간")
+    weather = top("날씨")
+    place = top("장소")
+    emotion = top("감정")
+    activity = top("활동/상황")
+    genre = top("장르/형식")
+
+    if weather and time_t:
+        parts.append(f"a {weather} {time_t}")
+    elif time_t:
+        parts.append(f"a {time_t} scene")
+    if place:
+        parts.append(f"in a {place}")
+    if activity:
+        parts.append(f"someone {activity}" if lang == "en" else activity)
+    if emotion:
+        parts.append(f"{emotion} mood")
+    if genre:
+        parts.append(f"evoking {genre} music")
+    return ", ".join(parts) if parts else "a cozy ambient scene"
+
+
+def generate_thumbnail_prompts(
+    narrative: dict,
+    thumb_summary: dict,
+    *,
+    n: int = 5,
+    seed_theme: str | None = None,
+    random_state: int | None = None,
+) -> list[dict]:
+    if not narrative:
+        return []
+    rng = random.Random(random_state)
+
+    palette_words = ", ".join(m for m, _ in thumb_summary.get("top_moods", [])[:3]) or "warm and cool harmony"
+    brightness = thumb_summary.get("brightness_label", "은은한 미드톤")
+    saturation = thumb_summary.get("saturation_label", "차분한 채도")
+    warmth = thumb_summary.get("warmth_label", "중성 톤")
+    face_share = thumb_summary.get("face_present_share", 0)
+    avg_face_area = thumb_summary.get("avg_face_area_ratio", 0)
+    zones = [z for z, _ in thumb_summary.get("top_zones", [])]
+    zone_hint = zones[0] if zones else "정중앙"
+
+    # 분석 결과로부터 인물/배경 구성을 추정.
+    if face_share >= 0.5 and avg_face_area >= 0.05:
+        subject_hint = (
+            "single character close-up, eyes visible, looking off-camera"
+            if avg_face_area >= 0.12
+            else "character mid-shot integrated with the environment"
+        )
+    elif face_share >= 0.2:
+        subject_hint = "background figure silhouette, environment-led composition"
+    else:
+        subject_hint = "no people, atmospheric still-life, environment hero"
+
+    scene_clause_en = _scene_clause(narrative, lang="en")
+    if seed_theme:
+        scene_clause_en = f"{seed_theme}, {scene_clause_en}"
+
+    # 영문 프롬프트 (이미지 모델용) + 한글 요약문 동시 생성.
+    out: list[dict] = []
+    styles_pool = list(PROMPT_STYLES)
+    rng.shuffle(styles_pool)
+    while len(out) < n:
+        style_name, style_clause = styles_pool[len(out) % len(styles_pool)]
+        composition = (
+            f"rule-of-thirds composition with focal point at {zone_hint}, "
+            "16:9 aspect ratio, room for bold title text on the negative-space side"
+        )
+        lighting = f"{brightness}, {saturation}, {warmth}"
+        text_prompt = (
+            f"{style_clause}. {scene_clause_en}. {subject_hint}. "
+            f"Color palette: {palette_words}. Lighting: {lighting}. {composition}. "
+            "Highly polished YouTube thumbnail, clear visual hierarchy."
+        )
+        negative_prompt = (
+            "blurry, low contrast, cluttered composition, watermark, deformed faces, "
+            "extra fingers, oversaturated, text artifacts"
+        )
+        out.append(
+            {
+                "style": style_name,
+                "prompt": text_prompt,
+                "negative_prompt": negative_prompt,
+                "summary_ko": (
+                    f"**{style_name}** · 색감: {palette_words} · "
+                    f"무드: {brightness}, {warmth} · 포컬: {zone_hint} · "
+                    f"인물: {'중심 인물' if face_share >= 0.5 else '환경 중심'}"
+                ),
+            }
+        )
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Pipeline (cached)
 # ---------------------------------------------------------------------------
 
@@ -643,6 +1285,8 @@ def render_results(df: pd.DataFrame, filtered: pd.DataFrame, cfg: SearchConfig) 
 
     render_title_patterns(filtered, df)
     render_narrative(filtered, df)
+    render_recommendations(filtered, df, cfg)
+    render_thumbnails(filtered, df, cfg)
 
     with st.expander("🔬 전체 검색 결과 보기 (필터 적용 전)"):
         st.dataframe(df, use_container_width=True, hide_index=True)
@@ -727,6 +1371,290 @@ def render_narrative(filtered: pd.DataFrame, full: pd.DataFrame) -> None:
             st.info("2개 카테고리가 동시에 잡힌 제목이 부족합니다.")
 
 
+def render_recommendations(
+    filtered: pd.DataFrame, full: pd.DataFrame, cfg: SearchConfig
+) -> None:
+    st.markdown("### 🎯 알고리즘 추천 제목 & 태그")
+    source = filtered if not filtered.empty else full
+    if source.empty:
+        st.info("추천을 만들 데이터가 없습니다.")
+        return
+
+    narrative = analyze_narrative(source)
+    if not narrative.get("categories"):
+        st.info("데이터가 너무 적어 추천을 만들 수 없습니다.")
+        return
+
+    titles_list = source["video_title"].fillna("").astype(str).tolist()
+    detected_lang = detect_dominant_language(titles_list)
+
+    col1, col2, col3 = st.columns([3, 1, 1])
+    with col1:
+        seed_theme = st.text_input(
+            "강조하고 싶은 주제 / 분위기 (선택)",
+            key="rec_seed_theme",
+            placeholder="예: 비 오는 새벽, study with me, 잠 못 드는 밤",
+            help="비워두면 데이터에서 추출한 지배 서사 그대로 합성합니다.",
+        )
+    with col2:
+        lang_choice = st.selectbox(
+            "언어",
+            options=["자동 감지", "한국어", "English"],
+            index=0,
+            key="rec_lang_choice",
+        )
+    with col3:
+        st.write("")
+        st.write("")
+        regen = st.button("🔄 다시 생성", use_container_width=True, key="rec_regen")
+
+    if "rec_regen_counter" not in st.session_state:
+        st.session_state.rec_regen_counter = 0
+    if regen:
+        st.session_state.rec_regen_counter += 1
+
+    lang_code = (
+        "ko" if lang_choice == "한국어"
+        else "en" if lang_choice == "English"
+        else detected_lang
+    )
+
+    # 같은 검색 결과 안에서는 동일한 시드일 때 같은 추천이 나오도록,
+    # 검색 키워드 + 재생성 카운터 + 시드 테마를 해시해 random_state 로 사용.
+    seed_base = (
+        "|".join(cfg.keywords)
+        + f"|{lang_code}"
+        + f"|{seed_theme}"
+        + f"|{st.session_state.rec_regen_counter}"
+    )
+    random_state = abs(hash(seed_base)) % (2**32)
+
+    recommendations = generate_titles(
+        narrative,
+        n=5,
+        seed_theme=seed_theme or None,
+        random_state=random_state,
+        lang=lang_code,
+        existing_titles=titles_list,
+    )
+
+    st.markdown("#### ✍️ 추천 제목 5개")
+    if not recommendations:
+        st.warning(
+            "현재 데이터에서 모든 슬롯을 채울 만한 카테고리 시그널이 부족합니다. "
+            "키워드를 좀 더 좁히거나 필터를 완화해보세요."
+        )
+    else:
+        for i, rec in enumerate(recommendations, 1):
+            st.markdown(f"**{i}.** {rec['title']}")
+            with st.expander("이 제목이 만들어진 근거", expanded=False):
+                st.code(rec["template"], language=None)
+                st.json(rec["values"])
+
+        st.download_button(
+            "📥 제목 5개 텍스트 다운로드",
+            data="\n".join(r["title"] for r in recommendations).encode("utf-8"),
+            file_name=f"recommended_titles_{datetime.now():%Y%m%d_%H%M%S}.txt",
+            mime="text/plain",
+            key="rec_download_titles",
+        )
+
+    st.markdown("#### 🏷️ 추천 태그")
+    tags = generate_tags(narrative, cfg.keywords, df=source)
+    if not tags:
+        st.info("추천 태그를 만들 만한 데이터가 부족합니다.")
+    else:
+        tag_csv = ", ".join(tags)
+        st.code(tag_csv, language=None)
+        st.caption(
+            f"{len(tags)}개. YouTube Studio 의 태그 필드에 그대로 붙여넣을 수 있습니다 "
+            "(쉼표 구분, 500자 한도)."
+        )
+        st.download_button(
+            "📥 태그 텍스트 다운로드",
+            data=tag_csv.encode("utf-8"),
+            file_name=f"recommended_tags_{datetime.now():%Y%m%d_%H%M%S}.txt",
+            mime="text/plain",
+            key="rec_download_tags",
+        )
+
+
+def render_thumbnails(
+    filtered: pd.DataFrame, full: pd.DataFrame, cfg: SearchConfig
+) -> None:
+    st.markdown("### 🖼️ 썸네일 분석 (색감 · 구도 · 인물 · 배경)")
+    source = filtered if not filtered.empty else full
+    if source.empty or "thumbnail_url" not in source.columns:
+        st.info("분석할 썸네일이 없습니다.")
+        return
+
+    if not _HAS_CV2:
+        st.caption(
+            "⚠️ `opencv-python-headless` 미설치 — 얼굴 검출이 비활성화됩니다. "
+            "색감/구도/배경 분석은 정상 동작합니다."
+        )
+
+    max_n = st.slider(
+        "분석할 상위 N개 썸네일",
+        min_value=5,
+        max_value=min(50, len(source)),
+        value=min(20, len(source)),
+        step=5,
+        key="thumb_n",
+        help="조회/구독 비율이 높은 순으로 N개를 분석합니다 (다운로드 + 분석에 시간이 소요).",
+    )
+
+    candidates = source.head(max_n)
+    per_video: list[dict] = []
+    progress = st.progress(0, text="썸네일 다운로드 및 분석 중...")
+    for i, row in enumerate(candidates.itertuples(index=False), 1):
+        url = getattr(row, "thumbnail_url", "")
+        result = analyze_thumbnail(url) if url else None
+        if result:
+            result["video_title"] = row.video_title
+            result["channel_title"] = row.channel_title
+            result["view_sub_ratio"] = row.view_sub_ratio
+            result["thumbnail_url"] = url
+            per_video.append(result)
+        progress.progress(i / max(len(candidates), 1), text=f"분석 {i}/{len(candidates)}")
+    progress.empty()
+
+    if not per_video:
+        st.warning(
+            "썸네일을 다운로드/분석할 수 없었습니다. 네트워크 또는 URL 접근을 확인해보세요."
+        )
+        return
+
+    summary = aggregate_thumbnail_signals(per_video)
+    st.session_state["thumb_summary"] = summary
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("평균 밝기", f"{summary['brightness_avg']:.2f}", summary["brightness_label"])
+    m2.metric("평균 채도", f"{summary['saturation_avg']:.2f}", summary["saturation_label"])
+    m3.metric("색온도", f"{summary['warmth_avg']:+.2f}", summary["warmth_label"])
+    if _HAS_CV2:
+        m4.metric(
+            "인물 포함 비율",
+            f"{summary['face_present_share']*100:.0f}%",
+            f"평균 얼굴 점유 {summary['avg_face_area_ratio']*100:.1f}%",
+        )
+    else:
+        m4.metric("인물 분석", "비활성", "opencv 미설치")
+
+    col_palette, col_zone = st.columns(2)
+    with col_palette:
+        st.markdown("#### 🎨 대표 색감 (상위 무드)")
+        moods = summary["top_moods"]
+        if moods:
+            st.dataframe(
+                pd.DataFrame(moods, columns=["무드", "가중치"]),
+                hide_index=True,
+                use_container_width=True,
+            )
+        # 실제 RGB 스와치 미리보기 — 첫 3개 썸네일의 팔레트.
+        swatch_cols = st.columns(min(3, len(per_video)))
+        for ci, v in enumerate(per_video[:3]):
+            with swatch_cols[ci]:
+                st.caption(v["video_title"][:30])
+                for entry in v["palette"]:
+                    r, g, b = entry["rgb"]
+                    st.markdown(
+                        f"<div style='background:rgb({r},{g},{b});"
+                        f"padding:6px;color:#fff;text-shadow:0 0 3px #000;"
+                        f"font-size:11px;border-radius:3px;margin-bottom:2px'>"
+                        f"{entry['mood']} · {entry['share']*100:.0f}%</div>",
+                        unsafe_allow_html=True,
+                    )
+    with col_zone:
+        st.markdown("#### 🧭 포컬 포인트 (rule of thirds)")
+        zones = summary["top_zones"]
+        if zones:
+            st.dataframe(
+                pd.DataFrame(zones, columns=["위치", "빈도"]),
+                hide_index=True,
+                use_container_width=True,
+            )
+        st.caption(
+            f"인물 배치 추정: " + (
+                f"중심 인물 위주 ({summary['face_present_share']*100:.0f}% 영상에 얼굴)"
+                if _HAS_CV2 and summary["face_present_share"] >= 0.4
+                else "환경/오브젝트 중심 (인물 비중 낮음)"
+            )
+        )
+
+    with st.expander("📸 분석된 썸네일 미리보기"):
+        cols = st.columns(4)
+        for i, v in enumerate(per_video[:16]):
+            with cols[i % 4]:
+                try:
+                    st.image(v["thumbnail_url"], use_container_width=True)
+                except Exception:
+                    pass
+                st.caption(
+                    f"**비율 {v['view_sub_ratio']:.1f}** · 얼굴 {v['face_count']} · "
+                    f"{v['composition_zone']}"
+                )
+
+    # ---- 썸네일 추천 프롬프트 ----
+    st.markdown("#### 🎨 썸네일 추천 프롬프트 (텍스트-투-이미지)")
+    narrative = analyze_narrative(source)
+
+    col_t1, col_t2 = st.columns([4, 1])
+    with col_t1:
+        thumb_seed = st.text_input(
+            "강조하고 싶은 비주얼 컨셉 (선택)",
+            key="thumb_seed",
+            placeholder="예: girl studying with cat, rainy window, candlelit room",
+        )
+    with col_t2:
+        st.write("")
+        st.write("")
+        thumb_regen = st.button("🔄 다시 생성", use_container_width=True, key="thumb_regen")
+
+    if "thumb_regen_counter" not in st.session_state:
+        st.session_state.thumb_regen_counter = 0
+    if thumb_regen:
+        st.session_state.thumb_regen_counter += 1
+
+    seed_base = (
+        "|".join(cfg.keywords)
+        + f"|{thumb_seed}"
+        + f"|{st.session_state.thumb_regen_counter}"
+    )
+    random_state = abs(hash(seed_base)) % (2**32)
+
+    prompts = generate_thumbnail_prompts(
+        narrative,
+        summary,
+        n=5,
+        seed_theme=thumb_seed or None,
+        random_state=random_state,
+    )
+
+    if not prompts:
+        st.info("프롬프트 생성을 위한 시그널이 부족합니다.")
+        return
+
+    for i, p in enumerate(prompts, 1):
+        with st.container(border=True):
+            st.markdown(f"**Prompt {i}** — {p['summary_ko']}")
+            st.code(p["prompt"], language=None)
+            with st.expander("Negative prompt"):
+                st.code(p["negative_prompt"], language=None)
+
+    payload = "\n\n---\n\n".join(
+        f"# {p['style']}\n{p['prompt']}\n\nNegative: {p['negative_prompt']}"
+        for p in prompts
+    )
+    st.download_button(
+        "📥 프롬프트 5개 다운로드 (Markdown)",
+        data=payload.encode("utf-8"),
+        file_name=f"thumbnail_prompts_{datetime.now():%Y%m%d_%H%M%S}.md",
+        mime="text/markdown",
+        key="thumb_download",
+    )
+
+
 def render_title_patterns(filtered: pd.DataFrame, full: pd.DataFrame) -> None:
     st.markdown("### 🧩 제목 패턴 분석")
     source = filtered if not filtered.empty else full
@@ -792,7 +1720,12 @@ def main() -> None:
         "'구독자 수 대비 조회수'가 폭발적인 신규 채널을 찾아냅니다."
     )
 
-    cfg = render_sidebar()
+    # 사이드바의 '발굴 시작' 클릭에서만 cfg 가 새로 만들어진다. 그 후에는
+    # session_state 에 보존돼, 추천 재생성 같은 보조 버튼이 결과를 날리지 않는다.
+    new_cfg = render_sidebar()
+    if new_cfg is not None:
+        st.session_state.active_cfg = new_cfg
+    cfg = st.session_state.get("active_cfg")
     if cfg is None:
         st.info("👈 사이드바에서 키워드와 필터를 설정한 뒤 **발굴 시작**을 눌러주세요.")
         return
