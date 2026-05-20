@@ -12,6 +12,9 @@ import io
 import os
 import random
 import re
+import shutil
+import subprocess
+import tempfile
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -2151,6 +2154,531 @@ def render_storytelling_tab() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Audio + Video → MP4 인코딩 (직접 만든 곡 + 배경 영상/이미지 합성)
+# ---------------------------------------------------------------------------
+
+IMAGE_EXTS: tuple[str, ...] = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
+AUDIO_EXTS: tuple[str, ...] = ("mp3", "wav", "flac", "m4a", "aac", "ogg")
+VIDEO_IMAGE_EXTS: tuple[str, ...] = (
+    "mp4", "mov", "avi", "mkv", "webm", "png", "jpg", "jpeg", "webp", "bmp"
+)
+
+
+def _find_ffmpeg() -> str | None:
+    return shutil.which("ffmpeg")
+
+
+def _ffprobe_duration(path: str) -> float | None:
+    """초 단위 길이. ffprobe 없으면 None 반환."""
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return None
+    try:
+        out = subprocess.run(
+            [
+                ffprobe, "-v", "error", "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1", path,
+            ],
+            capture_output=True, text=True, timeout=30,
+        )
+        return float(out.stdout.strip()) if out.returncode == 0 else None
+    except Exception:
+        return None
+
+
+def concat_audio_files(
+    audio_paths: list[str], output_path: str, *, bitrate: str = "320k"
+) -> tuple[bool, str]:
+    """여러 오디오를 하나로 이어붙임. concat 필터로 재인코딩(샘플레이트 통일)."""
+    ffmpeg = _find_ffmpeg()
+    if not ffmpeg:
+        return False, "ffmpeg 가 PATH 에 없습니다."
+    if not audio_paths:
+        return False, "이어붙일 오디오가 없습니다."
+    if len(audio_paths) == 1:
+        try:
+            shutil.copyfile(audio_paths[0], output_path)
+            return True, "단일 파일 복사 완료."
+        except Exception as e:
+            return False, f"단일 파일 복사 실패: {e}"
+
+    cmd: list[str] = [ffmpeg, "-y", "-hide_banner"]
+    for p in audio_paths:
+        cmd += ["-i", p]
+    n = len(audio_paths)
+    filter_str = "".join(f"[{i}:a]" for i in range(n)) + f"concat=n={n}:v=0:a=1[out]"
+    cmd += [
+        "-filter_complex", filter_str,
+        "-map", "[out]",
+        "-c:a", "aac",
+        "-b:a", bitrate,
+        output_path,
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60 * 60 * 2)
+    except subprocess.TimeoutExpired:
+        return False, "오디오 이어붙이기가 2시간 안에 끝나지 않았습니다."
+    return proc.returncode == 0, (proc.stderr or "")[-2400:]
+
+
+def _format_srt_time(seconds: float) -> str:
+    seconds = max(0.0, seconds)
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    ms = int(round((seconds - int(seconds)) * 1000))
+    if ms == 1000:
+        ms = 0
+        s += 1
+    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+
+def generate_srt(tracks: list[dict]) -> str:
+    """
+    tracks: [{"title": str, "duration": float, "lyrics_lines": list[str]}]
+    각 트랙 안에서는 가사 라인을 트랙 길이에 따라 균등 분배,
+    트랙 간에는 누적 타임스탬프로 SRT 한 파일을 만든다.
+    """
+    out: list[str] = []
+    cumulative = 0.0
+    counter = 1
+    for tr in tracks:
+        duration = max(float(tr.get("duration", 0) or 0), 0.0)
+        lines = [ln.strip() for ln in tr.get("lyrics_lines", []) if ln.strip()]
+        if not lines or duration <= 0:
+            cumulative += duration
+            continue
+        per_line = duration / len(lines)
+        for i, line in enumerate(lines):
+            start = cumulative + i * per_line
+            end = cumulative + (i + 1) * per_line
+            out.append(str(counter))
+            out.append(f"{_format_srt_time(start)} --> {_format_srt_time(end)}")
+            out.append(line)
+            out.append("")
+            counter += 1
+        cumulative += duration
+    return "\n".join(out).strip() + "\n"
+
+
+def encode_music_video(
+    audio_path: str,
+    visual_path: str,
+    output_path: str,
+    *,
+    is_image: bool,
+    resolution: str = "1920x1080",
+    audio_bitrate: str = "192k",
+    crf: int = 22,
+    fade_seconds: float = 0.0,
+    audio_duration: float | None = None,
+    subtitles_path: str | None = None,
+) -> tuple[bool, str]:
+    """ffmpeg 로 합성. (성공여부, 로그 꼬리 ~2KB) 반환."""
+    ffmpeg = _find_ffmpeg()
+    if not ffmpeg:
+        return False, "ffmpeg 가 PATH 에 없습니다. 시스템에 ffmpeg 를 설치해주세요."
+
+    cmd: list[str] = [ffmpeg, "-y", "-hide_banner"]
+
+    # 입력 0: 비주얼 (이미지면 loop, 영상이면 stream_loop)
+    if is_image:
+        cmd += ["-loop", "1"]
+    else:
+        cmd += ["-stream_loop", "-1"]
+    cmd += ["-i", visual_path]
+
+    # 입력 1: 오디오
+    cmd += ["-i", audio_path]
+
+    # 해상도 맞춤(레터박스), yuv420p 로 호환성 확보.
+    vf_parts = [
+        f"scale={resolution}:force_original_aspect_ratio=decrease",
+        f"pad={resolution}:(ow-iw)/2:(oh-ih)/2:color=black",
+        "setsar=1",
+    ]
+    if subtitles_path:
+        # 경로의 콜론/역슬래시 등 ffmpeg 필터 그래프 특수문자 이스케이프.
+        esc = (
+            subtitles_path
+            .replace("\\", "\\\\")
+            .replace(":", "\\:")
+            .replace("'", "\\'")
+        )
+        vf_parts.append(
+            f"subtitles='{esc}':force_style='FontSize=24,PrimaryColour=&H00FFFFFF&,"
+            "OutlineColour=&H80000000&,BorderStyle=3,Outline=2,Shadow=0,MarginV=60'"
+        )
+    vf = ",".join(vf_parts)
+
+    cmd += [
+        "-map", "0:v:0",
+        "-map", "1:a:0",
+        "-c:v", "libx264",
+        "-preset", "medium",
+        "-crf", str(crf),
+        "-pix_fmt", "yuv420p",
+        "-vf", vf,
+        "-c:a", "aac",
+        "-b:a", audio_bitrate,
+        "-movflags", "+faststart",
+        "-shortest",
+    ]
+    if is_image:
+        cmd += ["-tune", "stillimage", "-r", "24"]
+
+    # 오디오 페이드 인/아웃 (선택).
+    if fade_seconds > 0 and audio_duration and audio_duration > fade_seconds * 2:
+        fade_out_start = max(audio_duration - fade_seconds, 0)
+        cmd += [
+            "-af",
+            f"afade=t=in:st=0:d={fade_seconds},"
+            f"afade=t=out:st={fade_out_start}:d={fade_seconds}",
+        ]
+
+    cmd.append(output_path)
+
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60 * 60)
+    except subprocess.TimeoutExpired:
+        return False, "1시간 안에 인코딩이 끝나지 않았습니다. 해상도/CRF 를 조정해보세요."
+    log_tail = (proc.stderr or "")[-2400:]
+    return proc.returncode == 0, log_tail
+
+
+def _fmt_duration(seconds: float | None) -> str:
+    if not seconds or seconds <= 0:
+        return "??"
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    return f"{h:d}:{m:02d}:{s:02d}" if h else f"{m:d}:{s:02d}"
+
+
+def render_compose_tab() -> None:
+    st.subheader("🎬 영상 합성 (MP3 + 배경 → MP4 인코딩)")
+    st.caption(
+        "직접 만든 곡들을 이어붙여 1시간/3시간/4시간 영상으로 합성하고, "
+        "원하면 곡별 가사를 타임라인에 정렬한 SRT 자막까지 함께 만들 수 있습니다."
+    )
+
+    ffmpeg = _find_ffmpeg()
+    if not ffmpeg:
+        st.error(
+            "⚠️ 시스템에 **ffmpeg** 가 설치되어 있지 않습니다. "
+            "설치 후 페이지를 새로고침해주세요."
+        )
+        with st.expander("ffmpeg 설치 가이드"):
+            st.code(
+                "# macOS (Homebrew)\nbrew install ffmpeg\n\n"
+                "# Ubuntu / Debian\nsudo apt-get install -y ffmpeg\n\n"
+                "# Windows (winget)\nwinget install --id=Gyan.FFmpeg -e\n\n"
+                "# Windows (Scoop)\nscoop install ffmpeg",
+                language="bash",
+            )
+        return
+    st.caption(f"✓ ffmpeg 감지됨: `{ffmpeg}`")
+
+    audio_files = st.file_uploader(
+        "🎵 음악 파일 (여러 개 가능 — 업로드한 순서대로 이어붙여집니다)",
+        type=list(AUDIO_EXTS),
+        accept_multiple_files=True,
+        key="compose_audio_multi",
+        help="여러 곡을 올리면 ffmpeg concat 으로 한 트랙으로 결합한 뒤 영상에 입힙니다.",
+    )
+    visual_file = st.file_uploader(
+        "🖼️ 배경 영상 또는 이미지 (필수, 1개)",
+        type=list(VIDEO_IMAGE_EXTS),
+        key="compose_visual",
+        help="MP4/MOV 등 영상, 또는 PNG/JPG 같은 정지 이미지 한 장. "
+             "영상이 오디오보다 짧으면 자동으로 루프됩니다.",
+    )
+
+    # ---- 곡 리스트 + 길이 미리보기 ----
+    track_metas: list[dict] = []
+    if audio_files:
+        st.markdown("##### 📋 업로드된 트랙")
+        # 임시 디렉토리 하나를 세션 동안 재사용하지 않고, 길이 확인을 위해
+        # 매 렌더마다 짧게 떴다 사라지는 임시 파일로 ffprobe 만 돌린다.
+        probe_dir = tempfile.mkdtemp(prefix="ytmusic_probe_")
+        try:
+            total = 0.0
+            for idx, f in enumerate(audio_files, 1):
+                pth = os.path.join(probe_dir, f.name)
+                with open(pth, "wb") as fp:
+                    fp.write(f.getbuffer())
+                dur = _ffprobe_duration(pth) or 0.0
+                total += dur
+                track_metas.append({"name": f.name, "duration": dur, "index": idx})
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {
+                            "#": m["index"],
+                            "파일": m["name"],
+                            "길이": _fmt_duration(m["duration"]),
+                        }
+                        for m in track_metas
+                    ]
+                ),
+                hide_index=True,
+                use_container_width=True,
+            )
+            st.caption(f"합산 길이: **{_fmt_duration(total)}**  ·  {len(audio_files)}곡")
+        finally:
+            shutil.rmtree(probe_dir, ignore_errors=True)
+
+    # ---- 곡별 가사 (SRT 생성용) ----
+    st.markdown("##### 📝 곡별 가사 (선택 — 입력 시 SRT 자막을 함께 생성)")
+    st.caption(
+        "한 줄에 한 자막 라인. 각 트랙 안에서는 라인을 균등 분배하고, "
+        "트랙 간에는 누적 타임스탬프로 이어 붙입니다. "
+        "필요하면 생성된 SRT 를 텍스트 에디터에서 수동 미세조정하세요."
+    )
+    lyrics_by_track: dict[int, str] = {}
+    if audio_files:
+        for m in track_metas:
+            with st.expander(
+                f"#{m['index']} {m['name']}  ·  {_fmt_duration(m['duration'])}",
+                expanded=False,
+            ):
+                lyrics_by_track[m["index"]] = st.text_area(
+                    "가사 (한 줄 = 한 자막 라인)",
+                    value="",
+                    height=180,
+                    key=f"compose_lyrics_{m['index']}",
+                    label_visibility="collapsed",
+                )
+
+    # ---- 인코딩 옵션 ----
+    st.markdown("##### ⚙️ 인코딩 옵션")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        resolution = st.selectbox(
+            "해상도",
+            options=["1920x1080", "1280x720", "3840x2160", "2560x1440"],
+            index=0,
+            key="compose_resolution",
+        )
+    with col2:
+        audio_bitrate = st.selectbox(
+            "오디오 비트레이트",
+            options=["128k", "192k", "256k", "320k"],
+            index=1,
+            key="compose_audio_bitrate",
+        )
+    with col3:
+        crf = st.slider(
+            "비디오 품질 (CRF)",
+            min_value=18, max_value=30, value=22, step=1,
+            key="compose_crf",
+            help="낮을수록 고화질·큰 파일. 18=시각적 무손실, 22=권장, 28=용량 우선.",
+        )
+    with col4:
+        fade = st.number_input(
+            "페이드 인/아웃 (초)",
+            min_value=0.0, max_value=10.0, value=0.0, step=0.5,
+            key="compose_fade",
+        )
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        burn_subs = st.checkbox(
+            "자막을 영상에 굽기 (Burn-in)",
+            value=False,
+            key="compose_burn_subs",
+            help="체크하면 영상 픽셀에 가사가 직접 새겨집니다. 끄면 SRT 가 별도 파일로만 나와, "
+                 "유튜브 업로드 시 자막 트랙으로 따로 첨부하거나 시청자가 토글 가능.",
+        )
+    with col_b:
+        make_srt = st.checkbox(
+            "SRT 자막 파일 생성",
+            value=True,
+            key="compose_make_srt",
+            help="가사가 비어 있는 트랙은 자동으로 스킵됩니다.",
+        )
+
+    run = st.button(
+        "🚀 인코딩 시작",
+        type="primary",
+        use_container_width=True,
+        key="compose_run",
+    )
+
+    if not run:
+        if st.session_state.get("compose_output"):
+            st.info("이전 인코딩 결과가 아래에 남아 있습니다.")
+            _render_compose_result()
+        return
+
+    if not audio_files or not visual_file:
+        st.error("음악(1개 이상)과 배경 파일을 모두 업로드해주세요.")
+        return
+
+    workdir = tempfile.mkdtemp(prefix="ytmusic_compose_")
+    audio_paths: list[str] = []
+    for f in audio_files:
+        p = os.path.join(workdir, f.name)
+        with open(p, "wb") as fp:
+            fp.write(f.getbuffer())
+        audio_paths.append(p)
+
+    visual_path = os.path.join(workdir, visual_file.name)
+    with open(visual_path, "wb") as fp:
+        fp.write(visual_file.getbuffer())
+
+    # 1) 다중 트랙이면 먼저 오디오 concat.
+    combined_audio = os.path.join(workdir, "combined.m4a")
+    if len(audio_paths) > 1:
+        with st.spinner(f"🎚️ 오디오 {len(audio_paths)}곡 이어붙이는 중..."):
+            ok, log = concat_audio_files(audio_paths, combined_audio, bitrate=audio_bitrate)
+        if not ok:
+            st.error("오디오 이어붙이기 실패")
+            with st.expander("ffmpeg 로그", expanded=True):
+                st.code(log or "(없음)", language=None)
+            shutil.rmtree(workdir, ignore_errors=True)
+            return
+    else:
+        combined_audio = audio_paths[0]
+
+    # 2) 길이 측정 + SRT 생성.
+    per_track_durations = [_ffprobe_duration(p) or 0.0 for p in audio_paths]
+    total_duration = sum(per_track_durations) or _ffprobe_duration(combined_audio)
+
+    srt_path: str | None = None
+    srt_content = ""
+    if make_srt and any(lyrics_by_track.values()):
+        tracks_for_srt = [
+            {
+                "title": audio_files[i].name,
+                "duration": per_track_durations[i],
+                "lyrics_lines": (lyrics_by_track.get(i + 1, "") or "").splitlines(),
+            }
+            for i in range(len(audio_files))
+        ]
+        srt_content = generate_srt(tracks_for_srt)
+        if srt_content.strip():
+            srt_path = os.path.join(workdir, "lyrics.srt")
+            with open(srt_path, "w", encoding="utf-8") as fp:
+                fp.write(srt_content)
+
+    # 3) 영상 인코딩.
+    is_image = visual_file.name.lower().endswith(IMAGE_EXTS)
+    output_path = os.path.join(workdir, "output.mp4")
+    spinner_msg = (
+        f"🎬 ffmpeg 인코딩 중... (오디오 {_fmt_duration(total_duration)}). "
+        "3~4시간 영상은 1080p 기준 10~30분 이상 걸릴 수 있습니다."
+    )
+    with st.spinner(spinner_msg):
+        ok, log = encode_music_video(
+            combined_audio, visual_path, output_path,
+            is_image=is_image,
+            resolution=resolution,
+            audio_bitrate=audio_bitrate,
+            crf=int(crf),
+            fade_seconds=float(fade),
+            audio_duration=total_duration,
+            subtitles_path=srt_path if burn_subs else None,
+        )
+
+    if not ok or not os.path.exists(output_path):
+        st.error("인코딩에 실패했습니다. 아래 ffmpeg 로그를 확인해주세요.")
+        with st.expander("ffmpeg stderr 로그", expanded=True):
+            st.code(log or "(로그 없음)", language=None)
+        shutil.rmtree(workdir, ignore_errors=True)
+        return
+
+    file_size_mb = os.path.getsize(output_path) / 1024 / 1024
+    st.session_state["compose_output"] = {
+        "path": output_path,
+        "srt_path": srt_path,
+        "srt_content": srt_content,
+        "workdir": workdir,
+        "size_mb": round(file_size_mb, 1),
+        "duration": total_duration,
+        "is_image": is_image,
+        "resolution": resolution,
+        "track_count": len(audio_files),
+        "burned": bool(burn_subs and srt_path),
+    }
+    st.success(
+        f"✅ 인코딩 완료 — {file_size_mb:.1f} MB · "
+        f"{resolution} · 길이 {_fmt_duration(total_duration)} · {len(audio_files)}곡"
+        + ("  · 자막 burn-in" if burn_subs and srt_path else "")
+    )
+    _render_compose_result()
+
+
+def _render_compose_result() -> None:
+    info = st.session_state.get("compose_output")
+    if not info:
+        return
+    path = info["path"]
+    if not os.path.exists(path):
+        st.warning("이전 결과 파일이 더 이상 존재하지 않습니다 (임시 디렉터리 정리됨).")
+        st.session_state.pop("compose_output", None)
+        return
+
+    meta_cols = st.columns(3)
+    meta_cols[0].metric("파일 크기", f"{info['size_mb']} MB")
+    meta_cols[1].metric("해상도", info["resolution"])
+    if info["duration"]:
+        meta_cols[2].metric(
+            "오디오 길이",
+            f"{int(info['duration'] // 60)}:{int(info['duration'] % 60):02d}",
+        )
+
+    # 결과 영상이 너무 크면 브라우저 미리보기가 무거워질 수 있어 500MB 이상은 스킵.
+    if info["size_mb"] <= 500:
+        try:
+            st.video(path)
+        except Exception:
+            st.caption("미리보기를 표시할 수 없습니다. 다운로드해서 확인해주세요.")
+    else:
+        st.caption("📦 파일이 커서 인라인 미리보기는 생략합니다. 다운로드해서 확인해주세요.")
+
+    dl_cols = st.columns(2)
+    with dl_cols[0]:
+        with open(path, "rb") as fp:
+            st.download_button(
+                "📥 MP4 다운로드",
+                data=fp.read(),
+                file_name=f"music_video_{datetime.now():%Y%m%d_%H%M%S}.mp4",
+                mime="video/mp4",
+                type="primary",
+                use_container_width=True,
+                key="compose_download_mp4",
+            )
+    with dl_cols[1]:
+        srt_content = info.get("srt_content") or ""
+        if srt_content.strip():
+            st.download_button(
+                "📥 SRT 자막 다운로드",
+                data=srt_content.encode("utf-8"),
+                file_name=f"lyrics_{datetime.now():%Y%m%d_%H%M%S}.srt",
+                mime="application/x-subrip",
+                use_container_width=True,
+                key="compose_download_srt",
+                help="유튜브 업로드 시 자막 트랙으로 첨부하거나, "
+                     "burn-in 옵션 없이 시청자가 토글 가능한 CC 로 사용하세요.",
+            )
+        else:
+            st.caption("자막을 생성하지 않았거나 가사가 비어 있습니다.")
+
+    if info.get("srt_content"):
+        with st.expander("생성된 SRT 미리보기", expanded=False):
+            preview = info["srt_content"]
+            if len(preview) > 4000:
+                preview = preview[:4000] + "\n\n...(이하 생략)"
+            st.code(preview, language=None)
+
+    if st.button("🗑️ 결과 비우기 (임시 파일 삭제)", key="compose_cleanup"):
+        shutil.rmtree(info["workdir"], ignore_errors=True)
+        st.session_state.pop("compose_output", None)
+        st.rerun()
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -2164,13 +2692,19 @@ def main() -> None:
 
     st.title("🎵 유튜브 음악 채널 자동화 대시보드")
 
-    tab_discovery, tab_story = st.tabs(
-        ["🔍 레퍼런스 발굴", "✍️ AI 스토리텔링 & 가사 생성"]
+    tab_discovery, tab_story, tab_compose = st.tabs(
+        [
+            "🔍 레퍼런스 발굴",
+            "✍️ AI 스토리텔링 & 가사 생성",
+            "🎬 영상 합성 (인코딩)",
+        ]
     )
     with tab_discovery:
         render_discovery_tab()
     with tab_story:
         render_storytelling_tab()
+    with tab_compose:
+        render_compose_tab()
 
 
 if __name__ == "__main__":
