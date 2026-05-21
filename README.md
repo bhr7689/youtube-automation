@@ -35,6 +35,25 @@ streamlit run app.py
 
 브라우저에서 자동으로 `http://localhost:8501` 이 열립니다.
 
+## 🪟 Windows 원클릭 실행
+
+1. **Python 설치** (이미 있으면 건너뛰기) — Microsoft Store에서 "Python 3.11" 검색해 설치하는 게 가장 쉽습니다.
+2. **이 저장소를 ZIP으로 다운로드** → 압축 풀기. (또는 `git clone`)
+3. 압축 푼 폴더 안의 **`run.bat` 더블클릭**.
+
+`run.bat` 가 자동으로 처리하는 것:
+- Python 설치 확인
+- 가상환경(.venv) 생성 — 최초 1회만
+- `requirements.txt` 의존성 설치 — 최초 1회만
+- `.env` 파일이 없으면 메모장으로 열어 API 키 입력 유도
+- `streamlit run app.py` 실행 → 브라우저 자동 오픈
+
+탭 3·4 (영상 합성 / SRT) 도 쓰려면 ffmpeg 도 설치하세요:
+```powershell
+winget install Gyan.FFmpeg
+```
+(PowerShell 관리자 권한으로 실행 후 PC 재시작. 탭 1·2 만 쓸 거면 생략 가능.)
+
 ## ☁️ Streamlit Community Cloud 배포 (무료)
 
 1. https://share.streamlit.io 접속 → **GitHub 로 로그인**.
