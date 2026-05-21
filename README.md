@@ -35,6 +35,25 @@ streamlit run app.py
 
 브라우저에서 자동으로 `http://localhost:8501` 이 열립니다.
 
+## ☁️ Streamlit Community Cloud 배포 (무료)
+
+1. https://share.streamlit.io 접속 → **GitHub 로 로그인**.
+2. **New app** 클릭 → 다음과 같이 설정:
+   - Repository: `bhr7689/youtube-automation`
+   - Branch: 배포할 브랜치 (예: `main` 또는 `claude/youtube-automation-dashboard-tauuZ`)
+   - Main file path: `app.py`
+3. **Advanced settings → Secrets** 에 환경변수 입력 (TOML 형식):
+   ```toml
+   YOUTUBE_API_KEY = "여기에_키"
+   OPENAI_API_KEY  = "여기에_키"   # 선택
+   GEMINI_API_KEY  = "여기에_키"   # 선택
+   ```
+4. **Deploy** 클릭 → 1~3분 후 `https://<앱이름>.streamlit.app` URL 발급.
+
+루트의 `packages.txt` (`ffmpeg`) 가 배포 시 자동으로 시스템 패키지로 설치됩니다 — 탭 3·4 의 영상 합성 / SRT 동기화도 동작합니다.
+
+> **무료 티어 주의**: 컨테이너 메모리가 ~1GB 이므로 1시간 분량 MP3 동시 업로드 같은 무거운 작업은 로컬 실행을 권장합니다. 탭 1·2 (레퍼런스 발굴, AI 스토리텔링) 는 무료 티어로도 충분합니다.
+
 ## 사용법
 
 1. 사이드바에 **상황/감정 기반 키워드**를 줄바꿈으로 입력
