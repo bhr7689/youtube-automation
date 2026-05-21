@@ -3317,6 +3317,278 @@ def _render_sync_result() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Title Lab tab — 수동 붙여넣기 → 공식 추출 → 신규 제목 생성
+# ---------------------------------------------------------------------------
+
+
+def _parse_title_lab_input(text: str) -> pd.DataFrame:
+    """탭 5 입력 파서.
+
+    한 줄당 한 제목. 옵션으로 `제목 | 조회수 | 구독자` 형식을 허용해
+    view_sub_ratio 가 있으면 고성과 단어/서사 lift 분석을 함께 켠다.
+    """
+    rows: list[dict] = []
+    for line in text.splitlines():
+        ln = line.strip()
+        if not ln:
+            continue
+        parts = [p.strip() for p in ln.split("|")]
+        title = parts[0]
+        views: int | None = None
+        subs: int | None = None
+        try:
+            if len(parts) >= 2 and parts[1]:
+                views = int(parts[1].replace(",", "").replace(" ", ""))
+            if len(parts) >= 3 and parts[2]:
+                subs = int(parts[2].replace(",", "").replace(" ", ""))
+        except ValueError:
+            views = subs = None
+        ratio = (views / subs) if (views is not None and subs and subs > 0) else None
+        rows.append({
+            "video_title": title,
+            "view_count": views,
+            "subscriber_count": subs,
+            "view_sub_ratio": ratio,
+        })
+    return pd.DataFrame(rows)
+
+
+def render_title_lab_tab() -> None:
+    st.subheader("🧪 제목 공식 발굴 & 생성")
+    st.caption(
+        "직접 모은 제목들을 붙여넣어 빈출 단어·서사 골격·페르소나를 추출하고, "
+        "그 공식을 그대로 적용해 새 제목을 합성합니다."
+    )
+
+    with st.expander("ℹ️ 입력 형식 도움말", expanded=False):
+        st.markdown(
+            "- **기본**: 제목 한 줄에 하나씩 붙여넣기. 보통 10개 이상이 권장.\n"
+            "- **고성과 표시(선택)**: `제목 | 조회수 | 구독자` 형식을 섞으면 "
+            "view/sub 비율 상위 25% 그룹에서 두드러진 단어와 서사를 'Lift' 로 따로 뽑습니다.\n"
+            "- 예시:\n"
+            "  ```\n"
+            "  비 오는 새벽 카페에서 듣는 lofi\n"
+            "  잠 안 올 때 듣기 좋은 피아노 | 120000 | 1500\n"
+            "  Rainy night jazz for studying | 800000 | 12000\n"
+            "  ```"
+        )
+
+    titles_text = st.text_area(
+        "분석할 제목 목록",
+        height=260,
+        placeholder="제목 1\n제목 2\n제목 3 | 50000 | 800\n...",
+        key="title_lab_input",
+    )
+
+    df = _parse_title_lab_input(titles_text)
+
+    if df.empty:
+        st.info("위 박스에 제목을 붙여넣은 뒤 **🔍 패턴 분석하기** 버튼을 눌러주세요.")
+        return
+
+    # Summary metrics
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("입력 제목 수", len(df))
+    ratio_n = int(df["view_sub_ratio"].notna().sum())
+    m2.metric("성과 지표 포함", f"{ratio_n}개")
+    m3.metric("평균 글자수", f"{df['video_title'].str.len().mean():.1f}자")
+    avg_words = df["video_title"].apply(lambda t: len(tokenize_title(t))).mean()
+    m4.metric("평균 단어수", f"{avg_words:.1f}개")
+
+    # view_sub_ratio 가 일부에만 있으면 lift 분석은 해당 행만 사용.
+    df_for_analysis = df.copy()
+    if df_for_analysis["view_sub_ratio"].isna().all():
+        df_for_analysis = df_for_analysis.drop(columns=["view_sub_ratio"])
+
+    analyze_clicked = st.button(
+        "🔍 패턴 분석하기", type="primary", use_container_width=True
+    )
+
+    if analyze_clicked:
+        with st.spinner("토큰화·서사 태깅·골격 추출 중..."):
+            patterns = analyze_title_patterns(df_for_analysis)
+            narrative = analyze_narrative(df_for_analysis)
+            summary = summarize_story(narrative)
+        st.session_state["title_lab_result"] = {
+            "patterns": patterns,
+            "narrative": narrative,
+            "summary": summary,
+            "lang_hint": detect_dominant_language(df["video_title"].tolist()),
+            "existing_titles": df["video_title"].tolist(),
+        }
+        # 새 분석을 했으니 이전 시드는 초기화 — 분석 후 한 번 더 눌러야 새 시드로 생성.
+        st.session_state.pop("title_lab_seed", None)
+
+    result = st.session_state.get("title_lab_result")
+    if not result:
+        return
+
+    patterns = result["patterns"]
+    narrative = result["narrative"]
+    summary = result["summary"]
+
+    st.divider()
+    st.markdown("### 📊 추출된 제목 공식")
+
+    if summary:
+        st.success(f"**지배 서사 한 줄 요약**: {summary}")
+    else:
+        st.warning(
+            "사전 어휘와 일치하는 단서가 적습니다. "
+            "한국어/영어 제목을 더 추가하면 서사 골격이 잡힙니다."
+        )
+
+    # 카테고리별 1위 (공식의 슬롯값들)
+    cats = narrative.get("categories", {})
+    cat_items = [
+        (cat, items[0][0], items[0][1]) for cat, items in cats.items() if items
+    ]
+    if cat_items:
+        st.markdown("#### 🧩 카테고리별 1위 (공식 슬롯값)")
+        cat_df = pd.DataFrame(cat_items, columns=["카테고리", "대표 단서", "빈도"])
+        st.dataframe(cat_df, use_container_width=True, hide_index=True)
+
+    # 서사 골격 = 공식
+    skeletons = narrative.get("skeletons", [])
+    if skeletons:
+        st.markdown("#### 🦴 자주 등장하는 서사 골격 (= 공식)")
+        skel_df = pd.DataFrame(skeletons, columns=["서사 골격", "빈도"])
+        st.dataframe(skel_df, use_container_width=True, hide_index=True)
+
+    skel_lift = narrative.get("skeleton_lift", [])
+    if skel_lift:
+        st.markdown("#### 🚀 고성과 서사 (Lift ≥ 1.5)")
+        lift_df = pd.DataFrame(
+            skel_lift, columns=["서사 골격", "Lift", "상위 등장", "하위 등장"]
+        )
+        st.dataframe(lift_df, use_container_width=True, hide_index=True)
+
+    personas = narrative.get("personas", [])
+    if personas:
+        st.markdown("#### 🎯 청자 페르소나")
+        st.write(
+            " · ".join(f"**{p}** ({c})" for p, c in personas[:10])
+        )
+
+    cooccur = narrative.get("cooccurrence", [])
+    if cooccur:
+        with st.expander("🔗 카테고리 동시 출현 (어떤 조합이 자주 묶이는가)"):
+            co_df = pd.DataFrame(cooccur, columns=["조합", "빈도"])
+            st.dataframe(co_df, use_container_width=True, hide_index=True)
+
+    # n-gram 빈도
+    if patterns:
+        st.markdown("#### 🔤 빈출 단어 / 구문")
+        ng_tabs = st.tabs(["1-gram", "2-gram", "3-gram"])
+        for tab_, key in zip(ng_tabs, ["unigrams", "bigrams", "trigrams"]):
+            with tab_:
+                data = patterns.get(key, [])
+                if data:
+                    st.dataframe(
+                        pd.DataFrame(data, columns=["토큰", "빈도"]),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                else:
+                    st.caption("데이터가 부족합니다.")
+
+        cl = patterns.get("char_length", {})
+        wc = patterns.get("word_count", {})
+        if cl and wc:
+            st.caption(
+                f"🧮 글자수 평균 **{cl.get('mean', 0)}** "
+                f"(중앙값 {cl.get('median', 0)}, 범위 {cl.get('min', 0)}~{cl.get('max', 0)})  ·  "
+                f"단어수 평균 **{wc.get('mean', 0)}** (중앙값 {wc.get('median', 0)})  ·  "
+                f"이모지 포함 {patterns.get('emoji_share', 0):.0%}  ·  "
+                f"괄호/대괄호 포함 {patterns.get('bracket_share', 0):.0%}"
+            )
+
+    diff = patterns.get("differential", []) if patterns else []
+    if diff:
+        st.markdown("#### 💎 고성과 단어 (조회/구독 상위 25% 그룹)")
+        diff_df = pd.DataFrame(diff, columns=["단어", "Lift", "상위 등장", "하위 등장"])
+        st.dataframe(diff_df, use_container_width=True, hide_index=True)
+
+    # ----- 생성 영역 -----
+    st.divider()
+    st.markdown("### ✨ 공식 기반 새 제목 생성")
+
+    gen_c1, gen_c2, gen_c3 = st.columns([2, 1, 1])
+    with gen_c1:
+        seed_theme = st.text_input(
+            "시드 테마 (선택)",
+            placeholder="예: 비 오는 새벽 / late night drive",
+            key="title_lab_seed_theme",
+        )
+    with gen_c2:
+        n_titles = st.slider("생성 개수", 3, 20, 8, key="title_lab_n")
+    with gen_c3:
+        lang_options = {
+            f"자동 감지 ({result['lang_hint']})": result["lang_hint"],
+            "한국어": "ko",
+            "English": "en",
+        }
+        lang_label = st.selectbox(
+            "언어", list(lang_options.keys()), key="title_lab_lang"
+        )
+        lang = lang_options[lang_label]
+
+    btn_c1, btn_c2 = st.columns([1, 1])
+    if btn_c1.button("🎲 제목 생성 / 다시 생성", use_container_width=True):
+        st.session_state["title_lab_seed"] = random.randint(0, 999_999)
+    if btn_c2.button("🧹 결과 초기화", use_container_width=True):
+        st.session_state.pop("title_lab_seed", None)
+        st.rerun()
+
+    seed_val = st.session_state.get("title_lab_seed")
+    if seed_val is None:
+        st.info("**🎲 제목 생성** 버튼을 누르면 공식에서 새 제목을 합성합니다.")
+        return
+
+    generated = generate_titles(
+        narrative,
+        n=n_titles,
+        seed_theme=(seed_theme or None),
+        random_state=seed_val,
+        lang=lang,
+        existing_titles=result["existing_titles"],
+    )
+
+    if not generated:
+        st.warning(
+            "패턴 시그널이 약해 제목 합성에 실패했습니다. "
+            "장르·시간·활동 등 단서가 들어간 제목을 더 추가해 보세요."
+        )
+        return
+
+    st.caption(f"🌱 seed = `{seed_val}`  ·  같은 입력 + 같은 seed 면 결과가 재현됩니다.")
+
+    for i, item in enumerate(generated, 1):
+        with st.container(border=True):
+            st.markdown(f"**#{i}**")
+            st.code(item["title"], language="text")
+            with st.expander("사용된 공식 / 슬롯값"):
+                st.caption(f"템플릿: `{item['template']}`")
+                if item.get("values"):
+                    st.json(item["values"])
+
+    bundle = "\n".join(f"{i}. {item['title']}" for i, item in enumerate(generated, 1))
+    st.download_button(
+        "📥 전체 제목 .txt 로 다운로드",
+        data=bundle.encode("utf-8"),
+        file_name="title_lab_results.txt",
+        mime="text/plain",
+        use_container_width=True,
+    )
+
+    # 보너스: 태그도 같은 공식에서 뽑아 준다.
+    tags = generate_tags(narrative, [], df=df_for_analysis)
+    if tags:
+        with st.expander("🏷️ 같은 공식으로 만든 추천 해시태그"):
+            st.code(" ".join(f"#{t}" for t in tags), language="text")
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -3330,10 +3602,17 @@ def main() -> None:
 
     st.title("🎵 유튜브 음악 채널 자동화 대시보드")
 
-    tab_discovery, tab_story, tab_compose, tab_sync = st.tabs(
+    (
+        tab_discovery,
+        tab_story,
+        tab_title_lab,
+        tab_compose,
+        tab_sync,
+    ) = st.tabs(
         [
             "🔍 레퍼런스 발굴",
             "✍️ AI 스토리텔링 & 가사 생성",
+            "🧪 제목 공식 Lab",
             "🎬 영상 합성 (인코딩)",
             "🎤 가사 자동 동기화 (SRT)",
         ]
@@ -3342,6 +3621,8 @@ def main() -> None:
         render_discovery_tab()
     with tab_story:
         render_storytelling_tab()
+    with tab_title_lab:
+        render_title_lab_tab()
     with tab_compose:
         render_compose_tab()
     with tab_sync:
