@@ -112,11 +112,13 @@ YouTube Data API v3 무료 할당량: **하루 10,000 units**
 ```bash
 # macOS
 brew install ffmpeg
-# Ubuntu / Debian
+# Ubuntu / Debian (이 프로젝트 서버 환경)
 sudo apt-get install -y ffmpeg
 # Windows (winget)
 winget install --id=Gyan.FFmpeg -e
 ```
+
+> **이 리포지토리의 클라우드 실행 환경에는 ffmpeg 6.1.1 이 이미 설치되어 있습니다.**
 
 `.streamlit/config.toml` 에 `maxUploadSize = 1024` (MB) 가 설정되어 있어 1시간 mp3 여러 개 + 배경 영상 동시 업로드가 가능합니다.
 
