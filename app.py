@@ -2679,6 +2679,401 @@ def _render_compose_result() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Lyric auto-sync — Whisper API 로 가사 타임라인 정렬해 SRT 생성
+# ---------------------------------------------------------------------------
+
+WHISPER_MAX_BYTES = 25 * 1024 * 1024  # OpenAI Whisper API 업로드 한도
+
+
+def extract_audio_track(input_path: str, output_path: str) -> tuple[bool, str]:
+    """영상에서 오디오만 뽑아 MP3 로 저장."""
+    ffmpeg = _find_ffmpeg()
+    if not ffmpeg:
+        return False, "ffmpeg 가 PATH 에 없습니다."
+    cmd = [
+        ffmpeg, "-y", "-hide_banner", "-i", input_path,
+        "-vn", "-acodec", "libmp3lame", "-b:a", "192k", "-ar", "44100",
+        output_path,
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+    except subprocess.TimeoutExpired:
+        return False, "오디오 추출이 15분 안에 끝나지 않았습니다."
+    return proc.returncode == 0, (proc.stderr or "")[-2000:]
+
+
+def compress_audio_for_whisper(input_path: str, output_path: str) -> tuple[bool, str]:
+    """Whisper 25MB 한도에 맞도록 모노 64kbps 22kHz MP3 로 다운샘플."""
+    ffmpeg = _find_ffmpeg()
+    if not ffmpeg:
+        return False, "ffmpeg 가 PATH 에 없습니다."
+    cmd = [
+        ffmpeg, "-y", "-hide_banner", "-i", input_path,
+        "-vn", "-acodec", "libmp3lame", "-b:a", "64k",
+        "-ac", "1", "-ar", "22050",
+        output_path,
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+    except subprocess.TimeoutExpired:
+        return False, "오디오 압축이 15분 안에 끝나지 않았습니다."
+    return proc.returncode == 0, (proc.stderr or "")[-2000:]
+
+
+def whisper_transcribe(
+    audio_path: str, api_key: str, language: str | None = None
+) -> dict:
+    """OpenAI Whisper API 호출. segment + word level 타임스탬프 포함."""
+    try:
+        from openai import OpenAI
+    except ImportError as e:  # pragma: no cover
+        raise RuntimeError(
+            "`openai` 패키지가 필요합니다. `pip install openai>=1.30.0` 후 재시도하세요."
+        ) from e
+
+    client = OpenAI(api_key=api_key)
+    kwargs: dict = {
+        "model": "whisper-1",
+        "response_format": "verbose_json",
+        "timestamp_granularities": ["segment", "word"],
+    }
+    if language:
+        kwargs["language"] = language
+
+    with open(audio_path, "rb") as fp:
+        result = client.audio.transcriptions.create(file=fp, **kwargs)
+
+    if hasattr(result, "model_dump"):
+        return result.model_dump()
+    return dict(result)
+
+
+def whisper_segments_to_srt(segments: list[dict]) -> str:
+    """Whisper segments → SRT 그대로 변환 (가사 미입력 모드)."""
+    out: list[str] = []
+    counter = 1
+    for seg in segments:
+        text = (seg.get("text") or "").strip()
+        if not text:
+            continue
+        start = float(seg.get("start", 0) or 0)
+        end = float(seg.get("end", start) or start)
+        if end <= start:
+            end = start + 0.5
+        out.append(str(counter))
+        out.append(f"{_format_srt_time(start)} --> {_format_srt_time(end)}")
+        out.append(text)
+        out.append("")
+        counter += 1
+    return "\n".join(out).strip() + "\n"
+
+
+def align_lyrics_to_segments(
+    lyrics_lines: list[str], segments: list[dict]
+) -> str:
+    """
+    사용자가 직접 쓴 가사 라인들을 Whisper 가 잡은 구간 타임스탬프에 정렬한다.
+
+    - 라인 수와 구간 수가 같으면 1:1 매핑
+    - 라인이 더 적으면 인접한 구간들을 묶어서 매핑
+    - 라인이 더 많으면 한 구간을 길이로 비례 분할해 여러 라인에 분배
+    """
+    lines = [ln.strip() for ln in lyrics_lines if ln.strip()]
+    if not lines or not segments:
+        return whisper_segments_to_srt(segments)
+
+    L = len(lines)
+    N = len(segments)
+    out: list[str] = []
+    counter = 1
+
+    if L == N:
+        for line, seg in zip(lines, segments):
+            start = float(seg.get("start", 0) or 0)
+            end = float(seg.get("end", start) or start)
+            if end <= start:
+                end = start + 0.5
+            out.append(str(counter))
+            out.append(f"{_format_srt_time(start)} --> {_format_srt_time(end)}")
+            out.append(line)
+            out.append("")
+            counter += 1
+    elif L < N:
+        # 라인 1개당 N/L 개의 구간을 그룹화.
+        step = N / L
+        for i, line in enumerate(lines):
+            s_idx = int(round(i * step))
+            e_idx = int(round((i + 1) * step)) - 1
+            e_idx = min(max(e_idx, s_idx), N - 1)
+            start = float(segments[s_idx].get("start", 0) or 0)
+            end = float(segments[e_idx].get("end", start) or start)
+            if end <= start:
+                end = start + 0.5
+            out.append(str(counter))
+            out.append(f"{_format_srt_time(start)} --> {_format_srt_time(end)}")
+            out.append(line)
+            out.append("")
+            counter += 1
+    else:  # L > N — 한 구간을 여러 라인으로 쪼갬
+        line_cursor = 0
+        for seg_idx, seg in enumerate(segments):
+            seg_start = float(seg.get("start", 0) or 0)
+            seg_end = float(seg.get("end", seg_start) or seg_start)
+            if seg_end <= seg_start:
+                seg_end = seg_start + 0.5
+
+            # 이 구간이 흡수해야 할 라인 개수.
+            target = int(round((seg_idx + 1) * L / N)) - int(round(seg_idx * L / N))
+            target = max(1, target)
+            sub_lines = lines[line_cursor : line_cursor + target]
+            line_cursor += target
+            if not sub_lines:
+                continue
+            sub_dur = (seg_end - seg_start) / len(sub_lines)
+            for j, line in enumerate(sub_lines):
+                s = seg_start + j * sub_dur
+                e = seg_start + (j + 1) * sub_dur
+                out.append(str(counter))
+                out.append(f"{_format_srt_time(s)} --> {_format_srt_time(e)}")
+                out.append(line)
+                out.append("")
+                counter += 1
+        # 만약 남은 라인이 있으면 마지막 구간 뒤에 짧게 이어붙임.
+        if line_cursor < L:
+            tail_start = float(segments[-1].get("end", 0) or 0)
+            for line in lines[line_cursor:]:
+                tail_end = tail_start + 3.0
+                out.append(str(counter))
+                out.append(
+                    f"{_format_srt_time(tail_start)} --> {_format_srt_time(tail_end)}"
+                )
+                out.append(line)
+                out.append("")
+                counter += 1
+                tail_start = tail_end
+
+    return "\n".join(out).strip() + "\n"
+
+
+def render_sync_tab() -> None:
+    st.subheader("🎤 가사 자동 동기화 → SRT (CapCut/Premiere 임포트용)")
+    st.caption(
+        "음악(또는 영상)을 업로드하면 OpenAI Whisper 가 가사를 부르는 정확한 시점을 잡아 "
+        "타임라인이 맞아떨어지는 SRT 자막을 만들어줍니다. 직접 쓴 가사를 정렬할 수도, "
+        "Whisper 의 인식 결과를 그대로 받을 수도 있습니다."
+    )
+
+    ffmpeg = _find_ffmpeg()
+    if not ffmpeg:
+        st.error("⚠️ ffmpeg 가 필요합니다. (오디오 추출/압축에 사용)")
+        return
+
+    default_key = os.getenv("OPENAI_API_KEY", "")
+    api_key = st.text_input(
+        "OpenAI API 키",
+        value=default_key,
+        type="password",
+        key="sync_api_key",
+        help=(
+            "https://platform.openai.com/api-keys 에서 발급. "
+            "whisper-1 모델은 약 $0.006/분 입니다 (5분 곡 ≈ $0.03)."
+        ),
+    )
+
+    audio_file = st.file_uploader(
+        "🎵 음악 또는 영상 파일",
+        type=["mp3", "wav", "m4a", "flac", "ogg", "aac", "mp4", "mov", "webm", "mkv"],
+        key="sync_audio",
+        help="MP4/MOV 영상이면 자동으로 오디오만 추출합니다. (25MB 초과 시 자동 압축)",
+    )
+
+    col1, col2 = st.columns(2)
+    with col1:
+        lang_options = [
+            ("자동 감지", None), ("한국어 (ko)", "ko"), ("English (en)", "en"),
+            ("日本語 (ja)", "ja"), ("中文 (zh)", "zh"),
+        ]
+        lang_pick = st.selectbox(
+            "언어",
+            options=lang_options,
+            format_func=lambda x: x[0],
+            index=1,
+            key="sync_lang",
+            help="명시하면 Whisper 정확도가 올라갑니다. 영문 가사면 'English' 선택.",
+        )
+    with col2:
+        mode = st.radio(
+            "동기화 모드",
+            options=["내 가사를 Whisper 타이밍에 정렬", "Whisper 인식 결과만 사용"],
+            index=0,
+            key="sync_mode",
+            help="가사 미입력 시 자동으로 'Whisper 결과만' 모드가 됩니다.",
+        )
+
+    user_lyrics = st.text_area(
+        "📝 가사 (한 줄 = 한 자막 라인)",
+        value="",
+        height=240,
+        key="sync_lyrics",
+        placeholder=(
+            "예시:\n"
+            "오늘도 비가 내리네\n"
+            "창문 너머 잿빛 하늘\n"
+            "잠시 멈춰 너를 떠올려\n"
+            "..."
+        ),
+        help="비워두면 Whisper 가 들은 그대로 SRT 가 만들어집니다. "
+             "라인 수가 Whisper 구간 수와 달라도 자동으로 그룹화/분할됩니다.",
+    )
+
+    run = st.button(
+        "🚀 동기화 시작",
+        type="primary",
+        use_container_width=True,
+        key="sync_run",
+    )
+
+    if not run:
+        if st.session_state.get("sync_srt"):
+            _render_sync_result()
+        return
+
+    if not audio_file:
+        st.error("음악(또는 영상) 파일을 업로드하세요.")
+        return
+    if not api_key.strip():
+        st.error("OpenAI API 키가 필요합니다. (Whisper 호출용)")
+        return
+
+    workdir = tempfile.mkdtemp(prefix="ytmusic_sync_")
+    try:
+        src_path = os.path.join(workdir, audio_file.name)
+        with open(src_path, "wb") as fp:
+            fp.write(audio_file.getbuffer())
+
+        # 영상이면 오디오 추출.
+        is_video = audio_file.name.lower().endswith(
+            (".mp4", ".mov", ".webm", ".mkv", ".avi")
+        )
+        if is_video:
+            audio_path = os.path.join(workdir, "extracted.mp3")
+            with st.spinner("🎬 영상에서 오디오 추출 중..."):
+                ok, log = extract_audio_track(src_path, audio_path)
+            if not ok:
+                st.error("오디오 추출 실패")
+                with st.expander("ffmpeg 로그", expanded=True):
+                    st.code(log or "(없음)", language=None)
+                return
+        else:
+            audio_path = src_path
+
+        # Whisper 25MB 한도 체크. 넘으면 압축.
+        if os.path.getsize(audio_path) > WHISPER_MAX_BYTES:
+            compressed = os.path.join(workdir, "compressed.mp3")
+            with st.spinner(
+                f"📦 파일이 25MB 를 넘어 mono 64kbps 로 압축 중... "
+                f"({os.path.getsize(audio_path)/1024/1024:.1f}MB)"
+            ):
+                ok, log = compress_audio_for_whisper(audio_path, compressed)
+            if not ok or os.path.getsize(compressed) > WHISPER_MAX_BYTES:
+                st.error(
+                    f"파일이 너무 큽니다 ({os.path.getsize(audio_path)/1024/1024:.1f}MB). "
+                    "25MB 이하로 직접 줄여서 다시 시도해주세요."
+                )
+                return
+            audio_path = compressed
+
+        # Whisper 호출.
+        size_mb = os.path.getsize(audio_path) / 1024 / 1024
+        with st.spinner(
+            f"🎤 Whisper 가 가사 타이밍을 분석 중... "
+            f"(업로드 {size_mb:.1f}MB · 곡 길이의 5~15% 소요)"
+        ):
+            try:
+                result = whisper_transcribe(
+                    audio_path, api_key.strip(), language=lang_pick[1]
+                )
+            except Exception as e:
+                st.error(f"Whisper API 호출 실패: {e}")
+                return
+
+        segments = result.get("segments") or []
+        if not segments:
+            st.warning("Whisper 가 음성 구간을 찾지 못했습니다. (반주만 있는 구간일 수 있음)")
+            return
+
+        if mode.startswith("Whisper 인식 결과만") or not user_lyrics.strip():
+            srt_text = whisper_segments_to_srt(segments)
+            method = f"Whisper 직접 변환 · {len(segments)}구간"
+            line_count = len(segments)
+        else:
+            lyrics_lines = [ln for ln in user_lyrics.splitlines() if ln.strip()]
+            srt_text = align_lyrics_to_segments(lyrics_lines, segments)
+            line_count = len(lyrics_lines)
+            method = (
+                f"가사 정렬 · 입력 {line_count}줄 → Whisper {len(segments)}구간"
+            )
+
+        st.session_state["sync_srt"] = {
+            "content": srt_text,
+            "segments": segments,
+            "method": method,
+            "duration": result.get("duration"),
+            "language_detected": result.get("language"),
+            "line_count": line_count,
+            "audio_filename": audio_file.name,
+        }
+        st.success(f"✅ 동기화 완료 — {method}")
+        _render_sync_result()
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
+def _render_sync_result() -> None:
+    info = st.session_state.get("sync_srt")
+    if not info:
+        return
+
+    c1, c2, c3, c4 = st.columns(4)
+    if info.get("duration"):
+        secs = float(info["duration"])
+        c1.metric("곡 길이", f"{int(secs // 60)}:{int(secs % 60):02d}")
+    c2.metric("Whisper 구간", len(info["segments"]))
+    c3.metric("자막 라인", info.get("line_count", 0))
+    if info.get("language_detected"):
+        c4.metric("감지 언어", info["language_detected"])
+
+    st.download_button(
+        "📥 SRT 다운로드 (CapCut 임포트용)",
+        data=info["content"].encode("utf-8"),
+        file_name=(
+            f"lyrics_synced_"
+            f"{os.path.splitext(info.get('audio_filename', 'song'))[0]}_"
+            f"{datetime.now():%Y%m%d_%H%M%S}.srt"
+        ),
+        mime="application/x-subrip",
+        type="primary",
+        use_container_width=True,
+        key="sync_download",
+    )
+
+    with st.expander("📄 생성된 SRT 미리보기", expanded=True):
+        preview = info["content"]
+        if len(preview) > 8000:
+            preview = preview[:8000] + "\n\n...(이하 생략, 전체는 다운로드로 확인)"
+        st.code(preview, language=None)
+
+    st.caption(
+        "💡 **CapCut 임포트 방법**: 캡컷에서 '자막' → '자막 가져오기 (SRT)' → 다운로드한 .srt 선택. "
+        "타임라인에 자동 배치되며, 폰트/색/위치는 그대로 편집할 수 있습니다."
+    )
+
+    if st.button("🗑️ 결과 비우기", key="sync_cleanup"):
+        st.session_state.pop("sync_srt", None)
+        st.rerun()
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -2692,11 +3087,12 @@ def main() -> None:
 
     st.title("🎵 유튜브 음악 채널 자동화 대시보드")
 
-    tab_discovery, tab_story, tab_compose = st.tabs(
+    tab_discovery, tab_story, tab_compose, tab_sync = st.tabs(
         [
             "🔍 레퍼런스 발굴",
             "✍️ AI 스토리텔링 & 가사 생성",
             "🎬 영상 합성 (인코딩)",
+            "🎤 가사 자동 동기화 (SRT)",
         ]
     )
     with tab_discovery:
@@ -2705,6 +3101,8 @@ def main() -> None:
         render_storytelling_tab()
     with tab_compose:
         render_compose_tab()
+    with tab_sync:
+        render_sync_tab()
 
 
 if __name__ == "__main__":

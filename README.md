@@ -152,5 +152,21 @@ winget install --id=Gyan.FFmpeg -e
 - [x] Phase 1.7: 썸네일 색감/구도/인물 분석 + T2I 프롬프트
 - [x] Phase 1.8: AI 스토리텔링 — SEO · 오프닝 대본 · 구조화된 가사
 - [x] Phase 1.9: 영상 합성 — 다중 트랙 concat + 가사 SRT (선택 burn-in) + MP4 인코딩
+- [x] Phase 2.0: 가사 자동 동기화 — Whisper API 기반 SRT 생성 (CapCut/Premiere 임포트용)
 - [ ] Phase 2: 자동 발굴 스케줄러 (cron + Slack/Sheets 동기화)
 - [ ] Phase 3: 오프닝 TTS 자동 더빙 + 영상 자동 합성 파이프라인
+
+### 🎤 가사 자동 동기화 (탭 4 — SRT 생성)
+직접 만든 곡의 가사를 **실제로 불리는 시점에 정확히** 맞춘 SRT 자막을 만들어 CapCut/Premiere/Davinci 에 그대로 임포트하기 위한 도구.
+
+- **입력**: MP3/WAV/FLAC/M4A 등 오디오 또는 MP4/MOV 영상 (영상이면 자동으로 오디오 추출)
+- **OpenAI Whisper API** (`whisper-1`, segment + word level timestamps) 호출 — 약 $0.006/분
+- **두 가지 모드**
+  - **Whisper 인식 결과 그대로** — 가사 미입력 시 자동. 텍스트는 Whisper 가 들은 그대로
+  - **내 가사를 Whisper 타이밍에 정렬** — 직접 쓴 가사 텍스트를 Whisper 가 잡은 구간에 매핑. 라인 수와 구간 수가 달라도:
+    - L = N: 1:1 매핑
+    - L < N: 인접 구간을 묶어 1라인에 흡수
+    - L > N: 한 구간을 길이로 비례 분할해 여러 라인에 분배
+- **25MB 자동 압축** — Whisper API 업로드 한도를 넘으면 mono 64kbps 22kHz MP3 로 다운샘플 후 재시도
+- **언어 명시 옵션** — ko/en/ja/zh 또는 자동 감지. 명시하면 인식 정확도 ↑
+- **다운로드 + 인라인 미리보기** — `.srt` 파일은 CapCut "자막 → 자막 가져오기 (SRT)" 로 즉시 임포트 가능
