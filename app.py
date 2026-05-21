@@ -2855,6 +2855,189 @@ def align_lyrics_to_segments(
     return "\n".join(out).strip() + "\n"
 
 
+def _parse_srt_time(ts: str) -> float:
+    """SRT 타임스탬프 → 초. '00:01:23,456' → 83.456"""
+    h, m, rest = ts.split(":")
+    s, ms = rest.split(",")
+    return int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000
+
+
+def _parse_srt_starts(srt_text: str) -> list[float]:
+    """SRT 텍스트에서 자막 시작 시각 목록 추출."""
+    return [
+        _parse_srt_time(m.group(1))
+        for m in re.finditer(r"(\d+:\d+:\d+,\d+)\s+-->", srt_text)
+    ]
+
+
+def _word_level_align(lyrics_lines: list[str], words: list[dict]) -> str:
+    """
+    Whisper word-level 타임스탬프를 이용해 각 가사 라인의 SRT 시각을 결정한다.
+    단어 목록을 라인 수로 균등 분할해 첫 단어의 start ~ 마지막 단어의 end 를 사용.
+    """
+    lines = [ln.strip() for ln in lyrics_lines if ln.strip()]
+    if not lines or not words:
+        return ""
+    L, W = len(lines), len(words)
+    out: list[str] = []
+    for i, line in enumerate(lines):
+        w0 = int(round(i * W / L))
+        w1 = min(int(round((i + 1) * W / L)) - 1, W - 1)
+        w1 = max(w1, w0)
+        start = float(words[w0].get("start", 0) or 0)
+        end = float(words[w1].get("end", start) or start)
+        if end <= start:
+            end = start + 0.3
+        out.append(str(i + 1))
+        out.append(f"{_format_srt_time(start)} --> {_format_srt_time(end)}")
+        out.append(line)
+        out.append("")
+    return "\n".join(out).strip() + "\n"
+
+
+def _chorus_correct_srt(srt_text: str) -> str:
+    """
+    반복 가사 라인 보정: 같은 텍스트의 재등장 구간이 첫 등장 duration 의 30% 미만이면
+    첫 등장의 duration 을 복사해 자연스럽게 이어붙인다.
+    """
+    blocks: list[dict] = []
+    for raw in re.split(r"\n\n+", srt_text.strip()):
+        sub = raw.strip().splitlines()
+        if len(sub) < 3:
+            continue
+        try:
+            int(sub[0].strip())
+        except ValueError:
+            continue
+        m = re.match(r"(\d+:\d+:\d+,\d+)\s+-->\s+(\d+:\d+:\d+,\d+)", sub[1].strip())
+        if not m:
+            continue
+        s_str, e_str = m.group(1), m.group(2)
+        blocks.append({
+            "s_str": s_str, "e_str": e_str,
+            "start": _parse_srt_time(s_str),
+            "end": _parse_srt_time(e_str),
+            "text": "\n".join(sub[2:]).strip(),
+        })
+    if not blocks:
+        return srt_text
+
+    first: dict[str, dict] = {}
+    for blk in blocks:
+        key = re.sub(r"\s+", " ", blk["text"].lower()).strip()
+        if key not in first:
+            first[key] = blk
+
+    corrected: list[dict] = []
+    prev_end = 0.0
+    for blk in blocks:
+        key = re.sub(r"\s+", " ", blk["text"].lower()).strip()
+        ref = first[key]
+        ref_dur = ref["end"] - ref["start"]
+        cur_dur = blk["end"] - blk["start"]
+        if ref is not blk and ref_dur > 0 and cur_dur < ref_dur * 0.3:
+            new_start = max(prev_end + 0.05, blk["start"])
+            new_end = new_start + ref_dur
+            blk = dict(blk)
+            blk["start"] = new_start
+            blk["end"] = new_end
+            blk["s_str"] = _format_srt_time(new_start)
+            blk["e_str"] = _format_srt_time(new_end)
+        prev_end = blk["end"]
+        corrected.append(blk)
+
+    out = []
+    for i, blk in enumerate(corrected):
+        out.append(str(i + 1))
+        out.append(f"{blk['s_str']} --> {blk['e_str']}")
+        out.append(blk["text"])
+        out.append("")
+    return "\n".join(out).strip() + "\n"
+
+
+def extract_waveform_data(
+    audio_path: str, n_points: int = 900
+) -> tuple["np.ndarray | None", float]:
+    """ffmpeg 으로 단채널 PCM WAV 추출 후 진폭 envelope 반환. (envelope, duration_sec)"""
+    import wave as _wave
+    ffmpeg = _find_ffmpeg()
+    if not ffmpeg:
+        return None, 0.0
+    wav_path = audio_path + "_wf_tmp.wav"
+    try:
+        cmd = [
+            ffmpeg, "-y", "-hide_banner", "-i", audio_path,
+            "-vn", "-acodec", "pcm_s16le", "-ac", "1", "-ar", "11025",
+            wav_path,
+        ]
+        proc = subprocess.run(cmd, capture_output=True, timeout=120)
+        if proc.returncode != 0 or not os.path.exists(wav_path):
+            return None, 0.0
+        with _wave.open(wav_path, "rb") as wf:
+            n_frames = wf.getnframes()
+            sr = wf.getframerate()
+            duration = n_frames / max(sr, 1)
+            raw = wf.readframes(n_frames)
+        samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+        if len(samples) == 0:
+            return None, duration
+        chunk = max(1, len(samples) // n_points)
+        envelope = np.array(
+            [np.max(np.abs(samples[i * chunk: (i + 1) * chunk]))
+             for i in range(min(n_points, len(samples) // chunk))],
+            dtype=np.float32,
+        )
+        return envelope, duration
+    except Exception:
+        return None, 0.0
+    finally:
+        try:
+            if os.path.exists(wav_path):
+                os.unlink(wav_path)
+        except OSError:
+            pass
+
+
+def _render_waveform(waveform: dict) -> None:
+    """파형 + SRT 자막 시작 마커 시각화 (matplotlib)."""
+    raw_env = waveform.get("envelope")
+    duration = float(waveform.get("duration", 0))
+    srt_starts: list[float] = waveform.get("srt_starts", [])
+
+    if raw_env is None or duration <= 0:
+        st.info("파형 데이터를 사용할 수 없습니다.")
+        return
+
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        st.info("파형 시각화: `pip install matplotlib` 후 재시도하세요.")
+        return
+
+    envelope = np.array(raw_env, dtype=np.float32)
+    times = np.linspace(0, duration, len(envelope))
+
+    fig, ax = plt.subplots(figsize=(12, 2.5))
+    fig.patch.set_facecolor("#0e1117")
+    ax.set_facecolor("#161b22")
+    ax.fill_between(times, envelope, alpha=0.75, color="#4CAF50")
+    ax.plot(times, envelope, lw=0.5, color="#81C784", alpha=0.85)
+    for t in srt_starts[:60]:
+        if 0 <= t <= duration:
+            ax.axvline(x=t, color="#FF7043", alpha=0.55, lw=0.9)
+    ax.set_xlim(0, duration)
+    ax.set_ylim(0, 1.05)
+    ax.set_xlabel("시간 (초)", color="#aaa", fontsize=8)
+    ax.tick_params(colors="#aaa", labelsize=7)
+    for sp in ax.spines.values():
+        sp.set_edgecolor("#333")
+    ax.set_title("🎵 파형  ·  🔴 자막 시작 지점", color="#ddd", fontsize=9, pad=6)
+    st.pyplot(fig, use_container_width=True)
+    plt.close(fig)
+
+
 def render_sync_tab() -> None:
     st.subheader("🎤 가사 자동 동기화 → SRT (CapCut/Premiere 임포트용)")
     st.caption(
@@ -2925,6 +3108,31 @@ def render_sync_tab() -> None:
         help="비워두면 Whisper 가 들은 그대로 SRT 가 만들어집니다. "
              "라인 수가 Whisper 구간 수와 달라도 자동으로 그룹화/분할됩니다.",
     )
+
+    with st.expander("⚙️ 고급 정렬 옵션", expanded=False):
+        align_precision = st.radio(
+            "정렬 정밀도",
+            options=[
+                "Segment 단위 (기본)",
+                "Word 단위 (정밀) — 단어별 타임스탬프 사용",
+            ],
+            index=0,
+            key="sync_precision",
+            help=(
+                "Word 단위: Whisper 가 각 단어의 발음 시작·끝을 개별로 잡아 "
+                "라인을 Segment 단위보다 훨씬 정밀하게 맞춥니다. "
+                "가사를 직접 입력한 경우에만 적용됩니다."
+            ),
+        )
+        chorus_correct = st.checkbox(
+            "후렴구 자동 보정",
+            value=True,
+            key="sync_chorus",
+            help=(
+                "반복되는 가사 라인(후렴구)이 재등장할 때 Whisper 가 잡은 구간 길이가 "
+                "첫 번째 등장보다 너무 짧으면(30% 미만) 첫 번째 duration 을 복사해 보정합니다."
+            ),
+        )
 
     run = st.button(
         "🚀 동기화 시작",
@@ -3002,17 +3210,42 @@ def render_sync_tab() -> None:
             st.warning("Whisper 가 음성 구간을 찾지 못했습니다. (반주만 있는 구간일 수 있음)")
             return
 
+        words: list[dict] = result.get("words") or []
+        use_word_level = (
+            align_precision.startswith("Word")
+            and bool(words)
+            and user_lyrics.strip()
+            and not mode.startswith("Whisper 인식 결과만")
+        )
+
         if mode.startswith("Whisper 인식 결과만") or not user_lyrics.strip():
             srt_text = whisper_segments_to_srt(segments)
             method = f"Whisper 직접 변환 · {len(segments)}구간"
             line_count = len(segments)
+        elif use_word_level:
+            lyrics_lines = [ln for ln in user_lyrics.splitlines() if ln.strip()]
+            srt_text = _word_level_align(lyrics_lines, words)
+            line_count = len(lyrics_lines)
+            method = f"Word 단위 정밀 정렬 · {line_count}줄 → {len(words)}단어"
         else:
             lyrics_lines = [ln for ln in user_lyrics.splitlines() if ln.strip()]
             srt_text = align_lyrics_to_segments(lyrics_lines, segments)
             line_count = len(lyrics_lines)
-            method = (
-                f"가사 정렬 · 입력 {line_count}줄 → Whisper {len(segments)}구간"
-            )
+            method = f"가사 정렬 · 입력 {line_count}줄 → Whisper {len(segments)}구간"
+
+        # 후렴구 보정 (가사 입력 모드에서만)
+        if chorus_correct and user_lyrics.strip() and not mode.startswith("Whisper 인식 결과만"):
+            srt_text = _chorus_correct_srt(srt_text)
+            method += " + 후렴구 보정"
+
+        # 파형 추출 (workdir 정리 전)
+        with st.spinner("🎵 파형 추출 중... (시각화용)"):
+            envelope, wav_dur = extract_waveform_data(audio_path)
+        waveform = {
+            "envelope": envelope.tolist() if envelope is not None else None,
+            "duration": wav_dur or float(result.get("duration") or 0),
+            "srt_starts": _parse_srt_starts(srt_text),
+        }
 
         st.session_state["sync_srt"] = {
             "content": srt_text,
@@ -3022,6 +3255,7 @@ def render_sync_tab() -> None:
             "language_detected": result.get("language"),
             "line_count": line_count,
             "audio_filename": audio_file.name,
+            "waveform": waveform,
         }
         st.success(f"✅ 동기화 완료 — {method}")
         _render_sync_result()
@@ -3056,6 +3290,15 @@ def _render_sync_result() -> None:
         use_container_width=True,
         key="sync_download",
     )
+
+    # 파형 시각화
+    waveform = info.get("waveform")
+    if waveform and waveform.get("envelope"):
+        with st.expander("📊 파형 + 자막 시작 마커", expanded=True):
+            st.caption(
+                "🟢 파형 · 🔴 자막 시작 지점 — 마커와 음악 피크가 잘 맞는지 확인하세요."
+            )
+            _render_waveform(waveform)
 
     with st.expander("📄 생성된 SRT 미리보기", expanded=True):
         preview = info["content"]
