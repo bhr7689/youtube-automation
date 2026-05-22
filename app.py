@@ -15,7 +15,9 @@ import random
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
+import uuid
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -2229,6 +2231,265 @@ def _find_ffmpeg() -> str | None:
     return shutil.which("ffmpeg")
 
 
+# ---------------------------------------------------------------------------
+# Background job runner — Streamlit 스크립트와 무관하게 ffmpeg 를 백그라운드로 실행.
+# 잡 메타는 .streamlit/jobs/*.json 으로 영구화돼 브라우저를 닫아도 살아 남는다.
+# ---------------------------------------------------------------------------
+
+JOBS_DIR = os.path.join(".streamlit", "jobs")
+
+
+def _ensure_jobs_dir() -> None:
+    os.makedirs(JOBS_DIR, exist_ok=True)
+
+
+def _job_meta_path(job_id: str) -> str:
+    return os.path.join(JOBS_DIR, f"{job_id}.json")
+
+
+def _job_log_path(job_id: str) -> str:
+    return os.path.join(JOBS_DIR, f"{job_id}.log")
+
+
+def _job_progress_path(job_id: str) -> str:
+    return os.path.join(JOBS_DIR, f"{job_id}.progress")
+
+
+def _job_workdir(job_id: str) -> str:
+    return os.path.join(JOBS_DIR, f"{job_id}_work")
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            STILL_ACTIVE = 259
+            handle = ctypes.windll.kernel32.OpenProcess(
+                PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+            )
+            if not handle:
+                return False
+            exit_code = ctypes.c_ulong()
+            ok = ctypes.windll.kernel32.GetExitCodeProcess(
+                handle, ctypes.byref(exit_code)
+            )
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return bool(ok) and exit_code.value == STILL_ACTIVE
+        except Exception:
+            return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
+
+
+def _terminate_pid(pid: int) -> None:
+    if pid <= 0:
+        return
+    try:
+        if sys.platform == "win32":
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
+                capture_output=True, timeout=10,
+            )
+        else:
+            os.kill(pid, 15)  # SIGTERM
+    except Exception:
+        pass
+
+
+def submit_ffmpeg_job(
+    cmd: list[str],
+    *,
+    kind: str,
+    title: str,
+    output_path: str,
+    workdir: str,
+    extra: dict | None = None,
+) -> str:
+    """ffmpeg 명령을 detached 백그라운드 프로세스로 실행하고 job_id 를 반환.
+
+    cmd 에 -progress 옵션이 자동으로 붙어 진행률을 progress 파일로 저장한다.
+    """
+    _ensure_jobs_dir()
+    job_id = uuid.uuid4().hex[:8]
+    log_path = _job_log_path(job_id)
+    progress_path = _job_progress_path(job_id)
+
+    # ffmpeg 진행률 파이프를 파일로 — Streamlit 이 파싱해서 % 표시.
+    final_cmd = list(cmd)
+    # 첫 인자가 ffmpeg 면 그 뒤에 -progress 끼워넣기 (없으면 그냥 cmd 그대로).
+    if final_cmd and os.path.basename(final_cmd[0]).lower().startswith("ffmpeg"):
+        # -progress 와 -nostats 를 -y 다음에 삽입.
+        insert_at = 1
+        if len(final_cmd) > 1 and final_cmd[1] == "-y":
+            insert_at = 2
+        final_cmd[insert_at:insert_at] = ["-progress", progress_path, "-nostats"]
+
+    log_f = open(log_path, "w", encoding="utf-8", buffering=1)
+    try:
+        creationflags = 0
+        start_new_session = False
+        if sys.platform == "win32":
+            creationflags = (
+                subprocess.CREATE_NEW_PROCESS_GROUP
+                | getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+            )
+        else:
+            start_new_session = True
+        proc = subprocess.Popen(
+            final_cmd,
+            stdout=log_f,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            creationflags=creationflags,
+            start_new_session=start_new_session,
+            close_fds=True,
+        )
+    except Exception as e:
+        log_f.close()
+        raise RuntimeError(f"백그라운드 잡 실행 실패: {e}") from e
+
+    meta = {
+        "id": job_id,
+        "kind": kind,
+        "title": title,
+        "pid": proc.pid,
+        "cmd": final_cmd,
+        "log_path": log_path,
+        "progress_path": progress_path,
+        "output_path": output_path,
+        "workdir": workdir,
+        "started_at": datetime.now().isoformat(),
+        "status": "running",
+        "extra": extra or {},
+    }
+    with open(_job_meta_path(job_id), "w", encoding="utf-8") as fp:
+        json.dump(meta, fp, ensure_ascii=False, indent=2)
+    return job_id
+
+
+def list_jobs() -> list[dict]:
+    if not os.path.isdir(JOBS_DIR):
+        return []
+    jobs = []
+    for f in os.listdir(JOBS_DIR):
+        if not f.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(JOBS_DIR, f), encoding="utf-8") as fp:
+                jobs.append(json.load(fp))
+        except Exception:
+            continue
+    return sorted(jobs, key=lambda j: j.get("started_at", ""), reverse=True)
+
+
+def refresh_job_status(job: dict) -> dict:
+    """PID 와 출력 파일을 보고 running/done/failed 상태를 갱신·저장."""
+    status = job.get("status", "running")
+    if status in ("done", "failed", "cancelled"):
+        return job
+    pid = int(job.get("pid", 0))
+    alive = _pid_alive(pid)
+    if alive:
+        return job
+    output_path = job.get("output_path", "")
+    job["finished_at"] = datetime.now().isoformat()
+    if output_path and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+        job["status"] = "done"
+    else:
+        job["status"] = "failed"
+    try:
+        with open(_job_meta_path(job["id"]), "w", encoding="utf-8") as fp:
+            json.dump(job, fp, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+    return job
+
+
+def parse_job_progress(progress_path: str) -> dict | None:
+    """ffmpeg -progress 출력에서 현재 시간을 파싱.
+
+    파일 형식 예:
+        out_time_us=12345678
+        out_time=00:00:12.345678
+        progress=continue
+    """
+    if not os.path.exists(progress_path):
+        return None
+    try:
+        with open(progress_path, "rb") as fp:
+            fp.seek(0, 2)
+            size = fp.tell()
+            fp.seek(max(0, size - 4096))
+            tail = fp.read().decode("utf-8", errors="replace")
+    except Exception:
+        return None
+    info: dict = {}
+    for line in tail.splitlines():
+        if "=" not in line:
+            continue
+        k, _, v = line.partition("=")
+        info[k.strip()] = v.strip()
+    if "out_time" in info:
+        # H:MM:SS.micro → seconds
+        try:
+            t = info["out_time"]
+            h, m, s = t.split(":")
+            info["current_seconds"] = int(h) * 3600 + int(m) * 60 + float(s)
+        except (ValueError, AttributeError):
+            pass
+    return info or None
+
+
+def cancel_job(job_id: str) -> None:
+    job = None
+    try:
+        with open(_job_meta_path(job_id), encoding="utf-8") as fp:
+            job = json.load(fp)
+    except Exception:
+        return
+    if not job:
+        return
+    _terminate_pid(int(job.get("pid", 0)))
+    job["status"] = "cancelled"
+    job["finished_at"] = datetime.now().isoformat()
+    try:
+        with open(_job_meta_path(job_id), "w", encoding="utf-8") as fp:
+            json.dump(job, fp, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def delete_job(job_id: str, *, remove_files: bool = True) -> None:
+    job = None
+    try:
+        with open(_job_meta_path(job_id), encoding="utf-8") as fp:
+            job = json.load(fp)
+    except Exception:
+        pass
+    if job and job.get("status") == "running":
+        _terminate_pid(int(job.get("pid", 0)))
+    for p in [
+        _job_meta_path(job_id),
+        _job_log_path(job_id),
+        _job_progress_path(job_id),
+    ]:
+        try:
+            if os.path.exists(p):
+                os.remove(p)
+        except OSError:
+            pass
+    if remove_files and job:
+        workdir = job.get("workdir", "")
+        if workdir and os.path.isdir(workdir):
+            shutil.rmtree(workdir, ignore_errors=True)
+
+
 def _ffprobe_duration(path: str) -> float | None:
     """초 단위 길이. ffprobe 없으면 None 반환."""
     ffprobe = shutil.which("ffprobe")
@@ -2346,44 +2607,56 @@ def generate_srt(tracks: list[dict]) -> str:
     return "\n".join(out).strip() + "\n"
 
 
-def build_slideshow_from_images(
+SPEED_PRESETS: dict[str, dict] = {
+    "fast": {
+        "label": "⚡ 빠른 (8h 영상 ~5분)",
+        "preset": "ultrafast",
+        "fps_video": 24,
+        "fps_static": 1,
+        "crf_offset": 0,
+    },
+    "balanced": {
+        "label": "⚖️ 균형 (8h 영상 ~30분)",
+        "preset": "veryfast",
+        "fps_video": 24,
+        "fps_static": 6,
+        "crf_offset": 0,
+    },
+    "quality": {
+        "label": "💎 고화질 (8h 영상 ~수시간)",
+        "preset": "medium",
+        "fps_video": 24,
+        "fps_static": 24,
+        "crf_offset": 0,
+    },
+}
+
+
+def _build_slideshow_cmd(
     image_paths: list[str],
     output_path: str,
+    list_path: str,
     *,
-    seconds_per_image: float = 5.0,
-    resolution: str = "1920x1080",
-    fps: int = 30,
-) -> tuple[bool, str]:
-    """여러 이미지를 concat demuxer 로 묶어 슬라이드쇼 영상을 만든다.
-
-    각 이미지는 seconds_per_image 동안 표시되며, 결과는 encode_music_video 의
-    visual_path 로 그대로 쓸 수 있는 mp4. 오디오보다 짧으면 인코딩 단계의
-    -stream_loop -1 로 자동 반복.
-    """
-    ffmpeg = _find_ffmpeg()
-    if not ffmpeg:
-        return False, "ffmpeg 가 PATH 에 없습니다."
-    if not image_paths:
-        return False, "슬라이드쇼에 사용할 이미지가 없습니다."
-
+    seconds_per_image: float,
+    resolution: str,
+    fps: int,
+    preset: str,
+) -> tuple[list[str], str]:
+    """슬라이드쇼 ffmpeg 명령 + concat list 파일 작성. (cmd, list_path) 반환."""
+    ffmpeg = _find_ffmpeg() or "ffmpeg"
     try:
         rw, rh = resolution.lower().split("x")
         rw, rh = int(rw), int(rh)
-    except ValueError:
-        return False, f"해상도 형식 오류: {resolution!r}"
-
-    workdir = os.path.dirname(output_path) or "."
-    list_path = os.path.join(workdir, "slideshow_list.txt")
+    except ValueError as e:
+        raise ValueError(f"해상도 형식 오류: {resolution!r}") from e
 
     def _quote(p: str) -> str:
-        # ffmpeg concat demuxer 는 forward slash 안전. 작은따옴표는 닫고-이스케이프-다시열기.
         return p.replace("\\", "/").replace("'", "'\\''")
 
     with open(list_path, "w", encoding="utf-8") as fp:
         for p in image_paths:
             fp.write(f"file '{_quote(p)}'\n")
             fp.write(f"duration {seconds_per_image}\n")
-        # concat demuxer 의 마지막 항목 duration 무시 버그 회피용 — 마지막 파일을 한 번 더.
         fp.write(f"file '{_quote(image_paths[-1])}'\n")
 
     vf = (
@@ -2394,12 +2667,41 @@ def build_slideshow_from_images(
         ffmpeg, "-y", "-hide_banner",
         "-f", "concat", "-safe", "0", "-i", list_path,
         "-vf", vf,
-        "-c:v", "libx264", "-preset", "medium", "-crf", "22",
+        "-c:v", "libx264", "-preset", preset, "-crf", "22",
         "-r", str(fps),
         "-pix_fmt", "yuv420p",
         "-movflags", "+faststart",
         output_path,
     ]
+    return cmd, list_path
+
+
+def build_slideshow_from_images(
+    image_paths: list[str],
+    output_path: str,
+    *,
+    seconds_per_image: float = 5.0,
+    resolution: str = "1920x1080",
+    fps: int = 30,
+    preset: str = "medium",
+) -> tuple[bool, str]:
+    """동기 실행 (백그라운드 잡에서는 _build_slideshow_cmd 만 따로 호출)."""
+    ffmpeg = _find_ffmpeg()
+    if not ffmpeg:
+        return False, "ffmpeg 가 PATH 에 없습니다."
+    if not image_paths:
+        return False, "슬라이드쇼에 사용할 이미지가 없습니다."
+
+    workdir = os.path.dirname(output_path) or "."
+    list_path = os.path.join(workdir, "slideshow_list.txt")
+    try:
+        cmd, _ = _build_slideshow_cmd(
+            image_paths, output_path, list_path,
+            seconds_per_image=seconds_per_image,
+            resolution=resolution, fps=fps, preset=preset,
+        )
+    except ValueError as e:
+        return False, str(e)
     try:
         proc = subprocess.run(
             cmd, capture_output=True, text=True,
@@ -2412,6 +2714,89 @@ def build_slideshow_from_images(
     except Exception as e:
         return False, f"슬라이드쇼 생성 중 예외: {type(e).__name__}: {e}"
     return proc.returncode == 0, _format_ffmpeg_log(cmd, proc)
+
+
+def _build_encode_cmd(
+    audio_path: str,
+    visual_path: str,
+    output_path: str,
+    *,
+    is_image: bool,
+    resolution: str,
+    audio_bitrate: str,
+    crf: int,
+    fade_seconds: float,
+    audio_duration: float | None,
+    subtitles_path: str | None,
+    audio_loop_count: int,
+    preset: str,
+    framerate: int,
+) -> list[str]:
+    """encode_music_video 용 ffmpeg 인자 리스트만 생성.
+
+    백그라운드 잡 제출 시에도 동일 명령을 재사용한다.
+    """
+    ffmpeg = _find_ffmpeg() or "ffmpeg"
+    try:
+        rw, rh = resolution.lower().split("x")
+        rw, rh = int(rw), int(rh)
+    except ValueError as e:
+        raise ValueError(f"해상도 형식 오류: {resolution!r} (예: 1920x1080)") from e
+
+    cmd: list[str] = [ffmpeg, "-y", "-hide_banner"]
+    if is_image:
+        cmd += ["-loop", "1"]
+    else:
+        cmd += ["-stream_loop", "-1"]
+    cmd += ["-i", visual_path]
+
+    if audio_loop_count > 1:
+        cmd += ["-stream_loop", str(audio_loop_count - 1)]
+    cmd += ["-i", audio_path]
+
+    vf_parts = [
+        f"scale={rw}:{rh}:force_original_aspect_ratio=decrease",
+        f"pad={rw}:{rh}:(ow-iw)/2:(oh-ih)/2:color=black",
+        "setsar=1",
+    ]
+    if subtitles_path:
+        esc = (
+            subtitles_path
+            .replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
+        )
+        vf_parts.append(
+            f"subtitles='{esc}':force_style='FontSize=24,PrimaryColour=&H00FFFFFF&,"
+            "OutlineColour=&H80000000&,BorderStyle=3,Outline=2,Shadow=0,MarginV=60'"
+        )
+    vf = ",".join(vf_parts)
+
+    cmd += [
+        "-map", "0:v:0",
+        "-map", "1:a:0",
+        "-c:v", "libx264",
+        "-preset", preset,
+        "-crf", str(crf),
+        "-pix_fmt", "yuv420p",
+        "-vf", vf,
+        "-r", str(framerate),
+        "-c:a", "aac",
+        "-b:a", audio_bitrate,
+        "-movflags", "+faststart",
+        "-shortest",
+    ]
+    if is_image:
+        # 정지 이미지에서 키프레임 간격을 늘려 파일 크기를 줄인다.
+        cmd += ["-tune", "stillimage", "-g", str(max(framerate * 10, 50))]
+
+    if fade_seconds > 0 and audio_duration and audio_duration > fade_seconds * 2:
+        fade_out_start = max(audio_duration - fade_seconds, 0)
+        cmd += [
+            "-af",
+            f"afade=t=in:st=0:d={fade_seconds},"
+            f"afade=t=out:st={fade_out_start}:d={fade_seconds}",
+        ]
+    cmd.append(output_path)
+    return cmd
 
 
 def encode_music_video(
@@ -2427,83 +2812,31 @@ def encode_music_video(
     audio_duration: float | None = None,
     subtitles_path: str | None = None,
     audio_loop_count: int = 1,
+    preset: str = "medium",
+    framerate: int = 24,
 ) -> tuple[bool, str]:
-    """ffmpeg 로 합성. (성공여부, 로그 꼬리 ~2KB) 반환."""
+    """ffmpeg 동기 실행. (성공여부, 로그) 반환."""
     ffmpeg = _find_ffmpeg()
     if not ffmpeg:
         return False, "ffmpeg 가 PATH 에 없습니다. 시스템에 ffmpeg 를 설치해주세요."
-
-    cmd: list[str] = [ffmpeg, "-y", "-hide_banner"]
-
-    # 입력 0: 비주얼 (이미지면 loop, 영상이면 stream_loop)
-    if is_image:
-        cmd += ["-loop", "1"]
-    else:
-        cmd += ["-stream_loop", "-1"]
-    cmd += ["-i", visual_path]
-
-    # 입력 1: 오디오 — audio_loop_count > 1 이면 stream_loop 로 반복.
-    if audio_loop_count > 1:
-        cmd += ["-stream_loop", str(audio_loop_count - 1)]
-    cmd += ["-i", audio_path]
-
-    # 해상도 맞춤(레터박스), yuv420p 로 호환성 확보.
-    # pad 필터는 W:H:X:Y 콜론 구분만 허용 — "WxH" 형식은 최신 ffmpeg 에서 거부됨.
     try:
-        rw, rh = resolution.lower().split("x")
-        rw, rh = int(rw), int(rh)
-    except ValueError:
-        return False, f"해상도 형식 오류: {resolution!r} (예: 1920x1080)"
-    vf_parts = [
-        f"scale={rw}:{rh}:force_original_aspect_ratio=decrease",
-        f"pad={rw}:{rh}:(ow-iw)/2:(oh-ih)/2:color=black",
-        "setsar=1",
-    ]
-    if subtitles_path:
-        # 경로의 콜론/역슬래시 등 ffmpeg 필터 그래프 특수문자 이스케이프.
-        esc = (
-            subtitles_path
-            .replace("\\", "\\\\")
-            .replace(":", "\\:")
-            .replace("'", "\\'")
+        cmd = _build_encode_cmd(
+            audio_path, visual_path, output_path,
+            is_image=is_image, resolution=resolution,
+            audio_bitrate=audio_bitrate, crf=crf,
+            fade_seconds=fade_seconds, audio_duration=audio_duration,
+            subtitles_path=subtitles_path, audio_loop_count=audio_loop_count,
+            preset=preset, framerate=framerate,
         )
-        vf_parts.append(
-            f"subtitles='{esc}':force_style='FontSize=24,PrimaryColour=&H00FFFFFF&,"
-            "OutlineColour=&H80000000&,BorderStyle=3,Outline=2,Shadow=0,MarginV=60'"
-        )
-    vf = ",".join(vf_parts)
-
-    cmd += [
-        "-map", "0:v:0",
-        "-map", "1:a:0",
-        "-c:v", "libx264",
-        "-preset", "medium",
-        "-crf", str(crf),
-        "-pix_fmt", "yuv420p",
-        "-vf", vf,
-        "-c:a", "aac",
-        "-b:a", audio_bitrate,
-        "-movflags", "+faststart",
-        "-shortest",
-    ]
-    if is_image:
-        cmd += ["-tune", "stillimage", "-r", "24"]
-
-    # 오디오 페이드 인/아웃 (선택).
-    if fade_seconds > 0 and audio_duration and audio_duration > fade_seconds * 2:
-        fade_out_start = max(audio_duration - fade_seconds, 0)
-        cmd += [
-            "-af",
-            f"afade=t=in:st=0:d={fade_seconds},"
-            f"afade=t=out:st={fade_out_start}:d={fade_seconds}",
-        ]
-
-    cmd.append(output_path)
-
+    except ValueError as e:
+        return False, str(e)
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60 * 60 * 4)
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=60 * 60 * 8,
+        )
     except subprocess.TimeoutExpired:
-        return False, "인코딩이 4시간 안에 끝나지 않았습니다. 해상도/CRF/반복 회수를 조정해보세요."
+        return False, "인코딩이 8시간 안에 끝나지 않았습니다."
     except FileNotFoundError as e:
         return False, f"ffmpeg 실행 실패 (FileNotFoundError): {e}"
     except Exception as e:
@@ -2824,6 +3157,23 @@ def render_compose_tab() -> None:
 
     # ---- 인코딩 옵션 ----
     st.markdown("##### ⚙️ 인코딩 옵션")
+    speed_label_to_key = {v["label"]: k for k, v in SPEED_PRESETS.items()}
+    sp_col, _ = st.columns([2, 3])
+    with sp_col:
+        speed_label = st.radio(
+            "인코딩 속도 ↔ 화질",
+            options=list(speed_label_to_key.keys()),
+            index=0,
+            key="compose_speed_preset",
+            horizontal=False,
+            help=(
+                "정지 이미지나 슬라이드쇼는 화면이 거의 안 바뀌니 '빠른' 모드여도 "
+                "유튜브 시청 화질에는 영향이 거의 없습니다. 영상 배경(움직임 있음)일 땐 '균형' 권장."
+            ),
+        )
+    speed_key = speed_label_to_key[speed_label]
+    speed_cfg = SPEED_PRESETS[speed_key]
+
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         resolution = st.selectbox(
@@ -2854,23 +3204,32 @@ def render_compose_tab() -> None:
         )
 
     run = st.button(
-        "🚀 인코딩 시작",
+        "🚀 인코딩 잡 제출 (백그라운드 실행)",
         type="primary",
         use_container_width=True,
         key="compose_run",
+        help="제출 후에는 📦 인코딩 잡 탭에서 진행 상황을 확인할 수 있습니다. "
+             "브라우저를 닫거나 다른 탭에서 작업해도 인코딩은 계속됩니다.",
     )
 
     if not run:
-        if st.session_state.get("compose_output"):
-            st.info("이전 인코딩 결과가 아래에 남아 있습니다.")
-            _render_compose_result()
+        if st.session_state.get("compose_last_job_id"):
+            jid = st.session_state["compose_last_job_id"]
+            st.info(
+                f"🔄 마지막으로 제출한 잡 `{jid}` 은(는) **📦 인코딩 잡** 탭에서 확인하세요."
+            )
         return
 
     if not audio_files or not visual_files:
         st.error("음악(1개 이상)과 배경 파일(영상 1개 또는 이미지 1~여러 장)을 모두 업로드해주세요.")
         return
 
-    workdir = tempfile.mkdtemp(prefix="ytmusic_compose_")
+    # 잡 전용 영구 워크디렉터리 — 임시폴더 자동 정리에 안 영향받게.
+    _ensure_jobs_dir()
+    pre_job_id = uuid.uuid4().hex[:8]  # 잡 id 미리 잡아 워크디렉터리 명명에 사용
+    workdir = _job_workdir(pre_job_id)
+    os.makedirs(workdir, exist_ok=True)
+
     audio_paths: list[str] = []
     for f in audio_files:
         p = os.path.join(workdir, f.name)
@@ -2878,7 +3237,6 @@ def render_compose_tab() -> None:
             fp.write(f.getbuffer())
         audio_paths.append(p)
 
-    # 슬라이드쇼일 경우 모든 이미지를 저장, 아니면 단일 파일만 저장.
     is_image = False
     if is_slideshow:
         slide_image_paths: list[str] = []
@@ -2887,8 +3245,6 @@ def render_compose_tab() -> None:
             with open(p, "wb") as fp:
                 fp.write(vf.getbuffer())
             slide_image_paths.append(p)
-        # 실제 슬라이드쇼 영상 빌드는 사이클 합산 후 자동분배 시 사이클 길이가 필요하므로
-        # 아래에서 진행. visual_path 는 임시로 None.
         visual_path = ""
     else:
         visual_path = os.path.join(workdir, visual_file.name)
@@ -2896,7 +3252,7 @@ def render_compose_tab() -> None:
             fp.write(visual_file.getbuffer())
         is_image = visual_file.name.lower().endswith(IMAGE_EXTS)
 
-    # 1) 한 사이클 합본 만들기 (단일 파일이면 그대로 사용).
+    # 1) 한 사이클 합본 — sync (보통 분 단위 이내).
     cycle_audio = os.path.join(workdir, "cycle.m4a")
     if len(audio_paths) > 1:
         with st.spinner(f"🎚️ 오디오 {len(audio_paths)}곡 이어붙이는 중..."):
@@ -2913,7 +3269,7 @@ def render_compose_tab() -> None:
     measured_cycle = _ffprobe_duration(cycle_audio) or cycle_duration or 0.0
     total_duration = measured_cycle * loop_count
 
-    # 1.5) 슬라이드쇼면 이미지 → 영상 빌드. 이후 단계는 단일 파일과 동일하게 처리됨.
+    # 1.5) 슬라이드쇼 — sync (이미지 수가 적으면 빠름).
     if is_slideshow:
         if slide_auto and total_duration > 0:
             spi = max(0.5, total_duration / len(slide_image_paths))
@@ -2927,6 +3283,7 @@ def render_compose_tab() -> None:
                 slide_image_paths, slideshow_path,
                 seconds_per_image=spi,
                 resolution=resolution,
+                preset=speed_cfg["preset"],
             )
         if not ok_s or not os.path.exists(slideshow_path):
             st.error("슬라이드쇼 영상 합성에 실패했습니다.")
@@ -2935,16 +3292,13 @@ def render_compose_tab() -> None:
             shutil.rmtree(workdir, ignore_errors=True)
             return
         visual_path = slideshow_path
-        is_image = False  # 슬라이드쇼는 영상이므로 -stream_loop -1 사용.
+        is_image = False
 
-    # 2) 영상 인코딩 (audio_loop_count 로 오디오 반복).
+    # 2) 메인 인코딩 — 백그라운드 잡 제출.
     output_path = os.path.join(workdir, "output.mp4")
-    spinner_msg = (
-        f"🎬 ffmpeg 인코딩 중... (최종 길이 약 {_fmt_duration(total_duration)}). "
-        "긴 영상은 1080p 기준 10~30분 이상 걸릴 수 있습니다."
-    )
-    with st.spinner(spinner_msg):
-        ok, log = encode_music_video(
+    framerate = speed_cfg["fps_static"] if is_image else speed_cfg["fps_video"]
+    try:
+        encode_cmd = _build_encode_cmd(
             cycle_audio, visual_path, output_path,
             is_image=is_image,
             resolution=resolution,
@@ -2954,51 +3308,53 @@ def render_compose_tab() -> None:
             audio_duration=total_duration,
             subtitles_path=None,
             audio_loop_count=loop_count,
+            preset=speed_cfg["preset"],
+            framerate=framerate,
         )
-
-    if not ok or not os.path.exists(output_path):
-        st.error("인코딩에 실패했습니다. 아래 진단 정보를 확인해주세요.")
-        diag = [
-            f"- ffmpeg 호출 성공 여부: **{ok}**",
-            f"- 결과 파일 존재 여부: **{os.path.exists(output_path)}**",
-            f"- 결과 파일 경로: `{output_path}`",
-            f"- 한 사이클 입력 오디오: `{cycle_audio}` "
-            f"(존재 = {os.path.exists(cycle_audio)})",
-            f"- 배경 파일: `{visual_path}` "
-            f"(존재 = {os.path.exists(visual_path)})",
-            f"- 반복 회수: {loop_count}, 측정된 한 사이클: {measured_cycle:.2f}s",
-        ]
-        st.markdown("\n".join(diag))
-        with st.expander("ffmpeg 로그 전체", expanded=True):
-            st.code(log or "(로그 없음)", language=None)
+    except ValueError as e:
+        st.error(f"인코딩 명령 생성 실패: {e}")
         shutil.rmtree(workdir, ignore_errors=True)
         return
 
-    file_size_mb = os.path.getsize(output_path) / 1024 / 1024
     tracklist_text = build_tracklist_text(
         track_metas,
         loop_count=loop_count,
         mode=mode,
         full_expand=st.session_state.get("compose_full_expand", False),
     )
-    st.session_state["compose_output"] = {
-        "path": output_path,
-        "workdir": workdir,
-        "size_mb": round(file_size_mb, 1),
-        "duration": total_duration,
-        "is_image": is_image,
-        "resolution": resolution,
-        "track_count": len(audio_files),
-        "loop_count": loop_count,
-        "mode": mode,
-        "tracklist": tracklist_text,
-    }
-    st.success(
-        f"✅ 인코딩 완료 — {file_size_mb:.1f} MB · "
-        f"{resolution} · 길이 {_fmt_duration(total_duration)} · "
-        f"{len(audio_files)}곡 × {loop_count}회"
+
+    job_title = (
+        f"{len(audio_files)}곡 × {loop_count}회 · "
+        f"{_fmt_duration(total_duration)} · {resolution} · {speed_cfg['label']}"
     )
-    _render_compose_result()
+    try:
+        job_id = submit_ffmpeg_job(
+            encode_cmd,
+            kind="compose",
+            title=job_title,
+            output_path=output_path,
+            workdir=workdir,
+            extra={
+                "duration": total_duration,
+                "resolution": resolution,
+                "loop_count": loop_count,
+                "track_count": len(audio_files),
+                "mode": mode,
+                "tracklist": tracklist_text,
+                "speed_preset": speed_key,
+            },
+        )
+    except RuntimeError as e:
+        st.error(str(e))
+        shutil.rmtree(workdir, ignore_errors=True)
+        return
+
+    st.session_state["compose_last_job_id"] = job_id
+    st.success(
+        f"✅ 잡 `{job_id}` 제출됨 — 예상 길이 {_fmt_duration(total_duration)}.  \n"
+        f"📦 **인코딩 잡** 탭에서 진행 상황을 확인하세요. "
+        f"브라우저를 닫거나 다른 탭에서 작업해도 인코딩은 계속됩니다."
+    )
 
 
 def _render_compose_result() -> None:
@@ -3045,6 +3401,206 @@ def _render_compose_result() -> None:
         shutil.rmtree(info["workdir"], ignore_errors=True)
         st.session_state.pop("compose_output", None)
         st.rerun()
+
+
+# ---------------------------------------------------------------------------
+# Jobs tab — 백그라운드 인코딩 잡 대시보드
+# ---------------------------------------------------------------------------
+
+
+def _fmt_eta(current_s: float, total_s: float, elapsed_s: float) -> str:
+    if current_s <= 0 or total_s <= 0:
+        return "??"
+    rate = current_s / elapsed_s if elapsed_s > 0 else 0
+    if rate <= 0:
+        return "??"
+    remaining = (total_s - current_s) / rate
+    if remaining < 0:
+        remaining = 0
+    return _fmt_duration(remaining)
+
+
+def render_jobs_tab() -> None:
+    st.subheader("📦 인코딩 잡 대시보드")
+    st.caption(
+        "여기서 모든 백그라운드 인코딩 작업을 관리합니다. "
+        "브라우저를 닫거나 다른 탭에서 작업해도 진행 중인 잡은 그대로 계속 돌아갑니다."
+    )
+
+    top_c1, top_c2, top_c3 = st.columns([1, 1, 4])
+    if top_c1.button("🔄 새로 고침", key="jobs_refresh", use_container_width=True):
+        st.rerun()
+    auto_refresh = top_c2.checkbox(
+        "자동 새로고침 (5초)",
+        value=False,
+        key="jobs_auto_refresh",
+        help="진행 중인 잡이 있을 때 5초마다 페이지를 다시 그립니다.",
+    )
+
+    jobs = [refresh_job_status(j) for j in list_jobs()]
+    running = [j for j in jobs if j.get("status") == "running"]
+    finished = [j for j in jobs if j.get("status") != "running"]
+
+    top_c3.markdown(
+        f"**진행 중**: {len(running)}개  ·  **완료/실패**: {len(finished)}개"
+    )
+
+    if not jobs:
+        st.info(
+            "아직 제출된 잡이 없습니다. **🎬 영상 합성** 탭에서 인코딩을 시작하면 여기에 표시돼요."
+        )
+        return
+
+    # 일괄 정리
+    with st.expander("🧹 일괄 정리"):
+        cc1, cc2 = st.columns(2)
+        if cc1.button("✅ 완료된 잡만 삭제 (입력 파일은 보존)", key="jobs_clean_done"):
+            for j in finished:
+                if j.get("status") == "done":
+                    delete_job(j["id"], remove_files=False)
+            st.rerun()
+        if cc2.button("🗑️ 실패/취소된 잡 + 임시파일 삭제", key="jobs_clean_failed"):
+            for j in finished:
+                if j.get("status") in ("failed", "cancelled"):
+                    delete_job(j["id"], remove_files=True)
+            st.rerun()
+
+    for job in jobs:
+        _render_job_card(job)
+
+    if auto_refresh and running:
+        # Streamlit autorefresh — 5초 후 rerun.
+        import time as _time
+        _time.sleep(5)
+        st.rerun()
+
+
+def _render_job_card(job: dict) -> None:
+    status = job.get("status", "running")
+    status_icon = {
+        "running": "🔄",
+        "done": "✅",
+        "failed": "❌",
+        "cancelled": "⏹️",
+    }.get(status, "•")
+    job_id = job.get("id", "????")
+    title = job.get("title", "")
+    started_at = job.get("started_at", "")
+
+    with st.container(border=True):
+        st.markdown(
+            f"### {status_icon} `{job_id}` · {status.upper()}"
+        )
+        st.caption(f"{title}  ·  시작: {started_at}")
+
+        extra = job.get("extra") or {}
+        expected_total = float(extra.get("duration") or 0)
+
+        if status == "running":
+            # 진행률 표시
+            progress_info = parse_job_progress(job.get("progress_path", "")) or {}
+            current = float(progress_info.get("current_seconds") or 0)
+            try:
+                from datetime import datetime as _dt
+                started_dt = _dt.fromisoformat(started_at)
+                elapsed = (_dt.now() - started_dt).total_seconds()
+            except Exception:
+                elapsed = 0
+            if expected_total > 0 and current > 0:
+                pct = min(1.0, current / expected_total)
+                st.progress(
+                    pct,
+                    text=(
+                        f"{int(pct * 100)}%  ·  "
+                        f"인코딩 {_fmt_duration(current)} / {_fmt_duration(expected_total)}  ·  "
+                        f"경과 {_fmt_duration(elapsed)}  ·  남은 시간 ≈ {_fmt_eta(current, expected_total, elapsed)}"
+                    ),
+                )
+            else:
+                st.progress(
+                    0.0,
+                    text=(
+                        f"준비 중... (경과 {_fmt_duration(elapsed)})  ·  "
+                        f"PID {job.get('pid')}"
+                    ),
+                )
+
+            cc1, cc2 = st.columns(2)
+            if cc1.button("⏹️ 잡 취소", key=f"job_cancel_{job_id}"):
+                cancel_job(job_id)
+                st.rerun()
+            with cc2.expander("최근 로그 보기"):
+                log_path = job.get("log_path", "")
+                if os.path.exists(log_path):
+                    try:
+                        with open(log_path, "rb") as fp:
+                            fp.seek(0, 2)
+                            size = fp.tell()
+                            fp.seek(max(0, size - 4000))
+                            tail = fp.read().decode("utf-8", errors="replace")
+                        st.code(tail or "(아직 출력 없음)", language=None)
+                    except OSError:
+                        st.caption("로그 파일을 읽을 수 없습니다.")
+                else:
+                    st.caption("(로그 파일 없음)")
+
+        elif status == "done":
+            output_path = job.get("output_path", "")
+            if os.path.exists(output_path):
+                size_mb = os.path.getsize(output_path) / 1024 / 1024
+                m1, m2, m3 = st.columns(3)
+                m1.metric("파일 크기", f"{size_mb:.1f} MB")
+                m2.metric("최종 길이", _fmt_duration(expected_total))
+                m3.metric("해상도", extra.get("resolution", "?"))
+                if size_mb <= 500:
+                    try:
+                        st.video(output_path)
+                    except Exception:
+                        st.caption("미리보기를 표시할 수 없습니다.")
+                else:
+                    st.caption("📦 파일이 커서 인라인 미리보기는 생략합니다.")
+                with open(output_path, "rb") as fp:
+                    st.download_button(
+                        "📥 MP4 다운로드",
+                        data=fp.read(),
+                        file_name=f"music_video_{job_id}.mp4",
+                        mime="video/mp4",
+                        type="primary",
+                        use_container_width=True,
+                        key=f"job_download_{job_id}",
+                    )
+                tracklist = extra.get("tracklist") or ""
+                if tracklist:
+                    st.markdown("**📜 트랙리스트 (설명란 복사용)**")
+                    st.code(tracklist, language="text")
+            else:
+                st.warning(
+                    "결과 파일이 더 이상 존재하지 않습니다 — 임시 폴더가 정리되었을 수 있습니다."
+                )
+
+        else:  # failed / cancelled
+            log_path = job.get("log_path", "")
+            if os.path.exists(log_path):
+                with st.expander("ffmpeg 로그 (끝 4KB)", expanded=True):
+                    try:
+                        with open(log_path, "rb") as fp:
+                            fp.seek(0, 2)
+                            size = fp.tell()
+                            fp.seek(max(0, size - 4000))
+                            tail = fp.read().decode("utf-8", errors="replace")
+                        st.code(tail or "(로그 없음)", language=None)
+                    except OSError:
+                        st.caption("로그 파일을 읽을 수 없습니다.")
+
+        # 삭제 (모든 상태에 대해)
+        if status != "running":
+            del_c1, del_c2 = st.columns([1, 1])
+            if del_c1.button("🗑️ 이 잡 + 결과 파일 삭제", key=f"job_del_full_{job_id}"):
+                delete_job(job_id, remove_files=True)
+                st.rerun()
+            if del_c2.button("📋 잡 기록만 삭제 (파일 보존)", key=f"job_del_meta_{job_id}"):
+                delete_job(job_id, remove_files=False)
+                st.rerun()
 
 
 # ---------------------------------------------------------------------------
@@ -4190,6 +4746,7 @@ def main() -> None:
         tab_story,
         tab_title_lab,
         tab_compose,
+        tab_jobs,
         tab_subtitle,
         tab_sync,
     ) = st.tabs(
@@ -4198,6 +4755,7 @@ def main() -> None:
             "✍️ AI 스토리텔링 & 가사 생성",
             "🧪 제목 공식 Lab",
             "🎬 영상 합성 (인코딩)",
+            "📦 인코딩 잡",
             "📝 자막 입히기",
             "🎤 가사 자동 동기화 (SRT)",
         ]
@@ -4210,6 +4768,8 @@ def main() -> None:
         render_title_lab_tab()
     with tab_compose:
         render_compose_tab()
+    with tab_jobs:
+        render_jobs_tab()
     with tab_subtitle:
         render_subtitle_tab()
     with tab_sync:
