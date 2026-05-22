@@ -9,6 +9,7 @@ YouTube Data API v3 를 사용해 특정 키워드(상황/감정 기반)로 최�
 from __future__ import annotations
 
 import io
+import json
 import os
 import random
 import re
@@ -32,7 +33,42 @@ from googleapiclient.errors import HttpError
 
 load_dotenv()
 
-DEFAULT_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
+# ---------------------------------------------------------------------------
+# Persistent local key store — .streamlit/keys.json (gitignored).
+# UI 에서 한 번 저장하면 해지 버튼을 누르기 전까지 모든 세션에서 자동으로 불러온다.
+# ---------------------------------------------------------------------------
+
+KEY_STORE_PATH = os.path.join(".streamlit", "keys.json")
+
+
+def load_saved_keys() -> dict:
+    try:
+        with open(KEY_STORE_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+
+
+def save_key(name: str, value: str) -> None:
+    os.makedirs(os.path.dirname(KEY_STORE_PATH) or ".", exist_ok=True)
+    data = load_saved_keys()
+    data[name] = value
+    with open(KEY_STORE_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def clear_key(name: str) -> None:
+    data = load_saved_keys()
+    if name in data:
+        data.pop(name)
+        with open(KEY_STORE_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+SAVED_KEYS = load_saved_keys()
+# .env 의 YOUTUBE_API_KEY 가 있으면 우선, 없으면 저장된 키, 둘 다 없으면 빈 값.
+DEFAULT_API_KEY = os.getenv("YOUTUBE_API_KEY") or SAVED_KEYS.get("youtube", "")
 
 # OpenCV 는 얼굴 검출 전용. 미설치 시 얼굴 분석만 비활성화하고 나머지는 계속 동작.
 try:
@@ -1374,8 +1410,33 @@ def render_sidebar() -> SearchConfig | None:
         "YouTube Data API v3 키",
         value=DEFAULT_API_KEY,
         type="password",
-        help="https://console.cloud.google.com/ 에서 발급. .env 에 YOUTUBE_API_KEY 로 저장 가능.",
+        key="yt_api_key_input",
+        help=(
+            "https://console.cloud.google.com/ 에서 발급. "
+            "아래 💾 저장 버튼을 누르면 .streamlit/keys.json 에 보관되어 "
+            "해지 전까지 모든 세션에서 자동으로 불러옵니다."
+        ),
     )
+
+    saved_yt = SAVED_KEYS.get("youtube", "")
+    if saved_yt:
+        st.sidebar.caption("🔒 저장된 키가 자동으로 불러와졌습니다.")
+    save_col, clear_col = st.sidebar.columns(2)
+    if save_col.button("💾 저장", use_container_width=True, key="yt_key_save"):
+        if api_key.strip():
+            save_key("youtube", api_key.strip())
+            SAVED_KEYS["youtube"] = api_key.strip()
+            st.sidebar.success("저장됨. 다음부터 자동으로 불러옵니다.")
+        else:
+            st.sidebar.warning("키 값이 비어 있어 저장하지 않았습니다.")
+    if clear_col.button(
+        "🗑️ 해지", use_container_width=True, key="yt_key_clear", disabled=not saved_yt
+    ):
+        clear_key("youtube")
+        SAVED_KEYS.pop("youtube", None)
+        st.session_state.pop("yt_api_key_input", None)
+        st.sidebar.info("저장된 키를 삭제했습니다.")
+        st.rerun()
 
     keywords_raw = st.sidebar.text_area(
         "키워드 (상황/감정 기반, 줄바꿈 또는 쉼표로 구분)",
