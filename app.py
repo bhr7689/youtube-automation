@@ -2334,6 +2334,7 @@ def encode_music_video(
     fade_seconds: float = 0.0,
     audio_duration: float | None = None,
     subtitles_path: str | None = None,
+    audio_loop_count: int = 1,
 ) -> tuple[bool, str]:
     """ffmpeg 로 합성. (성공여부, 로그 꼬리 ~2KB) 반환."""
     ffmpeg = _find_ffmpeg()
@@ -2349,7 +2350,9 @@ def encode_music_video(
         cmd += ["-stream_loop", "-1"]
     cmd += ["-i", visual_path]
 
-    # 입력 1: 오디오
+    # 입력 1: 오디오 — audio_loop_count > 1 이면 stream_loop 로 반복.
+    if audio_loop_count > 1:
+        cmd += ["-stream_loop", str(audio_loop_count - 1)]
     cmd += ["-i", audio_path]
 
     # 해상도 맞춤(레터박스), yuv420p 로 호환성 확보.
@@ -2416,11 +2419,110 @@ def _fmt_duration(seconds: float | None) -> str:
     return f"{h:d}:{m:02d}:{s:02d}" if h else f"{m:d}:{s:02d}"
 
 
+def _fmt_chapter_time(seconds: float) -> str:
+    """유튜브 챕터 마커 표기 — H:MM:SS / M:SS."""
+    s = int(round(max(0.0, seconds)))
+    h, rem = divmod(s, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h:d}:{m:02d}:{s:02d}" if h else f"{m:d}:{s:02d}"
+
+
+def _clean_track_label(filename: str) -> str:
+    name = os.path.splitext(os.path.basename(filename))[0]
+    return name.replace("_", " ").replace("-", " ").strip()
+
+
+def build_tracklist_text(
+    track_metas: list[dict],
+    *,
+    loop_count: int = 1,
+    mode: str = "sequential",
+    full_expand: bool = False,
+    header: str = "🎵 트랙리스트",
+) -> str:
+    """유튜브 설명란용 트랙리스트 텍스트.
+
+    - single_loop : 1트랙 + 반복 안내
+    - sequential  : 누적 시간으로 N곡 나열
+    - bundle_loop : 첫 사이클만(기본) 또는 모든 사이클 확장
+    """
+    if not track_metas:
+        return ""
+    lines: list[str] = [header]
+    if mode == "single_loop":
+        m = track_metas[0]
+        lines.append(f"{_fmt_chapter_time(0)} - {_clean_track_label(m['name'])}")
+        if loop_count > 1:
+            lines.append("")
+            lines.append(f"(총 {loop_count}회 반복 · 한 곡 {_fmt_duration(m['duration'])})")
+        return "\n".join(lines)
+
+    cycle_duration = sum(m["duration"] for m in track_metas)
+    cycles = loop_count if (mode == "bundle_loop" and full_expand) else 1
+    for c in range(cycles):
+        if cycles > 1:
+            lines.append("")
+            lines.append(f"── 사이클 {c + 1} ──")
+        t = c * cycle_duration
+        for m in track_metas:
+            lines.append(f"{_fmt_chapter_time(t)} - {_clean_track_label(m['name'])}")
+            t += m["duration"]
+    if mode == "bundle_loop" and not full_expand and loop_count > 1:
+        lines.append("")
+        lines.append(
+            f"(위 {len(track_metas)}곡 묶음을 총 {loop_count}회 반복 · "
+            f"한 사이클 {_fmt_duration(cycle_duration)})"
+        )
+    return "\n".join(lines)
+
+
+def burn_subtitles_into_video(
+    input_path: str,
+    srt_path: str,
+    output_path: str,
+    *,
+    crf: int = 22,
+    audio_bitrate: str = "192k",
+    font_size: int = 24,
+    margin_v: int = 60,
+) -> tuple[bool, str]:
+    """기존 영상에 SRT 자막을 픽셀로 굽는다."""
+    ffmpeg = _find_ffmpeg()
+    if not ffmpeg:
+        return False, "ffmpeg 가 PATH 에 없습니다."
+    esc = (
+        srt_path.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
+    )
+    vf = (
+        f"subtitles='{esc}':force_style='FontSize={font_size},"
+        "PrimaryColour=&H00FFFFFF&,OutlineColour=&H80000000&,"
+        f"BorderStyle=3,Outline=2,Shadow=0,MarginV={margin_v}'"
+    )
+    cmd = [
+        ffmpeg, "-y", "-hide_banner",
+        "-i", input_path,
+        "-vf", vf,
+        "-c:v", "libx264",
+        "-preset", "medium",
+        "-crf", str(crf),
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", audio_bitrate,
+        "-movflags", "+faststart",
+        output_path,
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60 * 60 * 2)
+    except subprocess.TimeoutExpired:
+        return False, "burn-in 인코딩이 2시간 안에 끝나지 않았습니다."
+    return proc.returncode == 0, (proc.stderr or "")[-2400:]
+
+
 def render_compose_tab() -> None:
     st.subheader("🎬 영상 합성 (MP3 + 배경 → MP4 인코딩)")
     st.caption(
-        "직접 만든 곡들을 이어붙여 1시간/3시간/4시간 영상으로 합성하고, "
-        "원하면 곡별 가사를 타임라인에 정렬한 SRT 자막까지 함께 만들 수 있습니다."
+        "직접 만든 곡과 배경을 합쳐 긴 음악 영상을 인코딩합니다. "
+        "자막/SRT/burn-in 은 **📝 자막 입히기** 탭에서 따로 처리하세요."
     )
 
     ffmpeg = _find_ffmpeg()
@@ -2440,76 +2542,129 @@ def render_compose_tab() -> None:
         return
     st.caption(f"✓ ffmpeg 감지됨: `{ffmpeg}`")
 
-    audio_files = st.file_uploader(
-        "🎵 음악 파일 (여러 개 가능 — 업로드한 순서대로 이어붙여집니다)",
-        type=list(AUDIO_EXTS),
-        accept_multiple_files=True,
-        key="compose_audio_multi",
-        help="여러 곡을 올리면 ffmpeg concat 으로 한 트랙으로 결합한 뒤 영상에 입힙니다.",
+    # ---- 합성 모드 ----
+    mode_labels = {
+        "single_loop": "🎵 단일 곡 반복 — 한 곡을 N번 반복해 긴 영상으로",
+        "sequential":  "🔗 여러 곡 순차 이어붙이기 — 각 곡을 한 번씩",
+        "bundle_loop": "🔁 묶음 반복 — 여러 곡을 한 사이클로 묶어 N번 반복",
+    }
+    mode = st.radio(
+        "합성 모드",
+        options=list(mode_labels.keys()),
+        format_func=lambda k: mode_labels[k],
+        index=1,
+        key="compose_mode",
     )
+
+    multi_allowed = mode in ("sequential", "bundle_loop")
+    uploaded = st.file_uploader(
+        ("🎵 음악 파일 (여러 개 — 업로드 순서대로 이어붙임)"
+         if multi_allowed else "🎵 음악 파일 (1개)"),
+        type=list(AUDIO_EXTS),
+        accept_multiple_files=multi_allowed,
+        key=f"compose_audio_{mode}",
+    )
+    if uploaded is None:
+        audio_files: list = []
+    elif isinstance(uploaded, list):
+        audio_files = uploaded
+    else:
+        audio_files = [uploaded]
+
     visual_file = st.file_uploader(
         "🖼️ 배경 영상 또는 이미지 (필수, 1개)",
         type=list(VIDEO_IMAGE_EXTS),
         key="compose_visual",
-        help="MP4/MOV 등 영상, 또는 PNG/JPG 같은 정지 이미지 한 장. "
-             "영상이 오디오보다 짧으면 자동으로 루프됩니다.",
+        help="MP4/MOV 등 영상, 또는 PNG/JPG 정지 이미지 한 장. "
+             "영상이 오디오보다 짧으면 자동 루프됩니다.",
     )
 
-    # ---- 곡 리스트 + 길이 미리보기 ----
+    # ---- 곡 메타 (길이) 미리보기 ----
     track_metas: list[dict] = []
+    cycle_duration = 0.0
     if audio_files:
         st.markdown("##### 📋 업로드된 트랙")
-        # 임시 디렉토리 하나를 세션 동안 재사용하지 않고, 길이 확인을 위해
-        # 매 렌더마다 짧게 떴다 사라지는 임시 파일로 ffprobe 만 돌린다.
         probe_dir = tempfile.mkdtemp(prefix="ytmusic_probe_")
         try:
-            total = 0.0
             for idx, f in enumerate(audio_files, 1):
                 pth = os.path.join(probe_dir, f.name)
                 with open(pth, "wb") as fp:
                     fp.write(f.getbuffer())
                 dur = _ffprobe_duration(pth) or 0.0
-                total += dur
+                cycle_duration += dur
                 track_metas.append({"name": f.name, "duration": dur, "index": idx})
             st.dataframe(
                 pd.DataFrame(
                     [
-                        {
-                            "#": m["index"],
-                            "파일": m["name"],
-                            "길이": _fmt_duration(m["duration"]),
-                        }
+                        {"#": m["index"], "파일": m["name"], "길이": _fmt_duration(m["duration"])}
                         for m in track_metas
                     ]
                 ),
                 hide_index=True,
                 use_container_width=True,
             )
-            st.caption(f"합산 길이: **{_fmt_duration(total)}**  ·  {len(audio_files)}곡")
+            st.caption(
+                f"한 사이클 길이: **{_fmt_duration(cycle_duration)}**  ·  {len(audio_files)}곡"
+            )
         finally:
             shutil.rmtree(probe_dir, ignore_errors=True)
 
-    # ---- 곡별 가사 (SRT 생성용) ----
-    st.markdown("##### 📝 곡별 가사 (선택 — 입력 시 SRT 자막을 함께 생성)")
-    st.caption(
-        "한 줄에 한 자막 라인. 각 트랙 안에서는 라인을 균등 분배하고, "
-        "트랙 간에는 누적 타임스탬프로 이어 붙입니다. "
-        "필요하면 생성된 SRT 를 텍스트 에디터에서 수동 미세조정하세요."
-    )
-    lyrics_by_track: dict[int, str] = {}
-    if audio_files:
-        for m in track_metas:
-            with st.expander(
-                f"#{m['index']} {m['name']}  ·  {_fmt_duration(m['duration'])}",
-                expanded=False,
-            ):
-                lyrics_by_track[m["index"]] = st.text_area(
-                    "가사 (한 줄 = 한 자막 라인)",
-                    value="",
-                    height=180,
-                    key=f"compose_lyrics_{m['index']}",
-                    label_visibility="collapsed",
-                )
+    # ---- 반복 / 목표 시간 ----
+    loop_count = 1
+    if mode in ("single_loop", "bundle_loop") and cycle_duration > 0:
+        st.markdown("##### 🔁 반복 / 목표 길이")
+        method = st.radio(
+            "지정 방식",
+            options=["target", "count"],
+            format_func=lambda k: {
+                "target": "🎯 목표 영상 시간으로 지정 (반복 회수 자동 계산)",
+                "count":  "🔢 반복 회수로 직접 지정",
+            }[k],
+            horizontal=True,
+            key="compose_loop_method",
+        )
+        if method == "target":
+            target_hours = st.number_input(
+                "목표 영상 길이 (시간)",
+                min_value=0.1, max_value=10.0, value=1.0, step=0.25,
+                key="compose_target_hours",
+                help="예: 2 → 약 2시간짜리 영상이 나오도록 반복 회수를 계산합니다.",
+            )
+            target_seconds = target_hours * 3600
+            loop_count = max(1, int(round(target_seconds / cycle_duration)))
+        else:
+            loop_count = st.slider(
+                "반복 회수",
+                min_value=1, max_value=200, value=4,
+                key="compose_loop_count",
+            )
+        actual = loop_count * cycle_duration
+        st.info(
+            f"→ 반복 **{loop_count}회**  ·  최종 영상 길이 ≈ **{_fmt_duration(actual)}**  ·  "
+            f"한 사이클 {_fmt_duration(cycle_duration)}"
+        )
+    elif mode == "sequential":
+        st.caption("📝 순차 모드 — 반복 없이 곡들이 한 번씩 재생됩니다.")
+
+    # ---- 트랙리스트 미리보기 (설명란 복사용) ----
+    if track_metas:
+        full_expand = False
+        if mode == "bundle_loop" and loop_count > 1:
+            full_expand = st.checkbox(
+                "모든 사이클의 타임스탬프 펼치기",
+                value=False,
+                key="compose_full_expand",
+                help="체크 시 모든 N×M 타임스탬프 나열. 기본은 첫 사이클만 + 반복 안내.",
+            )
+        tracklist = build_tracklist_text(
+            track_metas, loop_count=loop_count, mode=mode, full_expand=full_expand
+        )
+        st.markdown("##### 📜 트랙리스트 (유튜브 설명란 복사용)")
+        st.code(tracklist, language="text")
+        st.caption(
+            "위 박스 오른쪽 위 📋 아이콘으로 클립보드 복사. "
+            "유튜브 설명란에 그대로 붙여넣으면 첫 사이클 타임스탬프가 챕터 마커로 인식됩니다."
+        )
 
     # ---- 인코딩 옵션 ----
     st.markdown("##### ⚙️ 인코딩 옵션")
@@ -2542,23 +2697,6 @@ def render_compose_tab() -> None:
             key="compose_fade",
         )
 
-    col_a, col_b = st.columns(2)
-    with col_a:
-        burn_subs = st.checkbox(
-            "자막을 영상에 굽기 (Burn-in)",
-            value=False,
-            key="compose_burn_subs",
-            help="체크하면 영상 픽셀에 가사가 직접 새겨집니다. 끄면 SRT 가 별도 파일로만 나와, "
-                 "유튜브 업로드 시 자막 트랙으로 따로 첨부하거나 시청자가 토글 가능.",
-        )
-    with col_b:
-        make_srt = st.checkbox(
-            "SRT 자막 파일 생성",
-            value=True,
-            key="compose_make_srt",
-            help="가사가 비어 있는 트랙은 자동으로 스킵됩니다.",
-        )
-
     run = st.button(
         "🚀 인코딩 시작",
         type="primary",
@@ -2588,11 +2726,11 @@ def render_compose_tab() -> None:
     with open(visual_path, "wb") as fp:
         fp.write(visual_file.getbuffer())
 
-    # 1) 다중 트랙이면 먼저 오디오 concat.
-    combined_audio = os.path.join(workdir, "combined.m4a")
+    # 1) 한 사이클 합본 만들기 (단일 파일이면 그대로 사용).
+    cycle_audio = os.path.join(workdir, "cycle.m4a")
     if len(audio_paths) > 1:
         with st.spinner(f"🎚️ 오디오 {len(audio_paths)}곡 이어붙이는 중..."):
-            ok, log = concat_audio_files(audio_paths, combined_audio, bitrate=audio_bitrate)
+            ok, log = concat_audio_files(audio_paths, cycle_audio, bitrate=audio_bitrate)
         if not ok:
             st.error("오디오 이어붙이기 실패")
             with st.expander("ffmpeg 로그", expanded=True):
@@ -2600,46 +2738,29 @@ def render_compose_tab() -> None:
             shutil.rmtree(workdir, ignore_errors=True)
             return
     else:
-        combined_audio = audio_paths[0]
+        cycle_audio = audio_paths[0]
 
-    # 2) 길이 측정 + SRT 생성.
-    per_track_durations = [_ffprobe_duration(p) or 0.0 for p in audio_paths]
-    total_duration = sum(per_track_durations) or _ffprobe_duration(combined_audio)
+    measured_cycle = _ffprobe_duration(cycle_audio) or cycle_duration or 0.0
+    total_duration = measured_cycle * loop_count
 
-    srt_path: str | None = None
-    srt_content = ""
-    if make_srt and any(lyrics_by_track.values()):
-        tracks_for_srt = [
-            {
-                "title": audio_files[i].name,
-                "duration": per_track_durations[i],
-                "lyrics_lines": (lyrics_by_track.get(i + 1, "") or "").splitlines(),
-            }
-            for i in range(len(audio_files))
-        ]
-        srt_content = generate_srt(tracks_for_srt)
-        if srt_content.strip():
-            srt_path = os.path.join(workdir, "lyrics.srt")
-            with open(srt_path, "w", encoding="utf-8") as fp:
-                fp.write(srt_content)
-
-    # 3) 영상 인코딩.
+    # 2) 영상 인코딩 (audio_loop_count 로 오디오 반복).
     is_image = visual_file.name.lower().endswith(IMAGE_EXTS)
     output_path = os.path.join(workdir, "output.mp4")
     spinner_msg = (
-        f"🎬 ffmpeg 인코딩 중... (오디오 {_fmt_duration(total_duration)}). "
-        "3~4시간 영상은 1080p 기준 10~30분 이상 걸릴 수 있습니다."
+        f"🎬 ffmpeg 인코딩 중... (최종 길이 약 {_fmt_duration(total_duration)}). "
+        "긴 영상은 1080p 기준 10~30분 이상 걸릴 수 있습니다."
     )
     with st.spinner(spinner_msg):
         ok, log = encode_music_video(
-            combined_audio, visual_path, output_path,
+            cycle_audio, visual_path, output_path,
             is_image=is_image,
             resolution=resolution,
             audio_bitrate=audio_bitrate,
             crf=int(crf),
             fade_seconds=float(fade),
             audio_duration=total_duration,
-            subtitles_path=srt_path if burn_subs else None,
+            subtitles_path=None,
+            audio_loop_count=loop_count,
         )
 
     if not ok or not os.path.exists(output_path):
@@ -2650,22 +2771,28 @@ def render_compose_tab() -> None:
         return
 
     file_size_mb = os.path.getsize(output_path) / 1024 / 1024
+    tracklist_text = build_tracklist_text(
+        track_metas,
+        loop_count=loop_count,
+        mode=mode,
+        full_expand=st.session_state.get("compose_full_expand", False),
+    )
     st.session_state["compose_output"] = {
         "path": output_path,
-        "srt_path": srt_path,
-        "srt_content": srt_content,
         "workdir": workdir,
         "size_mb": round(file_size_mb, 1),
         "duration": total_duration,
         "is_image": is_image,
         "resolution": resolution,
         "track_count": len(audio_files),
-        "burned": bool(burn_subs and srt_path),
+        "loop_count": loop_count,
+        "mode": mode,
+        "tracklist": tracklist_text,
     }
     st.success(
         f"✅ 인코딩 완료 — {file_size_mb:.1f} MB · "
-        f"{resolution} · 길이 {_fmt_duration(total_duration)} · {len(audio_files)}곡"
-        + ("  · 자막 burn-in" if burn_subs and srt_path else "")
+        f"{resolution} · 길이 {_fmt_duration(total_duration)} · "
+        f"{len(audio_files)}곡 × {loop_count}회"
     )
     _render_compose_result()
 
@@ -2680,16 +2807,12 @@ def _render_compose_result() -> None:
         st.session_state.pop("compose_output", None)
         return
 
-    meta_cols = st.columns(3)
+    meta_cols = st.columns(4)
     meta_cols[0].metric("파일 크기", f"{info['size_mb']} MB")
     meta_cols[1].metric("해상도", info["resolution"])
-    if info["duration"]:
-        meta_cols[2].metric(
-            "오디오 길이",
-            f"{int(info['duration'] // 60)}:{int(info['duration'] % 60):02d}",
-        )
+    meta_cols[2].metric("최종 길이", _fmt_duration(info.get("duration") or 0))
+    meta_cols[3].metric("반복 회수", f"{info.get('loop_count', 1)}회")
 
-    # 결과 영상이 너무 크면 브라우저 미리보기가 무거워질 수 있어 500MB 이상은 스킵.
     if info["size_mb"] <= 500:
         try:
             st.video(path)
@@ -2698,45 +2821,240 @@ def _render_compose_result() -> None:
     else:
         st.caption("📦 파일이 커서 인라인 미리보기는 생략합니다. 다운로드해서 확인해주세요.")
 
-    dl_cols = st.columns(2)
-    with dl_cols[0]:
-        with open(path, "rb") as fp:
-            st.download_button(
-                "📥 MP4 다운로드",
-                data=fp.read(),
-                file_name=f"music_video_{datetime.now():%Y%m%d_%H%M%S}.mp4",
-                mime="video/mp4",
-                type="primary",
-                use_container_width=True,
-                key="compose_download_mp4",
-            )
-    with dl_cols[1]:
-        srt_content = info.get("srt_content") or ""
-        if srt_content.strip():
-            st.download_button(
-                "📥 SRT 자막 다운로드",
-                data=srt_content.encode("utf-8"),
-                file_name=f"lyrics_{datetime.now():%Y%m%d_%H%M%S}.srt",
-                mime="application/x-subrip",
-                use_container_width=True,
-                key="compose_download_srt",
-                help="유튜브 업로드 시 자막 트랙으로 첨부하거나, "
-                     "burn-in 옵션 없이 시청자가 토글 가능한 CC 로 사용하세요.",
-            )
-        else:
-            st.caption("자막을 생성하지 않았거나 가사가 비어 있습니다.")
+    with open(path, "rb") as fp:
+        st.download_button(
+            "📥 MP4 다운로드",
+            data=fp.read(),
+            file_name=f"music_video_{datetime.now():%Y%m%d_%H%M%S}.mp4",
+            mime="video/mp4",
+            type="primary",
+            use_container_width=True,
+            key="compose_download_mp4",
+        )
 
-    if info.get("srt_content"):
-        with st.expander("생성된 SRT 미리보기", expanded=False):
-            preview = info["srt_content"]
-            if len(preview) > 4000:
-                preview = preview[:4000] + "\n\n...(이하 생략)"
-            st.code(preview, language=None)
+    if info.get("tracklist"):
+        st.markdown("##### 📜 트랙리스트 (유튜브 설명란 복사용)")
+        st.code(info["tracklist"], language="text")
+        st.caption("📋 우측 상단 복사 아이콘으로 클립보드에 복사됩니다.")
 
     if st.button("🗑️ 결과 비우기 (임시 파일 삭제)", key="compose_cleanup"):
         shutil.rmtree(info["workdir"], ignore_errors=True)
         st.session_state.pop("compose_output", None)
         st.rerun()
+
+
+# ---------------------------------------------------------------------------
+# Subtitle tab — 독립 SRT 생성 + Burn-in
+# ---------------------------------------------------------------------------
+
+
+def render_subtitle_tab() -> None:
+    st.subheader("📝 자막 입히기 (SRT 생성 · Burn-in)")
+    st.caption(
+        "이미 만든 MP4 영상에 자막을 굽거나 SRT 파일만 따로 만듭니다. "
+        "곡별 가사를 직접 입력해 SRT 를 생성할 수도, 기존 SRT 를 업로드해도 됩니다."
+    )
+
+    ffmpeg = _find_ffmpeg()
+    if not ffmpeg:
+        st.error("⚠️ ffmpeg 가 설치되어 있지 않습니다. 설치 후 새로고침해주세요.")
+        return
+
+    # ---- SRT 출처 ----
+    st.markdown("##### 1️⃣ SRT 자막 준비")
+    srt_source = st.radio(
+        "SRT 출처",
+        options=["manual", "upload"],
+        format_func=lambda k: {
+            "manual": "✍️ 곡별 가사 입력으로 SRT 새로 만들기",
+            "upload": "📁 기존 SRT 파일 업로드",
+        }[k],
+        horizontal=True,
+        key="sub_srt_source",
+    )
+
+    srt_content = ""
+    if srt_source == "upload":
+        srt_file = st.file_uploader("SRT 자막 파일", type=["srt"], key="sub_srt_upload")
+        if srt_file:
+            srt_content = srt_file.getvalue().decode("utf-8", errors="ignore")
+            st.session_state["sub_srt_content"] = srt_content
+            with st.expander("업로드된 SRT 미리보기"):
+                preview = srt_content[:3000] + ("\n...(이하 생략)" if len(srt_content) > 3000 else "")
+                st.code(preview, language=None)
+    else:
+        audio_files = st.file_uploader(
+            "🎵 오디오 트랙 (여러 개 — 길이 측정용)",
+            type=list(AUDIO_EXTS),
+            accept_multiple_files=True,
+            key="sub_audio_files",
+        )
+
+        track_metas: list[dict] = []
+        if audio_files:
+            probe_dir = tempfile.mkdtemp(prefix="ytmusic_subprobe_")
+            try:
+                for idx, f in enumerate(audio_files, 1):
+                    pth = os.path.join(probe_dir, f.name)
+                    with open(pth, "wb") as fp:
+                        fp.write(f.getbuffer())
+                    dur = _ffprobe_duration(pth) or 0.0
+                    track_metas.append({"name": f.name, "duration": dur, "index": idx})
+            finally:
+                shutil.rmtree(probe_dir, ignore_errors=True)
+
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {"#": m["index"], "파일": m["name"], "길이": _fmt_duration(m["duration"])}
+                        for m in track_metas
+                    ]
+                ),
+                hide_index=True,
+                use_container_width=True,
+            )
+
+            lyrics_by_track: dict[int, str] = {}
+            for m in track_metas:
+                with st.expander(
+                    f"#{m['index']} {m['name']}  ·  {_fmt_duration(m['duration'])}",
+                    expanded=False,
+                ):
+                    lyrics_by_track[m["index"]] = st.text_area(
+                        "가사 (한 줄 = 한 자막 라인)",
+                        value="",
+                        height=180,
+                        key=f"sub_lyrics_{m['index']}",
+                        label_visibility="collapsed",
+                    )
+
+            if st.button(
+                "📝 가사로 SRT 만들기",
+                type="secondary",
+                use_container_width=True,
+                key="sub_make_srt",
+            ):
+                tracks_for_srt = [
+                    {
+                        "title": audio_files[i].name,
+                        "duration": track_metas[i]["duration"],
+                        "lyrics_lines": (lyrics_by_track.get(i + 1, "") or "").splitlines(),
+                    }
+                    for i in range(len(audio_files))
+                ]
+                generated = generate_srt(tracks_for_srt)
+                if not generated.strip():
+                    st.warning("가사가 모두 비어 있어 SRT 를 만들지 못했습니다.")
+                    st.session_state.pop("sub_srt_content", None)
+                else:
+                    st.session_state["sub_srt_content"] = generated
+                    st.success("SRT 가 생성되었습니다. 아래에서 미리보기/다운로드/Burn-in 가능.")
+
+        srt_content = st.session_state.get("sub_srt_content", "")
+        if srt_content:
+            with st.expander("생성된 SRT 미리보기", expanded=False):
+                preview = srt_content[:3000] + (
+                    "\n...(이하 생략)" if len(srt_content) > 3000 else ""
+                )
+                st.code(preview, language=None)
+            st.download_button(
+                "📥 SRT 다운로드",
+                data=srt_content.encode("utf-8"),
+                file_name=f"lyrics_{datetime.now():%Y%m%d_%H%M%S}.srt",
+                mime="application/x-subrip",
+                use_container_width=True,
+                key="sub_download_srt",
+            )
+
+    # ---- Burn-in ----
+    st.divider()
+    st.markdown("##### 2️⃣ 영상에 자막 굽기 (Burn-in)")
+    st.caption(
+        "위에서 준비한 SRT 를 MP4 영상의 픽셀에 직접 새깁니다. "
+        "Burn-in 이 필요 없으면 SRT 파일만 받아 유튜브 자막 트랙으로 첨부하세요."
+    )
+
+    video_file = st.file_uploader(
+        "🎬 자막을 입힐 MP4 영상",
+        type=["mp4", "mov", "mkv", "webm"],
+        key="sub_video",
+    )
+
+    burn_cols = st.columns(3)
+    with burn_cols[0]:
+        font_size = st.slider("폰트 크기", 16, 48, 24, key="sub_font_size")
+    with burn_cols[1]:
+        margin_v = st.slider("아래 여백", 20, 200, 60, key="sub_margin_v")
+    with burn_cols[2]:
+        burn_crf = st.slider("비디오 품질 (CRF)", 18, 30, 22, key="sub_crf")
+
+    run_burn = st.button(
+        "🔥 Burn-in 시작",
+        type="primary",
+        use_container_width=True,
+        key="sub_burn_run",
+    )
+
+    if run_burn:
+        srt_now = st.session_state.get("sub_srt_content", "") or srt_content
+        if not srt_now.strip():
+            st.error("SRT 가 비어 있습니다. 먼저 SRT 를 만들거나 업로드하세요.")
+        elif not video_file:
+            st.error("자막을 입힐 MP4 영상을 업로드해주세요.")
+        else:
+            workdir = tempfile.mkdtemp(prefix="ytmusic_burn_")
+            video_path = os.path.join(workdir, video_file.name)
+            with open(video_path, "wb") as fp:
+                fp.write(video_file.getbuffer())
+            srt_path = os.path.join(workdir, "subtitles.srt")
+            with open(srt_path, "w", encoding="utf-8") as fp:
+                fp.write(srt_now)
+            output_path = os.path.join(workdir, "output_burned.mp4")
+            with st.spinner("🔥 자막을 영상에 굽는 중... 영상 길이만큼 시간이 듭니다."):
+                ok, log = burn_subtitles_into_video(
+                    video_path, srt_path, output_path,
+                    crf=int(burn_crf),
+                    font_size=int(font_size),
+                    margin_v=int(margin_v),
+                )
+            if not ok or not os.path.exists(output_path):
+                st.error("Burn-in 인코딩에 실패했습니다.")
+                with st.expander("ffmpeg 로그", expanded=True):
+                    st.code(log or "(로그 없음)", language=None)
+                shutil.rmtree(workdir, ignore_errors=True)
+            else:
+                size_mb = os.path.getsize(output_path) / 1024 / 1024
+                st.session_state["sub_burn_output"] = {
+                    "path": output_path,
+                    "workdir": workdir,
+                    "size_mb": round(size_mb, 1),
+                }
+                st.success(f"✅ Burn-in 완료 — {size_mb:.1f} MB")
+
+    info = st.session_state.get("sub_burn_output")
+    if info and os.path.exists(info["path"]):
+        st.markdown("##### 🎬 자막이 입혀진 영상")
+        if info["size_mb"] <= 500:
+            try:
+                st.video(info["path"])
+            except Exception:
+                st.caption("미리보기를 표시할 수 없습니다.")
+        else:
+            st.caption("📦 파일이 커서 인라인 미리보기는 생략합니다.")
+        with open(info["path"], "rb") as fp:
+            st.download_button(
+                "📥 자막 입힌 MP4 다운로드",
+                data=fp.read(),
+                file_name=f"video_with_subs_{datetime.now():%Y%m%d_%H%M%S}.mp4",
+                mime="video/mp4",
+                type="primary",
+                use_container_width=True,
+                key="sub_burn_download",
+            )
+        if st.button("🗑️ 결과 비우기", key="sub_burn_cleanup"):
+            shutil.rmtree(info["workdir"], ignore_errors=True)
+            st.session_state.pop("sub_burn_output", None)
+            st.rerun()
 
 
 # ---------------------------------------------------------------------------
@@ -3668,6 +3986,7 @@ def main() -> None:
         tab_story,
         tab_title_lab,
         tab_compose,
+        tab_subtitle,
         tab_sync,
     ) = st.tabs(
         [
@@ -3675,6 +3994,7 @@ def main() -> None:
             "✍️ AI 스토리텔링 & 가사 생성",
             "🧪 제목 공식 Lab",
             "🎬 영상 합성 (인코딩)",
+            "📝 자막 입히기",
             "🎤 가사 자동 동기화 (SRT)",
         ]
     )
@@ -3686,6 +4006,8 @@ def main() -> None:
         render_title_lab_tab()
     with tab_compose:
         render_compose_tab()
+    with tab_subtitle:
+        render_subtitle_tab()
     with tab_sync:
         render_sync_tab()
 
