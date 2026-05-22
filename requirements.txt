@@ -12,3 +12,6 @@ google-generativeai>=0.7.0
 openai>=1.30.0
 # 파형 시각화 (탭 4 — SRT 생성)
 matplotlib>=3.8.0
+# 선택: 로컬 Whisper 추론 (가사 동기화 탭에서 'OpenAI API' 대신 'Local' 선택 시 사용)
+# 첫 실행 시 모델을 자동 다운로드 (small 462MB, medium 1.5GB).
+faster-whisper>=1.0.0

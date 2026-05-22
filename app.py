@@ -4138,6 +4138,85 @@ def whisper_transcribe(
     return dict(result)
 
 
+def whisper_transcribe_local(
+    audio_path: str,
+    *,
+    model_size: str = "small",
+    language: str | None = None,
+    device: str = "auto",
+    progress_cb=None,
+) -> dict:
+    """faster-whisper 로 로컬에서 추론. OpenAI API 와 동일한 dict 형식 반환.
+
+    첫 호출 시 모델을 자동 다운로드(small 462MB, medium 1.5GB, large-v3 3GB).
+    같은 모델은 ~/.cache/huggingface 에 캐시돼 이후엔 즉시 로드.
+    """
+    try:
+        from faster_whisper import WhisperModel
+    except ImportError as e:
+        raise RuntimeError(
+            "`faster-whisper` 패키지가 설치되어 있지 않습니다.\n"
+            "터미널에서 다음 명령으로 설치 후 다시 시도하세요:\n\n"
+            "    pip install faster-whisper\n\n"
+            "설치 후 앱을 재시작해주세요."
+        ) from e
+
+    # 디바이스/연산 정밀도 자동 선택.
+    if device == "auto":
+        try:
+            import torch  # type: ignore
+            if torch.cuda.is_available():
+                device, compute_type = "cuda", "float16"
+            else:
+                device, compute_type = "cpu", "int8"
+        except ImportError:
+            device, compute_type = "cpu", "int8"
+    else:
+        compute_type = "float16" if device == "cuda" else "int8"
+
+    if progress_cb:
+        progress_cb(f"모델 로드 중 ({model_size}, {device}/{compute_type})...")
+    model = WhisperModel(model_size, device=device, compute_type=compute_type)
+
+    if progress_cb:
+        progress_cb("오디오 분석 중 (Whisper 추론)...")
+    segments, info = model.transcribe(
+        audio_path,
+        word_timestamps=True,
+        language=language,
+        vad_filter=True,   # 무음 구간 자동 필터링 → 더 정확한 타임스탬프
+        beam_size=5,
+    )
+
+    seg_list: list[dict] = []
+    word_list: list[dict] = []
+    # 제너레이터를 소진하면서 progress 업데이트.
+    for seg in segments:
+        seg_list.append({
+            "id": int(getattr(seg, "id", len(seg_list))),
+            "start": float(seg.start),
+            "end": float(seg.end),
+            "text": (seg.text or "").strip(),
+        })
+        if seg.words:
+            for w in seg.words:
+                # 안전 가드 — None 인 경우 스킵.
+                if w.start is None or w.end is None:
+                    continue
+                word_list.append({
+                    "word": (w.word or "").strip(),
+                    "start": float(w.start),
+                    "end": float(w.end),
+                })
+
+    return {
+        "segments": seg_list,
+        "words": word_list,
+        "language": getattr(info, "language", language),
+        "duration": float(getattr(info, "duration", 0) or 0),
+    }
+
+
 def whisper_segments_to_srt(segments: list[dict]) -> str:
     """Whisper segments → SRT 그대로 변환 (가사 미입력 모드)."""
     out: list[str] = []
@@ -4431,9 +4510,9 @@ def _render_waveform(waveform: dict) -> None:
 def render_sync_tab() -> None:
     st.subheader("🎤 가사 자동 동기화 → SRT (CapCut/Premiere 임포트용)")
     st.caption(
-        "음악(또는 영상)을 업로드하면 OpenAI Whisper 가 가사를 부르는 정확한 시점을 잡아 "
-        "타임라인이 맞아떨어지는 SRT 자막을 만들어줍니다. 직접 쓴 가사를 정렬할 수도, "
-        "Whisper 의 인식 결과를 그대로 받을 수도 있습니다."
+        "음악(또는 영상)을 업로드하면 Whisper 가 가사를 부르는 정확한 시점을 잡아 "
+        "타임라인이 맞아떨어지는 SRT 자막을 만들어줍니다. "
+        "**로컬 Whisper(무료)** 또는 **OpenAI API(유료, 빠름)** 중 선택할 수 있습니다."
     )
 
     ffmpeg = _find_ffmpeg()
@@ -4441,17 +4520,83 @@ def render_sync_tab() -> None:
         st.error("⚠️ ffmpeg 가 필요합니다. (오디오 추출/압축에 사용)")
         return
 
-    default_key = os.getenv("OPENAI_API_KEY", "")
-    api_key = st.text_input(
-        "OpenAI API 키",
-        value=default_key,
-        type="password",
-        key="sync_api_key",
+    # ---- 엔진 선택 ----
+    engine = st.radio(
+        "🎙️ Whisper 엔진",
+        options=["local", "openai"],
+        format_func=lambda k: {
+            "local":  "💻 로컬 Whisper (무료) — 본인 컴퓨터에서 추론, API 키 불필요",
+            "openai": "🌐 OpenAI Whisper API (유료, ~$0.03/5분) — 빠르고 설치 불필요",
+        }[k],
+        index=0,
+        key="sync_engine",
         help=(
-            "https://platform.openai.com/api-keys 에서 발급. "
-            "whisper-1 모델은 약 $0.006/분 입니다 (5분 곡 ≈ $0.03)."
+            "로컬: faster-whisper 패키지 필요 (`pip install faster-whisper`). "
+            "첫 실행 시 모델을 자동 다운로드합니다. 같은 모델은 한 번만 받으면 영구 사용. "
+            "OpenAI: 빠르고 설정이 간단하지만 곡당 약 40원."
         ),
     )
+
+    api_key = ""
+    model_size = "small"
+    if engine == "openai":
+        default_key = os.getenv("OPENAI_API_KEY", "") or SAVED_KEYS.get("openai", "")
+        api_key = st.text_input(
+            "OpenAI API 키",
+            value=default_key,
+            type="password",
+            key="sync_api_key",
+            help=(
+                "https://platform.openai.com/api-keys 에서 발급. "
+                "whisper-1 모델은 약 $0.006/분 입니다 (5분 곡 ≈ $0.03)."
+            ),
+        )
+        save_col, clear_col = st.columns(2)
+        if save_col.button("💾 OpenAI 키 저장", key="sync_openai_save"):
+            if api_key.strip():
+                save_key("openai", api_key.strip())
+                SAVED_KEYS["openai"] = api_key.strip()
+                st.success("저장됨.")
+            else:
+                st.warning("키가 비어 있습니다.")
+        if clear_col.button(
+            "🗑️ 해지", key="sync_openai_clear",
+            disabled=not SAVED_KEYS.get("openai"),
+        ):
+            clear_key("openai")
+            SAVED_KEYS.pop("openai", None)
+            st.rerun()
+    else:
+        # 로컬 모델 크기 선택
+        model_options = {
+            "tiny":     "tiny (75MB) · 매우 빠름 · 한국어 정확도 낮음",
+            "base":     "base (142MB) · 빠름 · 한국어 보통",
+            "small":    "✓ small (462MB) · 균형 · 한국어 권장 (기본)",
+            "medium":   "medium (1.5GB) · 느림 · 한국어 매우 정확",
+            "large-v3": "large-v3 (3GB) · 매우 느림 · 최고 정확도",
+        }
+        model_size = st.selectbox(
+            "🧠 로컬 모델 크기",
+            options=list(model_options.keys()),
+            format_func=lambda k: model_options[k],
+            index=2,
+            key="sync_local_model",
+            help=(
+                "모델은 첫 사용 시 ~/.cache/huggingface 에 자동 다운로드됩니다. "
+                "한 번 받으면 다시 받지 않아요. 한국어 가사면 small 또는 medium 추천."
+            ),
+        )
+        # faster-whisper 설치 여부 체크
+        try:
+            import faster_whisper  # noqa: F401
+            st.caption("✓ faster-whisper 감지됨 — 바로 사용 가능합니다.")
+        except ImportError:
+            st.warning(
+                "⚠️ `faster-whisper` 패키지가 설치되어 있지 않습니다.\n\n"
+                "터미널에서 다음 명령으로 설치하세요:\n"
+                "```\npip install faster-whisper\n```\n"
+                "설치 후 앱을 재시작해주세요. (OpenAI API 옵션은 설치 없이 바로 사용 가능)"
+            )
 
     audio_file = st.file_uploader(
         "🎵 음악 또는 영상 파일",
@@ -4539,8 +4684,8 @@ def render_sync_tab() -> None:
     if not audio_file:
         st.error("음악(또는 영상) 파일을 업로드하세요.")
         return
-    if not api_key.strip():
-        st.error("OpenAI API 키가 필요합니다. (Whisper 호출용)")
+    if engine == "openai" and not api_key.strip():
+        st.error("OpenAI API 키가 필요합니다. (또는 위에서 '💻 로컬 Whisper' 를 선택하세요)")
         return
 
     workdir = tempfile.mkdtemp(prefix="ytmusic_sync_")
@@ -4565,8 +4710,8 @@ def render_sync_tab() -> None:
         else:
             audio_path = src_path
 
-        # Whisper 25MB 한도 체크. 넘으면 압축.
-        if os.path.getsize(audio_path) > WHISPER_MAX_BYTES:
+        # OpenAI 만 25MB 한도. 로컬은 제한 없음.
+        if engine == "openai" and os.path.getsize(audio_path) > WHISPER_MAX_BYTES:
             compressed = os.path.join(workdir, "compressed.mp3")
             with st.spinner(
                 f"📦 파일이 25MB 를 넘어 mono 64kbps 로 압축 중... "
@@ -4576,24 +4721,45 @@ def render_sync_tab() -> None:
             if not ok or os.path.getsize(compressed) > WHISPER_MAX_BYTES:
                 st.error(
                     f"파일이 너무 큽니다 ({os.path.getsize(audio_path)/1024/1024:.1f}MB). "
-                    "25MB 이하로 직접 줄여서 다시 시도해주세요."
+                    "25MB 이하로 직접 줄여서 다시 시도해주세요. "
+                    "(또는 '💻 로컬 Whisper' 로 전환하면 용량 제한 없음)"
                 )
                 return
             audio_path = compressed
 
-        # Whisper 호출.
+        # Whisper 호출 — 엔진별 분기.
         size_mb = os.path.getsize(audio_path) / 1024 / 1024
-        with st.spinner(
-            f"🎤 Whisper 가 가사 타이밍을 분석 중... "
-            f"(업로드 {size_mb:.1f}MB · 곡 길이의 5~15% 소요)"
-        ):
-            try:
-                result = whisper_transcribe(
-                    audio_path, api_key.strip(), language=lang_pick[1]
-                )
-            except Exception as e:
-                st.error(f"Whisper API 호출 실패: {e}")
-                return
+        if engine == "local":
+            spinner_msg = (
+                f"💻 로컬 Whisper 로 분석 중... ({model_size} 모델, {size_mb:.1f}MB)\n\n"
+                "첫 실행이면 모델 다운로드(수 분)가 먼저 진행돼요. "
+                "이후엔 캐시에서 즉시 로드됩니다."
+            )
+            with st.spinner(spinner_msg):
+                try:
+                    result = whisper_transcribe_local(
+                        audio_path,
+                        model_size=model_size,
+                        language=lang_pick[1],
+                    )
+                except RuntimeError as e:
+                    st.error(str(e))
+                    return
+                except Exception as e:
+                    st.error(f"로컬 Whisper 추론 실패: {type(e).__name__}: {e}")
+                    return
+        else:
+            with st.spinner(
+                f"🎤 OpenAI Whisper API 가 가사 타이밍을 분석 중... "
+                f"(업로드 {size_mb:.1f}MB · 곡 길이의 5~15% 소요)"
+            ):
+                try:
+                    result = whisper_transcribe(
+                        audio_path, api_key.strip(), language=lang_pick[1]
+                    )
+                except Exception as e:
+                    st.error(f"Whisper API 호출 실패: {e}")
+                    return
 
         segments = result.get("segments") or []
         if not segments:
@@ -4608,20 +4774,24 @@ def render_sync_tab() -> None:
             and not mode.startswith("Whisper 인식 결과만")
         )
 
+        engine_label = "💻 로컬" if engine == "local" else "🌐 OpenAI"
+        if engine == "local":
+            engine_label += f"({model_size})"
+
         if mode.startswith("Whisper 인식 결과만") or not user_lyrics.strip():
             srt_text = whisper_segments_to_srt(segments)
-            method = f"Whisper 직접 변환 · {len(segments)}구간"
+            method = f"{engine_label} · Whisper 직접 변환 · {len(segments)}구간"
             line_count = len(segments)
         elif use_word_level:
             lyrics_lines = [ln for ln in user_lyrics.splitlines() if ln.strip()]
             srt_text = _word_level_align(lyrics_lines, words)
             line_count = len(lyrics_lines)
-            method = f"Word 단위 정밀 정렬 · {line_count}줄 → {len(words)}단어"
+            method = f"{engine_label} · Word 단위 정밀 정렬 · {line_count}줄 → {len(words)}단어"
         else:
             lyrics_lines = [ln for ln in user_lyrics.splitlines() if ln.strip()]
             srt_text = align_lyrics_to_segments(lyrics_lines, segments)
             line_count = len(lyrics_lines)
-            method = f"가사 정렬 · 입력 {line_count}줄 → Whisper {len(segments)}구간"
+            method = f"{engine_label} · 가사 정렬 · 입력 {line_count}줄 → Whisper {len(segments)}구간"
 
         # 후렴구 보정 (가사 입력 모드에서만)
         if chorus_correct and user_lyrics.strip() and not mode.startswith("Whisper 인식 결과만"):
