@@ -2240,7 +2240,8 @@ def _ffprobe_duration(path: str) -> float | None:
                 ffprobe, "-v", "error", "-show_entries", "format=duration",
                 "-of", "default=noprint_wrappers=1:nokey=1", path,
             ],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=30,
         )
         return float(out.stdout.strip()) if out.returncode == 0 else None
     except Exception:
@@ -2276,10 +2277,33 @@ def concat_audio_files(
         output_path,
     ]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60 * 60 * 2)
+        proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60 * 60 * 2)
     except subprocess.TimeoutExpired:
         return False, "오디오 이어붙이기가 2시간 안에 끝나지 않았습니다."
-    return proc.returncode == 0, (proc.stderr or "")[-2400:]
+    except FileNotFoundError as e:
+        return False, f"ffmpeg 실행 실패 (FileNotFoundError): {e}"
+    except Exception as e:
+        return False, f"오디오 concat 중 예외: {type(e).__name__}: {e}"
+    return proc.returncode == 0, _format_ffmpeg_log(cmd, proc)
+
+
+def _format_ffmpeg_log(cmd: list[str], proc: subprocess.CompletedProcess) -> str:
+    """ffmpeg 결과를 사람이 읽을 수 있는 로그 블록으로 정리한다.
+
+    returncode + 실행한 커맨드 + stdout/stderr 꼬리를 함께 묶어, '(로그 없음)' 처럼
+    아무 단서도 없는 실패가 나오지 않도록 한다.
+    """
+    parts = [f"returncode = {proc.returncode}"]
+    parts.append("cmd:\n  " + " ".join(cmd))
+    out = (proc.stdout or "").strip()
+    err = (proc.stderr or "").strip()
+    if out:
+        parts.append("--- stdout (tail) ---\n" + out[-1500:])
+    if err:
+        parts.append("--- stderr (tail) ---\n" + err[-2500:])
+    if not out and not err:
+        parts.append("(ffmpeg 가 stdout/stderr 를 출력하지 않았습니다 — 인자 누락/조기 종료 가능성)")
+    return "\n\n".join(parts)
 
 
 def _format_srt_time(seconds: float) -> str:
@@ -2403,11 +2427,14 @@ def encode_music_video(
     cmd.append(output_path)
 
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60 * 60)
+        proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60 * 60 * 4)
     except subprocess.TimeoutExpired:
-        return False, "1시간 안에 인코딩이 끝나지 않았습니다. 해상도/CRF 를 조정해보세요."
-    log_tail = (proc.stderr or "")[-2400:]
-    return proc.returncode == 0, log_tail
+        return False, "인코딩이 4시간 안에 끝나지 않았습니다. 해상도/CRF/반복 회수를 조정해보세요."
+    except FileNotFoundError as e:
+        return False, f"ffmpeg 실행 실패 (FileNotFoundError): {e}"
+    except Exception as e:
+        return False, f"인코딩 중 예외: {type(e).__name__}: {e}"
+    return proc.returncode == 0, _format_ffmpeg_log(cmd, proc)
 
 
 def _fmt_duration(seconds: float | None) -> str:
@@ -2512,10 +2539,14 @@ def burn_subtitles_into_video(
         output_path,
     ]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60 * 60 * 2)
+        proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60 * 60 * 2)
     except subprocess.TimeoutExpired:
         return False, "burn-in 인코딩이 2시간 안에 끝나지 않았습니다."
-    return proc.returncode == 0, (proc.stderr or "")[-2400:]
+    except FileNotFoundError as e:
+        return False, f"ffmpeg 실행 실패 (FileNotFoundError): {e}"
+    except Exception as e:
+        return False, f"burn-in 중 예외: {type(e).__name__}: {e}"
+    return proc.returncode == 0, _format_ffmpeg_log(cmd, proc)
 
 
 def render_compose_tab() -> None:
@@ -2764,8 +2795,19 @@ def render_compose_tab() -> None:
         )
 
     if not ok or not os.path.exists(output_path):
-        st.error("인코딩에 실패했습니다. 아래 ffmpeg 로그를 확인해주세요.")
-        with st.expander("ffmpeg stderr 로그", expanded=True):
+        st.error("인코딩에 실패했습니다. 아래 진단 정보를 확인해주세요.")
+        diag = [
+            f"- ffmpeg 호출 성공 여부: **{ok}**",
+            f"- 결과 파일 존재 여부: **{os.path.exists(output_path)}**",
+            f"- 결과 파일 경로: `{output_path}`",
+            f"- 한 사이클 입력 오디오: `{cycle_audio}` "
+            f"(존재 = {os.path.exists(cycle_audio)})",
+            f"- 배경 파일: `{visual_path}` "
+            f"(존재 = {os.path.exists(visual_path)})",
+            f"- 반복 회수: {loop_count}, 측정된 한 사이클: {measured_cycle:.2f}s",
+        ]
+        st.markdown("\n".join(diag))
+        with st.expander("ffmpeg 로그 전체", expanded=True):
             st.code(log or "(로그 없음)", language=None)
         shutil.rmtree(workdir, ignore_errors=True)
         return
@@ -3075,7 +3117,7 @@ def extract_audio_track(input_path: str, output_path: str) -> tuple[bool, str]:
         output_path,
     ]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+        proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900)
     except subprocess.TimeoutExpired:
         return False, "오디오 추출이 15분 안에 끝나지 않았습니다."
     return proc.returncode == 0, (proc.stderr or "")[-2000:]
@@ -3093,7 +3135,7 @@ def compress_audio_for_whisper(input_path: str, output_path: str) -> tuple[bool,
         output_path,
     ]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+        proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900)
     except subprocess.TimeoutExpired:
         return False, "오디오 압축이 15분 안에 끝나지 않았습니다."
     return proc.returncode == 0, (proc.stderr or "")[-2000:]
