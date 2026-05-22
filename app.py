@@ -2346,6 +2346,74 @@ def generate_srt(tracks: list[dict]) -> str:
     return "\n".join(out).strip() + "\n"
 
 
+def build_slideshow_from_images(
+    image_paths: list[str],
+    output_path: str,
+    *,
+    seconds_per_image: float = 5.0,
+    resolution: str = "1920x1080",
+    fps: int = 30,
+) -> tuple[bool, str]:
+    """여러 이미지를 concat demuxer 로 묶어 슬라이드쇼 영상을 만든다.
+
+    각 이미지는 seconds_per_image 동안 표시되며, 결과는 encode_music_video 의
+    visual_path 로 그대로 쓸 수 있는 mp4. 오디오보다 짧으면 인코딩 단계의
+    -stream_loop -1 로 자동 반복.
+    """
+    ffmpeg = _find_ffmpeg()
+    if not ffmpeg:
+        return False, "ffmpeg 가 PATH 에 없습니다."
+    if not image_paths:
+        return False, "슬라이드쇼에 사용할 이미지가 없습니다."
+
+    try:
+        rw, rh = resolution.lower().split("x")
+        rw, rh = int(rw), int(rh)
+    except ValueError:
+        return False, f"해상도 형식 오류: {resolution!r}"
+
+    workdir = os.path.dirname(output_path) or "."
+    list_path = os.path.join(workdir, "slideshow_list.txt")
+
+    def _quote(p: str) -> str:
+        # ffmpeg concat demuxer 는 forward slash 안전. 작은따옴표는 닫고-이스케이프-다시열기.
+        return p.replace("\\", "/").replace("'", "'\\''")
+
+    with open(list_path, "w", encoding="utf-8") as fp:
+        for p in image_paths:
+            fp.write(f"file '{_quote(p)}'\n")
+            fp.write(f"duration {seconds_per_image}\n")
+        # concat demuxer 의 마지막 항목 duration 무시 버그 회피용 — 마지막 파일을 한 번 더.
+        fp.write(f"file '{_quote(image_paths[-1])}'\n")
+
+    vf = (
+        f"scale={rw}:{rh}:force_original_aspect_ratio=decrease,"
+        f"pad={rw}:{rh}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,format=yuv420p"
+    )
+    cmd = [
+        ffmpeg, "-y", "-hide_banner",
+        "-f", "concat", "-safe", "0", "-i", list_path,
+        "-vf", vf,
+        "-c:v", "libx264", "-preset", "medium", "-crf", "22",
+        "-r", str(fps),
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+        output_path,
+    ]
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=60 * 60,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "슬라이드쇼 생성이 1시간 안에 끝나지 않았습니다."
+    except FileNotFoundError as e:
+        return False, f"ffmpeg 실행 실패: {e}"
+    except Exception as e:
+        return False, f"슬라이드쇼 생성 중 예외: {type(e).__name__}: {e}"
+    return proc.returncode == 0, _format_ffmpeg_log(cmd, proc)
+
+
 def encode_music_video(
     audio_path: str,
     visual_path: str,
@@ -2608,13 +2676,64 @@ def render_compose_tab() -> None:
     else:
         audio_files = [uploaded]
 
-    visual_file = st.file_uploader(
-        "🖼️ 배경 영상 또는 이미지 (필수, 1개)",
+    visual_uploaded = st.file_uploader(
+        "🖼️ 배경 — 영상 1개 / 이미지 1장 / 이미지 여러 장(슬라이드쇼)",
         type=list(VIDEO_IMAGE_EXTS),
-        key="compose_visual",
-        help="MP4/MOV 등 영상, 또는 PNG/JPG 정지 이미지 한 장. "
+        accept_multiple_files=True,
+        key="compose_visuals_multi",
+        help="이미지를 여러 장 드래그하면 슬라이드쇼 영상으로 자동 합성합니다. "
              "영상이 오디오보다 짧으면 자동 루프됩니다.",
     )
+    visual_files: list = list(visual_uploaded or [])
+
+    def _is_image_name(n: str) -> bool:
+        return n.lower().endswith(IMAGE_EXTS)
+
+    is_slideshow = len(visual_files) > 1 and all(_is_image_name(f.name) for f in visual_files)
+    has_mixed = (
+        len(visual_files) > 1
+        and not is_slideshow
+    )
+    if has_mixed:
+        st.warning(
+            f"⚠️ 영상과 이미지가 섞여 있어 첫 번째 파일(`{visual_files[0].name}`)만 사용합니다. "
+            "슬라이드쇼는 **이미지만 여러 장** 업로드했을 때 자동으로 만들어집니다."
+        )
+        visual_files = visual_files[:1]
+        is_slideshow = False
+
+    seconds_per_image = 5.0
+    slide_auto = False
+    if is_slideshow:
+        st.markdown(f"##### 🖼️ 슬라이드쇼 — 이미지 {len(visual_files)}장 감지")
+        slide_c1, slide_c2 = st.columns([1, 2])
+        with slide_c1:
+            slide_auto = st.checkbox(
+                "오디오 길이에 맞춰 자동 분배",
+                value=False,
+                key="compose_slide_auto",
+                help="체크 시 (최종 영상 길이 ÷ 이미지 수) 로 각 이미지 표시 시간을 계산.",
+            )
+        with slide_c2:
+            if slide_auto:
+                st.caption(
+                    "자동 분배 모드 — 인코딩 시점에 (최종 영상 길이 ÷ 이미지 수) 로 결정됩니다."
+                )
+            else:
+                seconds_per_image = st.number_input(
+                    "각 이미지당 표시 시간 (초)",
+                    min_value=0.5, max_value=600.0, value=5.0, step=0.5,
+                    key="compose_slide_seconds",
+                    help="총 슬라이드쇼 길이가 오디오보다 짧으면 자동으로 반복됩니다.",
+                )
+        total_slide = seconds_per_image * len(visual_files) if not slide_auto else None
+        if total_slide:
+            st.caption(
+                f"슬라이드쇼 한 사이클: ≈ **{_fmt_duration(total_slide)}** "
+                f"({len(visual_files)}장 × {seconds_per_image:.1f}초)"
+            )
+
+    visual_file = visual_files[0] if visual_files else None
 
     # ---- 곡 메타 (길이) 미리보기 ----
     track_metas: list[dict] = []
@@ -2747,8 +2866,8 @@ def render_compose_tab() -> None:
             _render_compose_result()
         return
 
-    if not audio_files or not visual_file:
-        st.error("음악(1개 이상)과 배경 파일을 모두 업로드해주세요.")
+    if not audio_files or not visual_files:
+        st.error("음악(1개 이상)과 배경 파일(영상 1개 또는 이미지 1~여러 장)을 모두 업로드해주세요.")
         return
 
     workdir = tempfile.mkdtemp(prefix="ytmusic_compose_")
@@ -2759,9 +2878,23 @@ def render_compose_tab() -> None:
             fp.write(f.getbuffer())
         audio_paths.append(p)
 
-    visual_path = os.path.join(workdir, visual_file.name)
-    with open(visual_path, "wb") as fp:
-        fp.write(visual_file.getbuffer())
+    # 슬라이드쇼일 경우 모든 이미지를 저장, 아니면 단일 파일만 저장.
+    is_image = False
+    if is_slideshow:
+        slide_image_paths: list[str] = []
+        for vf in visual_files:
+            p = os.path.join(workdir, vf.name)
+            with open(p, "wb") as fp:
+                fp.write(vf.getbuffer())
+            slide_image_paths.append(p)
+        # 실제 슬라이드쇼 영상 빌드는 사이클 합산 후 자동분배 시 사이클 길이가 필요하므로
+        # 아래에서 진행. visual_path 는 임시로 None.
+        visual_path = ""
+    else:
+        visual_path = os.path.join(workdir, visual_file.name)
+        with open(visual_path, "wb") as fp:
+            fp.write(visual_file.getbuffer())
+        is_image = visual_file.name.lower().endswith(IMAGE_EXTS)
 
     # 1) 한 사이클 합본 만들기 (단일 파일이면 그대로 사용).
     cycle_audio = os.path.join(workdir, "cycle.m4a")
@@ -2780,8 +2913,31 @@ def render_compose_tab() -> None:
     measured_cycle = _ffprobe_duration(cycle_audio) or cycle_duration or 0.0
     total_duration = measured_cycle * loop_count
 
+    # 1.5) 슬라이드쇼면 이미지 → 영상 빌드. 이후 단계는 단일 파일과 동일하게 처리됨.
+    if is_slideshow:
+        if slide_auto and total_duration > 0:
+            spi = max(0.5, total_duration / len(slide_image_paths))
+        else:
+            spi = float(seconds_per_image)
+        slideshow_path = os.path.join(workdir, "slideshow.mp4")
+        with st.spinner(
+            f"🖼️ 슬라이드쇼 합성 중 — {len(slide_image_paths)}장 × {spi:.1f}초"
+        ):
+            ok_s, log_s = build_slideshow_from_images(
+                slide_image_paths, slideshow_path,
+                seconds_per_image=spi,
+                resolution=resolution,
+            )
+        if not ok_s or not os.path.exists(slideshow_path):
+            st.error("슬라이드쇼 영상 합성에 실패했습니다.")
+            with st.expander("ffmpeg 로그", expanded=True):
+                st.code(log_s or "(로그 없음)", language=None)
+            shutil.rmtree(workdir, ignore_errors=True)
+            return
+        visual_path = slideshow_path
+        is_image = False  # 슬라이드쇼는 영상이므로 -stream_loop -1 사용.
+
     # 2) 영상 인코딩 (audio_loop_count 로 오디오 반복).
-    is_image = visual_file.name.lower().endswith(IMAGE_EXTS)
     output_path = os.path.join(workdir, "output.mp4")
     spinner_msg = (
         f"🎬 ffmpeg 인코딩 중... (최종 길이 약 {_fmt_duration(total_duration)}). "
