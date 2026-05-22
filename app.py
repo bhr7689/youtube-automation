@@ -3113,18 +3113,46 @@ def render_compose_tab() -> None:
             key="compose_loop_method",
         )
         if method == "target":
-            target_hours = st.number_input(
-                "목표 영상 길이 (시간)",
-                min_value=0.1, max_value=10.0, value=1.0, step=0.25,
-                key="compose_target_hours",
-                help="예: 2 → 약 2시간짜리 영상이 나오도록 반복 회수를 계산합니다.",
-            )
-            target_seconds = target_hours * 3600
+            # 빠른 프리셋 버튼 — 한 번에 흔히 쓰는 길이 선택.
+            preset_minutes = {
+                "15분": 15, "30분": 30, "1시간": 60, "2시간": 120,
+                "3시간": 180, "4시간": 240, "8시간": 480, "10시간": 600,
+            }
+            st.caption("⚡ 빠른 선택")
+            preset_cols = st.columns(len(preset_minutes))
+            for (label, mins), col in zip(preset_minutes.items(), preset_cols):
+                if col.button(label, key=f"compose_target_preset_{label}", use_container_width=True):
+                    st.session_state["compose_target_hours_int"] = mins // 60
+                    st.session_state["compose_target_minutes_int"] = mins % 60
+                    st.rerun()
+
+            time_c1, time_c2, time_c3 = st.columns([1, 1, 2])
+            with time_c1:
+                hours_part = st.number_input(
+                    "시간",
+                    min_value=0, max_value=24, value=1, step=1,
+                    key="compose_target_hours_int",
+                )
+            with time_c2:
+                minutes_part = st.number_input(
+                    "분",
+                    min_value=0, max_value=59, value=0, step=1,
+                    key="compose_target_minutes_int",
+                )
+            target_seconds = hours_part * 3600 + minutes_part * 60
+            if target_seconds <= 0:
+                st.warning("목표 시간이 0 입니다. 시간 또는 분 중 하나는 0보다 커야 합니다.")
+                target_seconds = max(int(cycle_duration), 60)
             loop_count = max(1, int(round(target_seconds / cycle_duration)))
+            with time_c3:
+                st.caption(
+                    f"목표 = **{_fmt_duration(target_seconds)}** "
+                    f"({hours_part}시간 {minutes_part}분)"
+                )
         else:
             loop_count = st.slider(
                 "반복 회수",
-                min_value=1, max_value=200, value=4,
+                min_value=1, max_value=500, value=4,
                 key="compose_loop_count",
             )
         actual = loop_count * cycle_duration
