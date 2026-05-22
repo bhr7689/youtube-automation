@@ -2380,9 +2380,15 @@ def encode_music_video(
     cmd += ["-i", audio_path]
 
     # 해상도 맞춤(레터박스), yuv420p 로 호환성 확보.
+    # pad 필터는 W:H:X:Y 콜론 구분만 허용 — "WxH" 형식은 최신 ffmpeg 에서 거부됨.
+    try:
+        rw, rh = resolution.lower().split("x")
+        rw, rh = int(rw), int(rh)
+    except ValueError:
+        return False, f"해상도 형식 오류: {resolution!r} (예: 1920x1080)"
     vf_parts = [
-        f"scale={resolution}:force_original_aspect_ratio=decrease",
-        f"pad={resolution}:(ow-iw)/2:(oh-ih)/2:color=black",
+        f"scale={rw}:{rh}:force_original_aspect_ratio=decrease",
+        f"pad={rw}:{rh}:(ow-iw)/2:(oh-ih)/2:color=black",
         "setsar=1",
     ]
     if subtitles_path:
