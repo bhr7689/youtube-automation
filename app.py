@@ -2637,12 +2637,16 @@ def _build_slideshow_cmd(
     output_path: str,
     list_path: str,
     *,
-    seconds_per_image: float,
+    seconds_per_image: float | list[float],
     resolution: str,
     fps: int,
     preset: str,
 ) -> tuple[list[str], str]:
-    """슬라이드쇼 ffmpeg 명령 + concat list 파일 작성. (cmd, list_path) 반환."""
+    """슬라이드쇼 ffmpeg 명령 + concat list 파일 작성. (cmd, list_path) 반환.
+
+    seconds_per_image 는 단일 float 이면 모든 이미지 동일 시간,
+    list[float] 이면 이미지별 개별 시간으로 적용.
+    """
     ffmpeg = _find_ffmpeg() or "ffmpeg"
     try:
         rw, rh = resolution.lower().split("x")
@@ -2653,10 +2657,20 @@ def _build_slideshow_cmd(
     def _quote(p: str) -> str:
         return p.replace("\\", "/").replace("'", "'\\''")
 
+    if isinstance(seconds_per_image, list):
+        if len(seconds_per_image) != len(image_paths):
+            raise ValueError(
+                f"이미지 수({len(image_paths)})와 개별 시간 리스트 길이"
+                f"({len(seconds_per_image)})가 일치하지 않습니다."
+            )
+        durations = [float(max(0.1, s)) for s in seconds_per_image]
+    else:
+        durations = [float(seconds_per_image)] * len(image_paths)
+
     with open(list_path, "w", encoding="utf-8") as fp:
-        for p in image_paths:
+        for p, d in zip(image_paths, durations):
             fp.write(f"file '{_quote(p)}'\n")
-            fp.write(f"duration {seconds_per_image}\n")
+            fp.write(f"duration {d}\n")
         fp.write(f"file '{_quote(image_paths[-1])}'\n")
 
     vf = (
@@ -2714,6 +2728,73 @@ def build_slideshow_from_images(
     except Exception as e:
         return False, f"슬라이드쇼 생성 중 예외: {type(e).__name__}: {e}"
     return proc.returncode == 0, _format_ffmpeg_log(cmd, proc)
+
+
+def _build_audio_only_cmd(
+    cycle_audio: str,
+    output_path: str,
+    *,
+    target_duration: float,
+    bitrate: str,
+) -> list[str]:
+    """오디오만 N시간으로 늘려 만드는 ffmpeg 명령. 확장자가 .mp3 면 mp3, 아니면 aac."""
+    ffmpeg = _find_ffmpeg() or "ffmpeg"
+    cmd = [ffmpeg, "-y", "-hide_banner",
+           "-stream_loop", "-1", "-i", cycle_audio,
+           "-t", f"{max(0.5, target_duration):.3f}"]
+    ext = os.path.splitext(output_path)[1].lower()
+    if ext == ".mp3":
+        cmd += ["-c:a", "libmp3lame", "-b:a", bitrate]
+    else:
+        cmd += ["-c:a", "aac", "-b:a", bitrate]
+    cmd += ["-movflags", "+faststart"] if ext in (".m4a", ".mp4") else []
+    cmd.append(output_path)
+    return cmd
+
+
+def _build_visual_only_cmd(
+    cycle_visual: str,
+    output_path: str,
+    *,
+    target_duration: float,
+    is_image: bool,
+    resolution: str,
+    preset: str,
+    framerate: int,
+    crf: int,
+) -> list[str]:
+    """무음 슬라이드/이미지 영상을 target_duration 길이로 만드는 ffmpeg 명령."""
+    ffmpeg = _find_ffmpeg() or "ffmpeg"
+    try:
+        rw, rh = resolution.lower().split("x")
+        rw, rh = int(rw), int(rh)
+    except ValueError as e:
+        raise ValueError(f"해상도 형식 오류: {resolution!r}") from e
+
+    cmd = [ffmpeg, "-y", "-hide_banner"]
+    if is_image:
+        cmd += ["-loop", "1"]
+    else:
+        cmd += ["-stream_loop", "-1"]
+    cmd += ["-i", cycle_visual]
+
+    vf = (
+        f"scale={rw}:{rh}:force_original_aspect_ratio=decrease,"
+        f"pad={rw}:{rh}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,format=yuv420p"
+    )
+    cmd += [
+        "-t", f"{max(0.5, target_duration):.3f}",
+        "-vf", vf,
+        "-c:v", "libx264", "-preset", preset, "-crf", str(crf),
+        "-r", str(framerate),
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+        "-an",  # 무음
+    ]
+    if is_image:
+        cmd += ["-tune", "stillimage", "-g", str(max(framerate * 10, 50))]
+    cmd.append(output_path)
+    return cmd
 
 
 def _build_encode_cmd(
@@ -2956,11 +3037,392 @@ def burn_subtitles_into_video(
     return proc.returncode == 0, _format_ffmpeg_log(cmd, proc)
 
 
+def _pick_target_duration_ui(key_prefix: str, *, cycle_seconds: float | None = None) -> int:
+    """공통 '목표 길이' 위젯. (목표 시간(초)) 을 반환.
+
+    빠른 프리셋 칩 + 시간/분 입력 두 칸. cycle_seconds 가 주어지면 반복 회수 미리보기.
+    """
+    preset_minutes = {
+        "15분": 15, "30분": 30, "1시간": 60, "2시간": 120,
+        "3시간": 180, "4시간": 240, "8시간": 480, "10시간": 600,
+    }
+    st.caption("⚡ 빠른 선택")
+    cols = st.columns(len(preset_minutes))
+    for (label, mins), col in zip(preset_minutes.items(), cols):
+        if col.button(label, key=f"{key_prefix}_chip_{label}", use_container_width=True):
+            st.session_state[f"{key_prefix}_hours"] = mins // 60
+            st.session_state[f"{key_prefix}_minutes"] = mins % 60
+            st.rerun()
+
+    t1, t2, t3 = st.columns([1, 1, 2])
+    hours_part = t1.number_input(
+        "시간", min_value=0, max_value=24, value=1, step=1, key=f"{key_prefix}_hours"
+    )
+    minutes_part = t2.number_input(
+        "분", min_value=0, max_value=59, value=0, step=1, key=f"{key_prefix}_minutes"
+    )
+    target_seconds = int(hours_part) * 3600 + int(minutes_part) * 60
+    if target_seconds <= 0:
+        t3.warning("시간 또는 분 중 하나는 0보다 커야 합니다.")
+    else:
+        info = f"목표 = **{_fmt_duration(target_seconds)}** ({hours_part}시간 {minutes_part}분)"
+        if cycle_seconds and cycle_seconds > 0:
+            loops = max(1, int(round(target_seconds / cycle_seconds)))
+            info += f" · 한 사이클 {_fmt_duration(cycle_seconds)} × **{loops}회 반복**"
+        t3.caption(info)
+    return target_seconds
+
+
+def _render_compose_audio_only() -> None:
+    """🎵 음악만 — 곡들 이어붙여 목표 시간으로 만드는 워크플로."""
+    st.markdown("### 🎵 음악만 — 목표 시간으로 길게 만들기")
+
+    audio_files = st.file_uploader(
+        "🎵 음악 파일 (여러 개 — 업로드 순서대로 이어붙임)",
+        type=list(AUDIO_EXTS),
+        accept_multiple_files=True,
+        key="compose_audio_only_files",
+    )
+    audio_files = audio_files or []
+
+    track_metas: list[dict] = []
+    cycle_duration = 0.0
+    if audio_files:
+        st.markdown("##### 📋 업로드된 트랙")
+        probe_dir = tempfile.mkdtemp(prefix="ytmusic_aoprobe_")
+        try:
+            for idx, f in enumerate(audio_files, 1):
+                pth = os.path.join(probe_dir, f.name)
+                with open(pth, "wb") as fp:
+                    fp.write(f.getbuffer())
+                dur = _ffprobe_duration(pth) or 0.0
+                cycle_duration += dur
+                track_metas.append({"name": f.name, "duration": dur, "index": idx})
+            st.dataframe(
+                pd.DataFrame(
+                    [{"#": m["index"], "파일": m["name"], "길이": _fmt_duration(m["duration"])}
+                     for m in track_metas]
+                ),
+                hide_index=True, use_container_width=True,
+            )
+            st.caption(
+                f"한 사이클 길이: **{_fmt_duration(cycle_duration)}**  ·  {len(audio_files)}곡"
+            )
+        finally:
+            shutil.rmtree(probe_dir, ignore_errors=True)
+
+    st.markdown("##### ⏱️ 목표 길이")
+    target_seconds = _pick_target_duration_ui(
+        "compose_audio_only", cycle_seconds=cycle_duration if cycle_duration > 0 else None,
+    )
+
+    st.markdown("##### ⚙️ 인코딩 옵션")
+    o1, o2 = st.columns(2)
+    with o1:
+        out_format = st.selectbox(
+            "출력 포맷",
+            options=["mp3", "m4a"],
+            index=0,
+            key="compose_audio_only_format",
+            help="유튜브 업로드 용도라면 m4a(aac) 가 약간 효율적, 범용성은 mp3.",
+        )
+    with o2:
+        bitrate = st.selectbox(
+            "비트레이트",
+            options=["128k", "192k", "256k", "320k"],
+            index=2,
+            key="compose_audio_only_bitrate",
+        )
+
+    if not audio_files:
+        st.info("음악 파일을 1개 이상 업로드해주세요.")
+        return
+    if target_seconds <= 0:
+        return
+
+    if st.button(
+        "🚀 음악 잡 제출 (백그라운드)",
+        type="primary",
+        use_container_width=True,
+        key="compose_audio_only_run",
+    ):
+        _ensure_jobs_dir()
+        pre_job_id = uuid.uuid4().hex[:8]
+        workdir = _job_workdir(pre_job_id)
+        os.makedirs(workdir, exist_ok=True)
+
+        audio_paths: list[str] = []
+        for f in audio_files:
+            p = os.path.join(workdir, f.name)
+            with open(p, "wb") as fp:
+                fp.write(f.getbuffer())
+            audio_paths.append(p)
+
+        cycle_audio = os.path.join(workdir, "cycle.m4a")
+        if len(audio_paths) > 1:
+            with st.spinner(f"🎚️ 오디오 {len(audio_paths)}곡 이어붙이는 중..."):
+                ok, log = concat_audio_files(audio_paths, cycle_audio, bitrate=bitrate)
+            if not ok:
+                st.error("오디오 이어붙이기 실패")
+                with st.expander("ffmpeg 로그", expanded=True):
+                    st.code(log or "(없음)", language=None)
+                shutil.rmtree(workdir, ignore_errors=True)
+                return
+        else:
+            cycle_audio = audio_paths[0]
+
+        measured = _ffprobe_duration(cycle_audio) or cycle_duration or 0.0
+        loops_estimate = max(1, int(round(target_seconds / measured))) if measured else 1
+        output_path = os.path.join(workdir, f"music.{out_format}")
+        cmd = _build_audio_only_cmd(
+            cycle_audio, output_path,
+            target_duration=float(target_seconds),
+            bitrate=bitrate,
+        )
+
+        tracklist_text = build_tracklist_text(
+            track_metas, loop_count=1, mode="sequential",
+        )
+        job_title = (
+            f"🎵 음악만 · {len(audio_files)}곡 · 목표 {_fmt_duration(target_seconds)} "
+            f"· {out_format.upper()} {bitrate}"
+        )
+        try:
+            job_id = submit_ffmpeg_job(
+                cmd,
+                kind="compose_audio",
+                title=job_title,
+                output_path=output_path,
+                workdir=workdir,
+                extra={
+                    "duration": target_seconds,
+                    "resolution": f"{out_format.upper()} {bitrate}",
+                    "loop_count": loops_estimate,
+                    "track_count": len(audio_files),
+                    "mode": "audio_only",
+                    "tracklist": tracklist_text,
+                },
+            )
+        except RuntimeError as e:
+            st.error(str(e))
+            shutil.rmtree(workdir, ignore_errors=True)
+            return
+
+        st.session_state["compose_last_job_id"] = job_id
+        st.success(
+            f"✅ 잡 `{job_id}` 제출됨 — 예상 길이 {_fmt_duration(target_seconds)}.  \n"
+            f"📦 **인코딩 잡** 탭에서 진행 상황을 확인하세요."
+        )
+
+
+def _render_compose_visual_only() -> None:
+    """🖼️ 영상만 (무음) — 이미지/영상으로 슬라이드쇼 만들기."""
+    st.markdown("### 🖼️ 영상만 (무음) — 슬라이드쇼/영상 길게 만들기")
+
+    visual_uploaded = st.file_uploader(
+        "🖼️ 배경 — 영상 1개 / 이미지 1장 / 이미지 여러 장(슬라이드쇼)",
+        type=list(VIDEO_IMAGE_EXTS),
+        accept_multiple_files=True,
+        key="compose_visual_only_files",
+        help="이미지를 여러 장 드래그하면 슬라이드쇼로 합성합니다.",
+    )
+    visual_files: list = list(visual_uploaded or [])
+
+    def _is_image_name(n: str) -> bool:
+        return n.lower().endswith(IMAGE_EXTS)
+
+    is_slideshow = len(visual_files) > 1 and all(_is_image_name(f.name) for f in visual_files)
+    if len(visual_files) > 1 and not is_slideshow:
+        st.warning(
+            f"⚠️ 영상과 이미지가 섞여 있어 첫 파일(`{visual_files[0].name}`)만 사용합니다."
+        )
+        visual_files = visual_files[:1]
+        is_slideshow = False
+
+    # 슬라이드 시간 설정
+    per_image_durations: list[float] = []
+    seconds_per_image = 5.0
+    if is_slideshow:
+        st.markdown(f"##### 🖼️ 슬라이드쇼 — 이미지 {len(visual_files)}장")
+        per_image_mode = st.radio(
+            "이미지별 표시 시간",
+            options=["uniform", "individual"],
+            format_func=lambda k: {
+                "uniform": "🟰 모두 같은 시간 (한 값으로 적용)",
+                "individual": "🎚️ 이미지별로 다른 시간 (개별 지정)",
+            }[k],
+            horizontal=True,
+            key="compose_vo_per_image_mode",
+        )
+        if per_image_mode == "uniform":
+            seconds_per_image = st.number_input(
+                "각 이미지당 표시 시간 (초)",
+                min_value=0.5, max_value=600.0, value=5.0, step=0.5,
+                key="compose_vo_seconds",
+            )
+            per_image_durations = [seconds_per_image] * len(visual_files)
+        else:
+            st.caption("각 이미지마다 표시 시간을 따로 지정하세요 (초).")
+            ind_cols = st.columns(min(4, len(visual_files)))
+            for i, vf in enumerate(visual_files):
+                with ind_cols[i % len(ind_cols)]:
+                    d = st.number_input(
+                        f"{i + 1}. {vf.name[:18]}",
+                        min_value=0.5, max_value=3600.0, value=5.0, step=0.5,
+                        key=f"compose_vo_dur_{i}",
+                    )
+                    per_image_durations.append(float(d))
+        cycle_visual = sum(per_image_durations) if per_image_durations else 0
+        st.caption(
+            f"슬라이드쇼 한 사이클: ≈ **{_fmt_duration(cycle_visual)}** "
+            f"({len(visual_files)}장)"
+        )
+    elif visual_files:
+        # 단일 영상 또는 단일 이미지
+        f = visual_files[0]
+        if _is_image_name(f.name):
+            st.caption(f"📷 정지 이미지: `{f.name}` — 목표 시간만큼 그대로 유지합니다.")
+        else:
+            st.caption(f"🎬 영상: `{f.name}` — 목표 시간만큼 자동 루프합니다.")
+
+    st.markdown("##### ⏱️ 목표 길이")
+    target_seconds = _pick_target_duration_ui("compose_visual_only")
+
+    st.markdown("##### ⚙️ 인코딩 옵션")
+    speed_label_to_key = {v["label"]: k for k, v in SPEED_PRESETS.items()}
+    sp_col, _ = st.columns([2, 3])
+    with sp_col:
+        speed_label = st.radio(
+            "인코딩 속도 ↔ 화질",
+            options=list(speed_label_to_key.keys()),
+            index=0,
+            key="compose_vo_speed",
+        )
+    speed_key = speed_label_to_key[speed_label]
+    speed_cfg = SPEED_PRESETS[speed_key]
+
+    o1, o2 = st.columns(2)
+    with o1:
+        resolution = st.selectbox(
+            "해상도",
+            options=["1920x1080", "1280x720", "3840x2160", "2560x1440"],
+            index=0,
+            key="compose_vo_resolution",
+        )
+    with o2:
+        crf = st.slider(
+            "비디오 품질 (CRF)",
+            min_value=18, max_value=30, value=22, step=1,
+            key="compose_vo_crf",
+        )
+
+    if not visual_files:
+        st.info("영상 또는 이미지를 업로드해주세요.")
+        return
+    if target_seconds <= 0:
+        return
+
+    if st.button(
+        "🚀 무음 영상 잡 제출 (백그라운드)",
+        type="primary",
+        use_container_width=True,
+        key="compose_visual_only_run",
+    ):
+        _ensure_jobs_dir()
+        pre_job_id = uuid.uuid4().hex[:8]
+        workdir = _job_workdir(pre_job_id)
+        os.makedirs(workdir, exist_ok=True)
+
+        if is_slideshow:
+            image_paths: list[str] = []
+            for vf in visual_files:
+                p = os.path.join(workdir, vf.name)
+                with open(p, "wb") as fp:
+                    fp.write(vf.getbuffer())
+                image_paths.append(p)
+            slideshow_path = os.path.join(workdir, "slideshow.mp4")
+            with st.spinner(
+                f"🖼️ 슬라이드쇼 합성 중 — {len(image_paths)}장 (개별 시간 적용)"
+            ):
+                ok_s, log_s = build_slideshow_from_images(
+                    image_paths, slideshow_path,
+                    seconds_per_image=(
+                        per_image_durations if per_image_durations
+                        else seconds_per_image
+                    ),
+                    resolution=resolution,
+                    preset=speed_cfg["preset"],
+                )
+            if not ok_s or not os.path.exists(slideshow_path):
+                st.error("슬라이드쇼 합성 실패")
+                with st.expander("ffmpeg 로그", expanded=True):
+                    st.code(log_s or "(로그 없음)", language=None)
+                shutil.rmtree(workdir, ignore_errors=True)
+                return
+            cycle_visual = slideshow_path
+            is_image = False
+        else:
+            f = visual_files[0]
+            cycle_visual = os.path.join(workdir, f.name)
+            with open(cycle_visual, "wb") as fp:
+                fp.write(f.getbuffer())
+            is_image = _is_image_name(f.name)
+
+        framerate = speed_cfg["fps_static"] if is_image else speed_cfg["fps_video"]
+        output_path = os.path.join(workdir, "visual.mp4")
+        try:
+            cmd = _build_visual_only_cmd(
+                cycle_visual, output_path,
+                target_duration=float(target_seconds),
+                is_image=is_image,
+                resolution=resolution,
+                preset=speed_cfg["preset"],
+                framerate=framerate,
+                crf=int(crf),
+            )
+        except ValueError as e:
+            st.error(str(e))
+            shutil.rmtree(workdir, ignore_errors=True)
+            return
+
+        job_title = (
+            f"🖼️ 영상만 · {len(visual_files)}개 입력 · 목표 {_fmt_duration(target_seconds)} "
+            f"· {resolution} · {speed_cfg['label']}"
+        )
+        try:
+            job_id = submit_ffmpeg_job(
+                cmd,
+                kind="compose_visual",
+                title=job_title,
+                output_path=output_path,
+                workdir=workdir,
+                extra={
+                    "duration": target_seconds,
+                    "resolution": resolution,
+                    "loop_count": 1,
+                    "track_count": len(visual_files),
+                    "mode": "visual_only",
+                    "tracklist": "",
+                    "speed_preset": speed_key,
+                },
+            )
+        except RuntimeError as e:
+            st.error(str(e))
+            shutil.rmtree(workdir, ignore_errors=True)
+            return
+
+        st.session_state["compose_last_job_id"] = job_id
+        st.success(
+            f"✅ 잡 `{job_id}` 제출됨 — 예상 길이 {_fmt_duration(target_seconds)}.  \n"
+            f"📦 **인코딩 잡** 탭에서 진행 상황을 확인하세요."
+        )
+
+
 def render_compose_tab() -> None:
-    st.subheader("🎬 영상 합성 (MP3 + 배경 → MP4 인코딩)")
+    st.subheader("🎬 영상 합성 (인코딩)")
     st.caption(
-        "직접 만든 곡과 배경을 합쳐 긴 음악 영상을 인코딩합니다. "
-        "자막/SRT/burn-in 은 **📝 자막 입히기** 탭에서 따로 처리하세요."
+        "음악·영상·이미지를 자유롭게 조합해 원하는 길이로 인코딩합니다. "
+        "모든 인코딩은 백그라운드 잡으로 실행되어 다른 탭에서 작업해도 끊기지 않습니다."
     )
 
     ffmpeg = _find_ffmpeg()
@@ -2979,6 +3441,27 @@ def render_compose_tab() -> None:
             )
         return
     st.caption(f"✓ ffmpeg 감지됨: `{ffmpeg}`")
+
+    # ---- 출력 종류 (최상단) ----
+    output_type = st.radio(
+        "📦 출력 종류",
+        options=["av", "audio", "visual"],
+        format_func=lambda k: {
+            "av":     "🎬 음악 + 영상 (MP4) — 곡들 + 배경을 합쳐 긴 뮤직비디오",
+            "audio":  "🎵 음악만 (MP3/M4A) — 곡들 이어붙이고 N시간 길이로",
+            "visual": "🖼️ 영상만 (MP4, 무음) — 이미지/영상으로 슬라이드쇼 N시간",
+        }[k],
+        index=0,
+        key="compose_output_type",
+        help="음악만 / 영상만 출력도 가능합니다. 자막은 📝 자막 입히기 탭에서 별도 처리.",
+    )
+
+    if output_type == "audio":
+        _render_compose_audio_only()
+        return
+    if output_type == "visual":
+        _render_compose_visual_only()
+        return
 
     # ---- 합성 모드 ----
     mode_labels = {
