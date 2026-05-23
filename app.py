@@ -4911,16 +4911,34 @@ def render_sync_tab() -> None:
     col1, col2 = st.columns(2)
     with col1:
         lang_options = [
-            ("자동 감지", None), ("한국어 (ko)", "ko"), ("English (en)", "en"),
-            ("日本語 (ja)", "ja"), ("中文 (zh)", "zh"),
+            ("🌐 자동 감지 (다국어·혼합 가사 권장)", None),
+            ("한국어 (ko)", "ko"),
+            ("English (en)", "en"),
+            ("日本語 (ja)", "ja"),
+            ("中文 / 대만 (zh)", "zh"),
+            ("Español (es)", "es"),
+            ("हिन्दी / Hindi (hi)", "hi"),
+            ("Português (pt)", "pt"),
+            ("Français (fr)", "fr"),
+            ("Deutsch (de)", "de"),
+            ("Italiano (it)", "it"),
+            ("Bahasa Indonesia (id)", "id"),
+            ("Tiếng Việt (vi)", "vi"),
+            ("ภาษาไทย (th)", "th"),
+            ("Русский (ru)", "ru"),
+            ("العربية (ar)", "ar"),
         ]
         lang_pick = st.selectbox(
             "언어",
             options=lang_options,
             format_func=lambda x: x[0],
-            index=1,
+            index=0,
             key="sync_lang",
-            help="명시하면 Whisper 정확도가 올라갑니다. 영문 가사면 'English' 선택.",
+            help=(
+                "단일 언어 곡이면 해당 언어를 직접 고르면 정확도가 가장 높습니다. "
+                "여러 언어가 섞인 가사(예: 한국어+영어, 일본어+영어)는 '🌐 자동 감지'를 쓰세요. "
+                "어떤 언어든 정확한 텍스트가 필요하면 아래 '가사' 칸에 직접 붙여넣는 것이 가장 정확합니다."
+            ),
         )
     with col2:
         mode = st.radio(
@@ -4932,19 +4950,22 @@ def render_sync_tab() -> None:
         )
 
     user_lyrics = st.text_area(
-        "📝 가사 (한 줄 = 한 자막 라인)",
+        "📝 가사 (한 줄 = 한 자막 라인) — 어떤 언어·혼합 가사도 OK",
         value="",
         height=240,
         key="sync_lyrics",
         placeholder=(
-            "예시:\n"
-            "오늘도 비가 내리네\n"
-            "창문 너머 잿빛 하늘\n"
-            "잠시 멈춰 너를 떠올려\n"
+            "한 줄에 한 자막. 언어가 섞여도 그대로 적으면 됩니다:\n"
+            "今夜も星が綺麗だね\n"
+            "But I'm still thinking of you\n"
+            "Bajo la luna seguiré\n"
             "..."
         ),
-        help="비워두면 Whisper 가 들은 그대로 SRT 가 만들어집니다. "
-             "라인 수가 Whisper 구간 수와 달라도 자동으로 그룹화/분할됩니다.",
+        help=(
+            "여기에 가사를 붙여넣으면 언어가 몇 개 섞이든 텍스트가 100% 정확하게 들어가고, "
+            "Whisper 는 타이밍만 맞춥니다. 비워두면 Whisper 가 들은 그대로(자동 감지) SRT 를 만듭니다. "
+            "라인 수가 Whisper 구간 수와 달라도 자동으로 그룹화/분할됩니다."
+        ),
     )
 
     with st.expander("⚙️ 고급 정렬 옵션", expanded=False):
