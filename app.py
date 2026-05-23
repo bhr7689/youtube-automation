@@ -8,7 +8,9 @@ YouTube Data API v3 를 사용해 특정 키워드(상황/감정 기반)로 최�
 
 from __future__ import annotations
 
+import base64
 import io
+import json
 import os
 import random
 import re
@@ -2870,6 +2872,30 @@ def _parse_srt_starts(srt_text: str) -> list[float]:
     ]
 
 
+def _parse_srt_cues(srt_text: str) -> list[dict]:
+    """SRT 텍스트 → [{'start': float, 'end': float, 'text': str}] 목록."""
+    cues: list[dict] = []
+    for raw in re.split(r"\n\n+", (srt_text or "").strip()):
+        lines = raw.strip().splitlines()
+        if len(lines) < 2:
+            continue
+        idx = 1 if lines[0].strip().isdigit() else 0
+        if idx >= len(lines):
+            continue
+        m = re.match(
+            r"(\d+:\d+:\d+,\d+)\s+-->\s+(\d+:\d+:\d+,\d+)", lines[idx].strip()
+        )
+        if not m:
+            continue
+        text = "\n".join(lines[idx + 1:]).strip()
+        cues.append({
+            "start": _parse_srt_time(m.group(1)),
+            "end": _parse_srt_time(m.group(2)),
+            "text": text,
+        })
+    return cues
+
+
 def _word_level_align(lyrics_lines: list[str], words: list[dict]) -> str:
     """
     Whisper word-level 타임스탬프를 이용해 각 가사 라인의 SRT 시각을 결정한다.
@@ -3036,6 +3062,178 @@ def _render_waveform(waveform: dict) -> None:
     ax.set_title("🎵 파형  ·  🔴 자막 시작 지점", color="#ddd", fontsize=9, pad=6)
     st.pyplot(fig, use_container_width=True)
     plt.close(fig)
+
+
+# 인라인 재생용 경량 미리듣기 오디오 (mp3 96kbps) — 브라우저 어디서나 재생 가능.
+PREVIEW_AUDIO_MAX_BYTES = 16 * 1024 * 1024
+
+
+def make_preview_audio(input_path: str, output_path: str) -> bool:
+    """동기화 확인용 경량 mp3 미리듣기 트랙 생성."""
+    ffmpeg = _find_ffmpeg()
+    if not ffmpeg:
+        return False
+    cmd = [
+        ffmpeg, "-y", "-hide_banner", "-i", input_path,
+        "-vn", "-acodec", "libmp3lame", "-b:a", "96k", "-ac", "2",
+        output_path,
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, timeout=180)
+        return proc.returncode == 0 and os.path.exists(output_path)
+    except Exception:
+        return False
+
+
+# 재생 + 파형 + 가사 싱크 확인 컴포넌트. JS 중괄호가 많아 f-string 대신
+# 플레이스홀더 치환 방식으로 데이터를 주입한다.
+_SYNC_PLAYER_TEMPLATE = """
+<div id="syncwrap" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#ddd;">
+  <audio id="aud" controls preload="metadata" style="width:100%;height:40px;"></audio>
+  <div id="wfwrap" style="position:relative;margin-top:10px;cursor:pointer;" title="클릭하면 해당 지점으로 이동합니다">
+    <canvas id="wf" style="width:100%;height:120px;display:block;background:#161b22;border-radius:6px;"></canvas>
+    <div id="head" style="position:absolute;top:0;bottom:0;width:2px;background:#fff;left:0;pointer-events:none;box-shadow:0 0 5px #fff;"></div>
+    <div id="curtime" style="position:absolute;top:4px;right:6px;font-size:11px;color:#bbb;background:rgba(0,0,0,0.45);padding:1px 6px;border-radius:3px;font-variant-numeric:tabular-nums;">0:00</div>
+  </div>
+  <div id="nowline" style="margin-top:10px;text-align:center;min-height:28px;font-size:17px;font-weight:600;color:#FFB74D;"></div>
+  <div id="lyrics" style="margin-top:6px;max-height:240px;overflow-y:auto;border:1px solid #2a2f3a;border-radius:6px;padding:6px 8px;background:#0e1117;"></div>
+</div>
+<script>
+const DATA = /*__PAYLOAD__*/ null;
+(function(){
+  const aud=document.getElementById('aud');
+  const canvas=document.getElementById('wf');
+  const head=document.getElementById('head');
+  const wfwrap=document.getElementById('wfwrap');
+  const lyricsBox=document.getElementById('lyrics');
+  const nowline=document.getElementById('nowline');
+  const curtime=document.getElementById('curtime');
+  const env=DATA.envelope||[];
+  const cues=DATA.cues||[];
+  let duration=DATA.duration||0;
+  if(DATA.audioSrc){ aud.src=DATA.audioSrc; }
+
+  function fmt(t){ t=Math.max(0,t||0); const m=Math.floor(t/60); const s=Math.floor(t%60); return m+':'+(s<10?'0':'')+s; }
+
+  const rows=[];
+  cues.forEach(function(c,i){
+    const d=document.createElement('div');
+    d.style.cssText='padding:5px 8px;border-radius:4px;cursor:pointer;display:flex;gap:10px;align-items:baseline;transition:background .12s;';
+    const ts=document.createElement('span');
+    ts.textContent=fmt(c.start);
+    ts.style.cssText='color:#7aa2f7;font-size:12px;font-variant-numeric:tabular-nums;flex:0 0 auto;min-width:40px;';
+    const tx=document.createElement('span');
+    tx.textContent=c.text;
+    tx.style.cssText='color:#ccc;font-size:14px;line-height:1.4;white-space:pre-wrap;';
+    d.appendChild(ts); d.appendChild(tx);
+    d.addEventListener('click',function(){ aud.currentTime=c.start+0.001; aud.play(); });
+    lyricsBox.appendChild(d);
+    rows.push({row:d,tx:tx});
+  });
+
+  function drawWave(){
+    const dpr=window.devicePixelRatio||1;
+    const w=canvas.clientWidth, h=canvas.clientHeight;
+    if(w<=0||h<=0) return;
+    canvas.width=Math.round(w*dpr); canvas.height=Math.round(h*dpr);
+    const ctx=canvas.getContext('2d');
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,w,h);
+    const n=env.length;
+    if(n>0){
+      const bw=w/n;
+      for(let i=0;i<n;i++){
+        const v=Math.max(0,Math.min(1,env[i]));
+        const bh=Math.max(1,v*(h-4));
+        ctx.fillStyle='#4CAF50';
+        ctx.fillRect(i*bw,(h-bh)/2,Math.max(1,bw*0.9),bh);
+      }
+    }
+    const dur=duration||aud.duration||0;
+    if(dur>0){
+      ctx.strokeStyle='rgba(255,112,67,0.55)'; ctx.lineWidth=1;
+      cues.forEach(function(c){
+        const x=(c.start/dur)*w;
+        ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke();
+      });
+    }
+  }
+
+  let activeIdx=-1;
+  function update(){
+    const t=aud.currentTime||0;
+    const dur=duration||aud.duration||0;
+    if(dur>0){ head.style.left=((Math.min(t,dur)/dur)*100)+'%'; }
+    curtime.textContent=fmt(t);
+    let idx=-1;
+    for(let i=0;i<cues.length;i++){ if(t>=cues[i].start-0.05 && t<cues[i].end){ idx=i; break; } }
+    if(idx===-1){ for(let i=cues.length-1;i>=0;i--){ if(t>=cues[i].start){ idx=i; break; } } }
+    if(idx!==activeIdx){
+      if(activeIdx>=0 && rows[activeIdx]){ rows[activeIdx].row.style.background='transparent'; rows[activeIdx].tx.style.color='#ccc'; }
+      activeIdx=idx;
+      if(idx>=0 && rows[idx]){
+        rows[idx].row.style.background='rgba(255,167,38,0.18)';
+        rows[idx].tx.style.color='#fff';
+        rows[idx].row.scrollIntoView({block:'center',behavior:'smooth'});
+        nowline.textContent=cues[idx].text;
+      } else { nowline.textContent=''; }
+    }
+  }
+
+  let raf=null;
+  function loop(){ update(); raf=requestAnimationFrame(loop); }
+  aud.addEventListener('play',function(){ if(!raf) loop(); });
+  aud.addEventListener('pause',function(){ if(raf){cancelAnimationFrame(raf); raf=null;} update(); });
+  aud.addEventListener('ended',function(){ if(raf){cancelAnimationFrame(raf); raf=null;} });
+  aud.addEventListener('seeked',update);
+  aud.addEventListener('timeupdate',update);
+  aud.addEventListener('loadedmetadata',function(){ if(!duration||duration<=0){ duration=aud.duration; } drawWave(); });
+
+  wfwrap.addEventListener('click',function(e){
+    const r=wfwrap.getBoundingClientRect();
+    const ratio=Math.min(1,Math.max(0,(e.clientX-r.left)/r.width));
+    const dur=duration||aud.duration||0;
+    if(dur>0){ aud.currentTime=ratio*dur; }
+  });
+
+  window.addEventListener('resize',drawWave);
+  drawWave(); update();
+})();
+</script>
+"""
+
+
+def _render_sync_player(
+    audio_b64: str,
+    audio_mime: str,
+    envelope,
+    duration: float,
+    cues: list[dict],
+) -> None:
+    """오디오 재생 + 파형 + 실시간 가사 하이라이트 인터랙티브 컴포넌트."""
+    import streamlit.components.v1 as components
+
+    env_list = []
+    if envelope is not None:
+        env_list = [round(float(x), 4) for x in envelope]
+
+    payload = json.dumps({
+        "audioSrc": f"data:{audio_mime};base64,{audio_b64}" if audio_b64 else "",
+        "envelope": env_list,
+        "duration": float(duration or 0),
+        "cues": [
+            {
+                "start": round(float(c["start"]), 3),
+                "end": round(float(c["end"]), 3),
+                "text": c["text"],
+            }
+            for c in cues
+        ],
+    })
+    # '<' 를 이스케이프해 가사에 '</script>' 가 들어가도 스크립트 태그가 깨지지 않게 한다.
+    payload = payload.replace("<", "\\u003c")
+    html = _SYNC_PLAYER_TEMPLATE.replace("/*__PAYLOAD__*/ null", payload)
+    components.html(html, height=540, scrolling=False)
 
 
 def render_sync_tab() -> None:
@@ -3247,6 +3445,17 @@ def render_sync_tab() -> None:
             "srt_starts": _parse_srt_starts(srt_text),
         }
 
+        # 재생용 경량 미리듣기 오디오 (브라우저에서 재생하며 싱크 확인용)
+        audio_b64 = ""
+        audio_mime = "audio/mpeg"
+        preview_path = os.path.join(workdir, "preview.mp3")
+        with st.spinner("🔊 재생용 오디오 준비 중..."):
+            if make_preview_audio(audio_path, preview_path):
+                psize = os.path.getsize(preview_path)
+                if psize <= PREVIEW_AUDIO_MAX_BYTES:
+                    with open(preview_path, "rb") as fp:
+                        audio_b64 = base64.b64encode(fp.read()).decode("ascii")
+
         st.session_state["sync_srt"] = {
             "content": srt_text,
             "segments": segments,
@@ -3256,6 +3465,8 @@ def render_sync_tab() -> None:
             "line_count": line_count,
             "audio_filename": audio_file.name,
             "waveform": waveform,
+            "audio_b64": audio_b64,
+            "audio_mime": audio_mime,
         }
         st.success(f"✅ 동기화 완료 — {method}")
         _render_sync_result()
@@ -3291,10 +3502,31 @@ def _render_sync_result() -> None:
         key="sync_download",
     )
 
-    # 파형 시각화
     waveform = info.get("waveform")
+
+    # 재생하며 가사 싱크 확인 (오디오 + 파형 + 실시간 가사 하이라이트)
+    if info.get("audio_b64"):
+        with st.expander("▶️ 재생하며 가사 싱크 확인", expanded=True):
+            st.caption(
+                "음악을 재생하면 파형의 재생 헤드가 움직이고, 아래 가사가 현재 구간에 맞춰 "
+                "하이라이트됩니다. 파형이나 가사 줄을 클릭하면 그 지점부터 바로 재생됩니다."
+            )
+            cues = _parse_srt_cues(info["content"])
+            _render_sync_player(
+                info["audio_b64"],
+                info.get("audio_mime", "audio/mpeg"),
+                (waveform or {}).get("envelope"),
+                float((waveform or {}).get("duration") or info.get("duration") or 0),
+                cues,
+            )
+    elif waveform and waveform.get("envelope"):
+        st.info(
+            "🔊 재생용 오디오를 준비하지 못했습니다. 아래 정적 파형으로 마커 위치를 확인하세요."
+        )
+
+    # 파형 시각화 (정적 개요)
     if waveform and waveform.get("envelope"):
-        with st.expander("📊 파형 + 자막 시작 마커", expanded=True):
+        with st.expander("📊 파형 + 자막 시작 마커 (정적 개요)", expanded=False):
             st.caption(
                 "🟢 파형 · 🔴 자막 시작 지점 — 마커와 음악 피크가 잘 맞는지 확인하세요."
             )
