@@ -4111,6 +4111,44 @@ def compress_audio_for_whisper(input_path: str, output_path: str) -> tuple[bool,
     return proc.returncode == 0, (proc.stderr or "")[-2000:]
 
 
+def demucs_available() -> bool:
+    """Demucs(보컬 분리) 패키지 설치 여부."""
+    import importlib.util
+    return importlib.util.find_spec("demucs") is not None
+
+
+def separate_vocals(audio_path: str, outdir: str) -> tuple[str | None, str]:
+    """Demucs 로 반주를 제거하고 보컬 스템만 추출한다. (vocals_path|None, log).
+
+    `python -m demucs --two-stems=vocals` 를 호출해 보컬/반주 2-stem 으로 분리하고
+    생성된 vocals.wav 경로를 돌려준다. 미설치/실패 시 (None, 로그).
+    """
+    if not demucs_available():
+        return None, "demucs 미설치"
+    cmd = [
+        sys.executable, "-m", "demucs",
+        "--two-stems=vocals",
+        "-o", outdir,
+        audio_path,
+    ]
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=1800,
+        )
+    except subprocess.TimeoutExpired:
+        return None, "보컬 분리가 30분 안에 끝나지 않았습니다."
+    if proc.returncode != 0:
+        return None, (proc.stderr or proc.stdout or "")[-2000:]
+    # outdir/<model>/<trackname>/vocals.wav 형태로 생성됨.
+    for root, _dirs, files in os.walk(outdir):
+        if "vocals.wav" in files:
+            return os.path.join(root, "vocals.wav"), "ok"
+        if "vocals.mp3" in files:
+            return os.path.join(root, "vocals.mp3"), "ok"
+    return None, "분리 결과(vocals)를 찾지 못했습니다."
+
+
 def whisper_transcribe(
     audio_path: str, api_key: str, language: str | None = None
 ) -> dict:
@@ -4185,8 +4223,17 @@ def whisper_transcribe_local(
         audio_path,
         word_timestamps=True,
         language=language,
-        vad_filter=True,   # 무음 구간 자동 필터링 → 더 정확한 타임스탬프
+        # 음악에서 보컬 구간을 '무음'으로 오판해 잘리지 않도록 VAD 를 완화.
+        vad_filter=True,
+        vad_parameters=dict(threshold=0.2, min_silence_duration_ms=700),
         beam_size=5,
+        # 노래에서 한 번 헷갈리면 반복/붕괴되며 이후 가사를 아예 못 적는 현상을 방지.
+        condition_on_previous_text=False,
+        # 음악 구간을 무음으로 잘못 버리지 않게 임계값 완화 (곡 끝까지 인식).
+        no_speech_threshold=0.85,
+        # 반복되는 후렴구 가사도 '환각'으로 오판해 버리지 않게 완화.
+        compression_ratio_threshold=2.8,
+        log_prob_threshold=-2.0,
     )
 
     seg_list: list[dict] = []
@@ -4239,7 +4286,9 @@ def whisper_segments_to_srt(segments: list[dict]) -> str:
 
 
 def align_lyrics_to_segments(
-    lyrics_lines: list[str], segments: list[dict]
+    lyrics_lines: list[str],
+    segments: list[dict],
+    total_duration: float | None = None,
 ) -> str:
     """
     사용자가 직접 쓴 가사 라인들을 Whisper 가 잡은 구간 타임스탬프에 정렬한다.
@@ -4308,11 +4357,19 @@ def align_lyrics_to_segments(
                 out.append(line)
                 out.append("")
                 counter += 1
-        # 만약 남은 라인이 있으면 마지막 구간 뒤에 짧게 이어붙임.
+        # 남은 라인이 있으면 마지막 구간 끝 ~ 곡 끝까지 고르게 분배 (끝부분 가사 누락 방지).
         if line_cursor < L:
-            tail_start = float(segments[-1].get("end", 0) or 0)
-            for line in lines[line_cursor:]:
-                tail_end = tail_start + 3.0
+            tail_lines = lines[line_cursor:]
+            seg_end = float(segments[-1].get("end", 0) or 0)
+            span_end = (
+                float(total_duration)
+                if total_duration and float(total_duration) > seg_end
+                else seg_end + 3.0 * len(tail_lines)
+            )
+            per = max(0.8, (span_end - seg_end) / len(tail_lines))
+            tail_start = seg_end
+            for line in tail_lines:
+                tail_end = tail_start + per
                 out.append(str(counter))
                 out.append(
                     f"{_format_srt_time(tail_start)} --> {_format_srt_time(tail_end)}"
@@ -4824,6 +4881,26 @@ def render_sync_tab() -> None:
                 "설치 후 앱을 재시작해주세요. (OpenAI API 옵션은 설치 없이 바로 사용 가능)"
             )
 
+    # ---- 보컬 분리 (Demucs) — 정확도 향상 옵션 ----
+    demucs_ok = demucs_available()
+    use_demucs = st.checkbox(
+        "🎤 보컬 분리로 정확도 높이기 (반주 제거 후 인식)",
+        value=demucs_ok,
+        key="sync_demucs",
+        disabled=not demucs_ok,
+        help=(
+            "Demucs 로 반주를 제거하고 보컬만 Whisper 에 넣어 인식 정확도를 크게 높입니다. "
+            "곡당 1~3분 정도 더 걸립니다. 재생 플레이어와 파형은 원곡 그대로 유지됩니다."
+        ),
+    )
+    if not demucs_ok:
+        st.caption(
+            "💡 보컬 분리를 쓰려면 `pip install demucs` 후 앱을 재시작하세요. "
+            "(설치 전에는 원곡 그대로 인식합니다)"
+        )
+    elif use_demucs:
+        st.caption("✓ Demucs 감지됨 — 보컬을 분리해 인식합니다.")
+
     audio_file = st.file_uploader(
         "🎵 음악 또는 영상 파일",
         type=["mp3", "wav", "m4a", "flac", "ogg", "aac", "mp4", "mov", "webm", "mkv"],
@@ -4936,25 +5013,46 @@ def render_sync_tab() -> None:
         else:
             audio_path = src_path
 
+        # 재생 플레이어/파형은 원곡(audio_path)을 그대로 쓰고,
+        # Whisper 입력만 transcribe_path 로 따로 둔다.
+        transcribe_path = audio_path
+
+        # 보컬 분리 (Demucs) — 반주를 제거하고 보컬만 인식에 사용.
+        if use_demucs and demucs_available():
+            demucs_out = os.path.join(workdir, "demucs")
+            with st.spinner(
+                "🎤 보컬 분리 중 (Demucs)... 곡당 1~3분 소요. "
+                "첫 실행이면 모델 다운로드가 먼저 진행돼요."
+            ):
+                vocal_path, dlog = separate_vocals(audio_path, demucs_out)
+            if vocal_path:
+                transcribe_path = vocal_path
+                st.caption("✓ 보컬 분리 완료 — 반주를 제거한 보컬로 인식합니다.")
+            else:
+                st.warning(
+                    "보컬 분리에 실패해 원곡 그대로 인식합니다. "
+                    f"(사유: {dlog[:200]})"
+                )
+
         # OpenAI 만 25MB 한도. 로컬은 제한 없음.
-        if engine == "openai" and os.path.getsize(audio_path) > WHISPER_MAX_BYTES:
+        if engine == "openai" and os.path.getsize(transcribe_path) > WHISPER_MAX_BYTES:
             compressed = os.path.join(workdir, "compressed.mp3")
             with st.spinner(
                 f"📦 파일이 25MB 를 넘어 mono 64kbps 로 압축 중... "
-                f"({os.path.getsize(audio_path)/1024/1024:.1f}MB)"
+                f"({os.path.getsize(transcribe_path)/1024/1024:.1f}MB)"
             ):
-                ok, log = compress_audio_for_whisper(audio_path, compressed)
+                ok, log = compress_audio_for_whisper(transcribe_path, compressed)
             if not ok or os.path.getsize(compressed) > WHISPER_MAX_BYTES:
                 st.error(
-                    f"파일이 너무 큽니다 ({os.path.getsize(audio_path)/1024/1024:.1f}MB). "
+                    f"파일이 너무 큽니다 ({os.path.getsize(transcribe_path)/1024/1024:.1f}MB). "
                     "25MB 이하로 직접 줄여서 다시 시도해주세요. "
                     "(또는 '💻 로컬 Whisper' 로 전환하면 용량 제한 없음)"
                 )
                 return
-            audio_path = compressed
+            transcribe_path = compressed
 
         # Whisper 호출 — 엔진별 분기.
-        size_mb = os.path.getsize(audio_path) / 1024 / 1024
+        size_mb = os.path.getsize(transcribe_path) / 1024 / 1024
         if engine == "local":
             spinner_msg = (
                 f"💻 로컬 Whisper 로 분석 중... ({model_size} 모델, {size_mb:.1f}MB)\n\n"
@@ -4964,7 +5062,7 @@ def render_sync_tab() -> None:
             with st.spinner(spinner_msg):
                 try:
                     result = whisper_transcribe_local(
-                        audio_path,
+                        transcribe_path,
                         model_size=model_size,
                         language=lang_pick[1],
                     )
@@ -4981,7 +5079,7 @@ def render_sync_tab() -> None:
             ):
                 try:
                     result = whisper_transcribe(
-                        audio_path, api_key.strip(), language=lang_pick[1]
+                        transcribe_path, api_key.strip(), language=lang_pick[1]
                     )
                 except Exception as e:
                     st.error(f"Whisper API 호출 실패: {e}")
@@ -5015,7 +5113,9 @@ def render_sync_tab() -> None:
             method = f"{engine_label} · Word 단위 정밀 정렬 · {line_count}줄 → {len(words)}단어"
         else:
             lyrics_lines = [ln for ln in user_lyrics.splitlines() if ln.strip()]
-            srt_text = align_lyrics_to_segments(lyrics_lines, segments)
+            srt_text = align_lyrics_to_segments(
+                lyrics_lines, segments, result.get("duration")
+            )
             line_count = len(lyrics_lines)
             method = f"{engine_label} · 가사 정렬 · 입력 {line_count}줄 → Whisper {len(segments)}구간"
 
