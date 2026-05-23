@@ -15,3 +15,7 @@ matplotlib>=3.8.0
 # 선택: 로컬 Whisper 추론 (가사 동기화 탭에서 'OpenAI API' 대신 'Local' 선택 시 사용)
 # 첫 실행 시 모델을 자동 다운로드 (small 462MB, medium 1.5GB).
 faster-whisper>=1.0.0
+# 선택: 보컬 분리 (가사 동기화 탭 - '보컬 분리' 옵션). 가사 없는 곡 인식 정확도 향상.
+# 용량이 큼(torch 포함). 설치는 '보컬분리_설치.bat' 더블클릭으로도 가능.
+demucs>=4.0.0
+

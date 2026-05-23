@@ -4894,12 +4894,15 @@ def render_sync_tab() -> None:
         ),
     )
     if not demucs_ok:
-        st.caption(
-            "💡 보컬 분리를 쓰려면 `pip install demucs` 후 앱을 재시작하세요. "
-            "(설치 전에는 원곡 그대로 인식합니다)"
+        st.info(
+            "🎤 **보컬 분리를 켜려면 한 번만 설치하면 됩니다.**\n\n"
+            "프로젝트 폴더의 **`보컬분리_설치.bat` 파일을 더블클릭**하세요. "
+            "(설치 후 대시보드를 다시 실행하면 이 체크박스가 켜집니다.)\n\n"
+            "직접 설치하려면 터미널에서 `pip install demucs` 도 가능합니다. "
+            "설치 전에는 원곡 그대로 인식합니다 — 가사를 직접 붙여넣으면 분리 없이도 정확합니다."
         )
     elif use_demucs:
-        st.caption("✓ Demucs 감지됨 — 보컬을 분리해 인식합니다.")
+        st.caption("✓ Demucs 감지됨 — 반주를 제거하고 보컬만 인식합니다. (가사 없는 곡에 특히 유용)")
 
     audio_file = st.file_uploader(
         "🎵 음악 또는 영상 파일",
