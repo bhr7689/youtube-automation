@@ -8,6 +8,7 @@ YouTube Data API v3 를 사용해 특정 키워드(상황/감정 기반)로 최�
 
 from __future__ import annotations
 
+import base64
 import io
 import json
 import os
@@ -4339,6 +4340,71 @@ def _parse_srt_starts(srt_text: str) -> list[float]:
     ]
 
 
+def _parse_srt_cues(srt_text: str) -> list[dict]:
+    """SRT 텍스트 → [{start, end, text}] (재생 동기화 플레이어용)."""
+    cues: list[dict] = []
+    for raw in re.split(r"\n\n+", srt_text.strip()):
+        lines = raw.strip().splitlines()
+        if len(lines) < 2:
+            continue
+        idx = 1 if re.match(r"^\d+$", lines[0].strip()) else 0
+        if idx >= len(lines):
+            continue
+        m = re.match(
+            r"(\d+:\d+:\d+,\d+)\s+-->\s+(\d+:\d+:\d+,\d+)", lines[idx].strip()
+        )
+        if not m:
+            continue
+        text = " ".join(ln.strip() for ln in lines[idx + 1:] if ln.strip())
+        cues.append({
+            "start": _parse_srt_time(m.group(1)),
+            "end": _parse_srt_time(m.group(2)),
+            "text": text,
+        })
+    return cues
+
+
+def _encode_player_audio(audio_path: str) -> tuple[bytes | None, str]:
+    """재생 플레이어 내장용 오디오를 만든다.
+
+    브라우저 호환을 위해 가능하면 mono 96kbps mp3 로 재인코딩하고,
+    실패하면 원본 바이트를 그대로 사용한다. (bytes, mime) 반환.
+    """
+    ffmpeg = _find_ffmpeg()
+    if ffmpeg:
+        out = audio_path + "_player.mp3"
+        try:
+            cmd = [
+                ffmpeg, "-y", "-hide_banner", "-i", audio_path,
+                "-vn", "-ac", "1", "-b:a", "96k", out,
+            ]
+            proc = subprocess.run(cmd, capture_output=True, timeout=180)
+            if proc.returncode == 0 and os.path.exists(out):
+                with open(out, "rb") as fp:
+                    data = fp.read()
+                return data, "audio/mpeg"
+        except Exception:
+            pass
+        finally:
+            try:
+                if os.path.exists(out):
+                    os.unlink(out)
+            except OSError:
+                pass
+    # Fallback: 원본 바이트.
+    try:
+        with open(audio_path, "rb") as fp:
+            data = fp.read()
+        ext = os.path.splitext(audio_path)[1].lower().lstrip(".")
+        mime = {
+            "mp3": "audio/mpeg", "wav": "audio/wav", "m4a": "audio/mp4",
+            "aac": "audio/aac", "ogg": "audio/ogg", "flac": "audio/flac",
+        }.get(ext, "audio/mpeg")
+        return data, mime
+    except OSError:
+        return None, "audio/mpeg"
+
+
 def _word_level_align(lyrics_lines: list[str], words: list[dict]) -> str:
     """
     Whisper word-level 타임스탬프를 이용해 각 가사 라인의 SRT 시각을 결정한다.
@@ -4465,6 +4531,166 @@ def extract_waveform_data(
                 os.unlink(wav_path)
         except OSError:
             pass
+
+
+_SYNC_PLAYER_TEMPLATE = """
+<div id="lp-root" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',
+     'Malgun Gothic',sans-serif;color:#e6e6e6;">
+  <audio id="lp-aud" controls preload="auto" style="width:100%;outline:none;"
+         src="__AUDIO_SRC__"></audio>
+  <canvas id="lp-wave" style="width:100%;height:120px;display:block;
+          margin-top:10px;border-radius:8px;background:#161b22;cursor:pointer;">
+  </canvas>
+  <div id="lp-now" style="text-align:center;font-size:22px;font-weight:700;
+       min-height:34px;margin:12px 4px 6px;line-height:1.4;color:#fff;">
+  </div>
+  <div id="lp-list" style="max-height:220px;overflow-y:auto;padding:4px;
+       background:#0e1117;border-radius:8px;border:1px solid #222;">
+  </div>
+</div>
+<script>
+(function(){
+  const D = __PAYLOAD__;
+  const aud = document.getElementById('lp-aud');
+  const cv  = document.getElementById('lp-wave');
+  const now = document.getElementById('lp-now');
+  const list= document.getElementById('lp-list');
+  const ctx = cv.getContext('2d');
+  const env = D.envelope || [];
+  const dur = D.duration || (aud.duration || 0);
+  const cues = D.cues || [];
+
+  // ----- build lyric list -----
+  const rows = [];
+  cues.forEach((c, i) => {
+    const d = document.createElement('div');
+    d.textContent = (c.text || '').trim() || '\\u00a0';
+    d.style.cssText = 'padding:6px 10px;border-radius:6px;cursor:pointer;'+
+      'font-size:15px;color:#9aa;transition:all .12s;margin:1px 0;';
+    d.onmouseenter = () => { if(i!==active) d.style.background='#1b2230'; };
+    d.onmouseleave = () => { if(i!==active) d.style.background='transparent'; };
+    d.onclick = () => { if(isFinite(c.start)){ aud.currentTime = c.start; aud.play(); } };
+    list.appendChild(d);
+    rows.push(d);
+  });
+
+  let active = -1;
+  function setActive(i){
+    if(i === active) return;
+    if(active >= 0 && rows[active]){
+      rows[active].style.background='transparent';
+      rows[active].style.color='#9aa';
+      rows[active].style.fontWeight='400';
+    }
+    active = i;
+    if(i >= 0 && rows[i]){
+      rows[i].style.background='#1f6feb33';
+      rows[i].style.color='#fff';
+      rows[i].style.fontWeight='700';
+      rows[i].scrollIntoView({block:'nearest', behavior:'smooth'});
+      now.textContent = cues[i].text || '';
+    } else {
+      now.textContent = '';
+    }
+  }
+
+  // ----- canvas sizing -----
+  let W = 0, H = 0, dpr = window.devicePixelRatio || 1;
+  function resize(){
+    W = cv.clientWidth; H = cv.clientHeight;
+    cv.width = Math.max(1, Math.floor(W*dpr));
+    cv.height= Math.max(1, Math.floor(H*dpr));
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  function curIndex(t){
+    for(let i=0;i<cues.length;i++){
+      if(t >= cues[i].start && t < (cues[i].end || cues[i].start)) return i;
+    }
+    // between cues: keep last started
+    let last = -1;
+    for(let i=0;i<cues.length;i++){ if(t >= cues[i].start) last = i; else break; }
+    return last;
+  }
+
+  function draw(){
+    const t = aud.currentTime || 0;
+    const dd = dur || aud.duration || 1;
+    ctx.clearRect(0,0,W,H);
+    // waveform bars
+    const n = env.length || 1;
+    const bw = W / n;
+    for(let i=0;i<n;i++){
+      const a = env[i] || 0;
+      const bh = Math.max(1, a * (H*0.92));
+      const played = (i/n)*dd <= t;
+      ctx.fillStyle = played ? '#4CAF50' : '#2e7d4f';
+      ctx.fillRect(i*bw, (H-bh)/2, Math.max(1,bw*0.9), bh);
+    }
+    // cue start markers
+    ctx.fillStyle = 'rgba(255,112,67,0.55)';
+    cues.forEach(c => {
+      if(c.start>=0 && c.start<=dd){
+        const x = (c.start/dd)*W;
+        ctx.fillRect(x, 0, 1, H);
+      }
+    });
+    // playhead
+    const px = (t/dd)*W;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(px-1, 0, 2, H);
+    ctx.fillStyle = '#ff5252';
+    ctx.beginPath(); ctx.arc(px, 6, 4, 0, Math.PI*2); ctx.fill();
+
+    setActive(curIndex(t));
+    requestAnimationFrame(draw);
+  }
+
+  cv.addEventListener('click', (e) => {
+    const r = cv.getBoundingClientRect();
+    const frac = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    const dd = dur || aud.duration || 0;
+    if(dd > 0){ aud.currentTime = frac * dd; aud.play(); }
+  });
+
+  requestAnimationFrame(draw);
+})();
+</script>
+"""
+
+
+def _render_sync_player(info: dict) -> None:
+    """오디오 재생 + 파형 재생헤드 + 실시간 가사 하이라이트 + 클릭 탐색."""
+    import streamlit.components.v1 as components
+
+    audio_b64 = info.get("audio_b64")
+    cues = info.get("cues") or []
+    waveform = info.get("waveform") or {}
+    if not audio_b64:
+        st.info("재생용 오디오를 준비하지 못했습니다. 아래 정적 파형으로 확인하세요.")
+        return
+
+    payload = {
+        "envelope": waveform.get("envelope") or [],
+        "duration": float(
+            waveform.get("duration") or info.get("duration") or 0
+        ),
+        "cues": cues,
+    }
+    src = f"data:{info.get('audio_mime', 'audio/mpeg')};base64,{audio_b64}"
+    html = (
+        _SYNC_PLAYER_TEMPLATE
+        .replace("__AUDIO_SRC__", src)
+        .replace("__PAYLOAD__", json.dumps(payload, ensure_ascii=False))
+    )
+    components.html(html, height=520, scrolling=False)
+    st.caption(
+        "▶️ 재생하면 파형 위 흰색 막대(재생 헤드)가 움직이고, 현재 부르는 가사가 "
+        "아래에서 실시간으로 강조됩니다. 파형이나 가사 줄을 클릭하면 그 지점으로 이동합니다. "
+        "🔴 주황선 = 자막 시작 지점."
+    )
 
 
 def _render_waveform(waveform: dict) -> None:
@@ -4798,9 +5024,11 @@ def render_sync_tab() -> None:
             srt_text = _chorus_correct_srt(srt_text)
             method += " + 후렴구 보정"
 
-        # 파형 추출 (workdir 정리 전)
+        # 파형 추출 + 재생 플레이어용 오디오 인코딩 (workdir 정리 전)
         with st.spinner("🎵 파형 추출 중... (시각화용)"):
             envelope, wav_dur = extract_waveform_data(audio_path)
+        with st.spinner("🔊 재생 플레이어 준비 중..."):
+            player_bytes, player_mime = _encode_player_audio(audio_path)
         waveform = {
             "envelope": envelope.tolist() if envelope is not None else None,
             "duration": wav_dur or float(result.get("duration") or 0),
@@ -4816,6 +5044,12 @@ def render_sync_tab() -> None:
             "line_count": line_count,
             "audio_filename": audio_file.name,
             "waveform": waveform,
+            "cues": _parse_srt_cues(srt_text),
+            "audio_b64": (
+                base64.b64encode(player_bytes).decode("ascii")
+                if player_bytes else None
+            ),
+            "audio_mime": player_mime,
         }
         st.success(f"✅ 동기화 완료 — {method}")
         _render_sync_result()
@@ -4851,10 +5085,15 @@ def _render_sync_result() -> None:
         key="sync_download",
     )
 
-    # 파형 시각화
+    # 재생 플레이어 (오디오 + 실시간 가사 싱크)
+    if info.get("audio_b64") and info.get("cues"):
+        with st.expander("▶️ 재생하며 가사 싱크 확인", expanded=True):
+            _render_sync_player(info)
+
+    # 파형 시각화 (정적 — 전체 흐름 한눈에 보기)
     waveform = info.get("waveform")
     if waveform and waveform.get("envelope"):
-        with st.expander("📊 파형 + 자막 시작 마커", expanded=True):
+        with st.expander("📊 파형 + 자막 시작 마커 (정적)", expanded=False):
             st.caption(
                 "🟢 파형 · 🔴 자막 시작 지점 — 마커와 음악 피크가 잘 맞는지 확인하세요."
             )
