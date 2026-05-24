@@ -5301,7 +5301,8 @@ def render_sync_tab() -> None:
             # 인식에 의존하지 않음 — 보컬 에너지로 노래 구간을 찾아 가사를 배치.
             lyrics_lines = [ln for ln in user_lyrics.splitlines() if ln.strip()]
             with st.spinner("🎯 보컬 구간(부르는 부분) 감지 중..."):
-                ph_env, ph_dur = extract_waveform_data(transcribe_path, n_points=2500)
+                # 긴 곡(3분+)에서도 시간 해상도를 유지하도록 충분히 많은 포인트 사용.
+                ph_env, ph_dur = extract_waveform_data(transcribe_path, n_points=6000)
             phrases = detect_vocal_phrases(ph_env, ph_dur)
             srt_text = align_lyrics_to_phrases(lyrics_lines, phrases, ph_dur)
             segments = []
