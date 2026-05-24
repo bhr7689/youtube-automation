@@ -4448,6 +4448,19 @@ def _parse_srt_starts(srt_text: str) -> list[float]:
     ]
 
 
+def _rows_to_srt(rows: list[dict]) -> str:
+    """[{start, end, text}] → SRT 문자열."""
+    out: list[str] = []
+    for i, r in enumerate(rows, 1):
+        out.append(str(i))
+        out.append(
+            f"{_format_srt_time(r['start'])} --> {_format_srt_time(r['end'])}"
+        )
+        out.append(r["text"])
+        out.append("")
+    return "\n".join(out).strip() + "\n"
+
+
 def _parse_srt_cues(srt_text: str) -> list[dict]:
     """SRT 텍스트 → [{start, end, text}] (재생 동기화 플레이어용)."""
     cues: list[dict] = []
@@ -5231,6 +5244,85 @@ def render_sync_tab() -> None:
         shutil.rmtree(workdir, ignore_errors=True)
 
 
+def _render_sync_editor(info: dict) -> None:
+    """가사·타이밍을 표에서 직접 수정 → SRT/플레이어에 즉시 반영."""
+    st.caption(
+        "표에서 가사를 직접 고치거나(틀린 단어 수정·내 가사로 교체), 시작/끝 시간을 조정하세요. "
+        "위 플레이어를 재생하며 시간을 확인하면 됩니다. 행은 추가·삭제할 수 있습니다. "
+        "다 고치면 아래 **적용** 버튼을 누르세요. (시간 단위: 초)"
+    )
+    cues = info.get("cues") or []
+    df = pd.DataFrame(
+        [
+            {
+                "시작(초)": round(float(c.get("start", 0) or 0), 2),
+                "끝(초)": round(float(c.get("end", 0) or 0), 2),
+                "가사": c.get("text", ""),
+            }
+            for c in cues
+        ],
+        columns=["시작(초)", "끝(초)", "가사"],
+    )
+
+    rev = info.get("editor_rev", 0)
+    edited = st.data_editor(
+        df,
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True,
+        key=f"sync_editor_{rev}",
+        column_config={
+            "시작(초)": st.column_config.NumberColumn(
+                "시작(초)", min_value=0.0, step=0.1, format="%.2f"
+            ),
+            "끝(초)": st.column_config.NumberColumn(
+                "끝(초)", min_value=0.0, step=0.1, format="%.2f"
+            ),
+            "가사": st.column_config.TextColumn("가사", width="large"),
+        },
+    )
+
+    if st.button(
+        "✅ 수정 내용 적용 (SRT·플레이어 갱신)",
+        type="primary",
+        use_container_width=True,
+        key=f"sync_editor_apply_{rev}",
+    ):
+        rows: list[dict] = []
+        for _, r in edited.iterrows():
+            text = str(r.get("가사") or "").strip()
+            if not text:
+                continue
+            try:
+                s = float(r.get("시작(초)") or 0)
+            except (TypeError, ValueError):
+                s = 0.0
+            try:
+                e = float(r.get("끝(초)") or 0)
+            except (TypeError, ValueError):
+                e = s
+            if s < 0:
+                s = 0.0
+            if e <= s:
+                e = s + 2.0
+            rows.append({"start": s, "end": e, "text": text})
+
+        if not rows:
+            st.warning("가사가 비어 있습니다. 최소 한 줄은 있어야 합니다.")
+            return
+
+        rows.sort(key=lambda x: x["start"])
+        info["content"] = _rows_to_srt(rows)
+        info["cues"] = rows
+        info["line_count"] = len(rows)
+        info["editor_rev"] = rev + 1
+        if info.get("waveform"):
+            info["waveform"]["srt_starts"] = [r["start"] for r in rows]
+        st.session_state["sync_srt"] = info
+        st.success("✅ 적용 완료 — 위 플레이어와 SRT 다운로드에 반영했습니다.")
+        st.rerun()
+
+
 def _render_sync_result() -> None:
     info = st.session_state.get("sync_srt")
     if not info:
@@ -5263,6 +5355,11 @@ def _render_sync_result() -> None:
     if info.get("audio_b64") and info.get("cues"):
         with st.expander("▶️ 재생하며 가사 싱크 확인", expanded=True):
             _render_sync_player(info)
+
+    # 가사·타이밍 직접 수정 → 100% 만들기
+    if info.get("cues"):
+        with st.expander("✏️ 가사·타이밍 직접 수정 → 정확도 100% 만들기", expanded=True):
+            _render_sync_editor(info)
 
     # 파형 시각화 (정적 — 전체 흐름 한눈에 보기)
     waveform = info.get("waveform")
