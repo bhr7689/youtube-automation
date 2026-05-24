@@ -5220,22 +5220,19 @@ def render_sync_tab() -> None:
         mode = st.radio(
             "동기화 모드",
             options=[
-                "🎯 보컬 구간 감지로 가사 배치 (인식 불필요·권장)",
-                "내 가사로 곡 전체 자동 채움 (반복 매칭)",
-                "내 가사를 Whisper 타이밍에 정렬",
+                "🎯 보컬 구간 자동 감지 (권장)",
                 "Whisper 인식 결과만 사용",
             ],
             index=0,
             key="sync_mode",
             help=(
-                "• 🎯 보컬 구간 감지: Whisper 가 가사를 못 알아들어도 동작합니다. "
-                "노래하는 구간(소리 에너지)을 곡 끝까지 감지해 내 가사를 순서대로 얹습니다. "
-                "**보컬 분리(Demucs)를 켜면 정확도가 크게 오릅니다.** 후렴 반복까지 자막을 "
-                "채우려면 가사를 부르는 순서·반복 그대로 적어주세요.\n"
-                "• 곡 전체 자동 채움: Whisper 가 들은 구간에 내 가사 중 가장 비슷한 줄을 매칭 "
-                "(Whisper 인식이 좋은 곡용).\n"
-                "• Whisper 타이밍에 정렬: 내 가사 줄을 순서대로 구간에 배치.\n"
-                "• Whisper 결과만: 가사 없이 들은 그대로."
+                "• 🎯 보컬 구간 자동 감지: Whisper 가 가사를 못 알아들어도 동작합니다. "
+                "노래하는 구간(소리 에너지)을 곡 끝까지 찾습니다.\n"
+                "   - 가사를 비워두면 → 각 구간을 **빈 자막 칸**으로 만들어 주고, 아래 표에서 "
+                "직접 가사를 입력하면 됩니다. (가사 시작점만 잡아줌)\n"
+                "   - 가사를 입력하면 → 감지한 구간에 내 가사를 순서대로 배치합니다.\n"
+                "   - **보컬 분리(🎤)를 켜면 구간 감지가 훨씬 정확해집니다.**\n"
+                "• Whisper 인식 결과만: 가사 없이 Whisper 가 들은 그대로 받아쓰기."
             ),
         )
 
@@ -5344,32 +5341,50 @@ def render_sync_tab() -> None:
                 with st.expander("🔎 보컬 분리 실패 사유 (전체 로그)", expanded=True):
                     st.code(dlog or "(로그 없음)", language=None)
 
-        phrase_mode = mode.startswith("🎯") and bool(user_lyrics.strip())
+        precomputed_cues = None
+        phrase_mode = mode.startswith("🎯")
 
         if phrase_mode:
-            # 인식에 의존하지 않음 — 보컬 에너지로 노래 구간을 찾아 가사를 배치.
+            # 인식에 의존하지 않음 — 보컬 에너지로 '노래하는 구간'을 곡 끝까지 찾는다.
             lyrics_lines = [ln for ln in user_lyrics.splitlines() if ln.strip()]
             with st.spinner("🎯 보컬 구간(부르는 부분) 감지 중..."):
-                # 긴 곡(3분+)에서도 시간 해상도를 유지하도록 충분히 많은 포인트 사용.
                 ph_env, ph_dur = extract_waveform_data(transcribe_path, n_points=6000)
             phrases = detect_vocal_phrases(ph_env, ph_dur)
-            srt_text = align_lyrics_to_phrases(lyrics_lines, phrases, ph_dur)
+            # 감지가 전혀 안 되면 4초 간격의 빈 슬롯이라도 만들어 둔다.
+            if not phrases and ph_dur and ph_dur > 0:
+                step = 4.0
+                k = int(ph_dur // step) + 1
+                phrases = [
+                    (round(i * step, 2), round(min((i + 1) * step, ph_dur), 2))
+                    for i in range(k)
+                ]
             segments = []
-            result = {
-                "duration": ph_dur, "language": None, "segments": [], "words": [],
-            }
-            line_count = srt_text.count(" --> ")
+            result = {"duration": ph_dur, "language": None, "segments": [], "words": []}
             src_label = (
                 "보컬분리" if (use_demucs and transcribe_path != audio_path) else "원곡"
             )
-            method = (
-                f"🎯 {src_label} 에너지 감지 · 보컬구간 {len(phrases)}개 "
-                f"→ 자막 {line_count}줄"
-            )
+            if lyrics_lines:
+                srt_text = align_lyrics_to_phrases(lyrics_lines, phrases, ph_dur)
+                line_count = srt_text.count(" --> ")
+                method = (
+                    f"🎯 {src_label} 보컬구간 {len(phrases)}개 · 내 가사 배치 "
+                    f"→ 자막 {line_count}줄"
+                )
+            else:
+                # 가사 없음 → 각 보컬 구간을 '빈 자막 칸'으로 만든다. 표에서 직접 입력.
+                precomputed_cues = [
+                    {"start": float(s), "end": float(e), "text": ""}
+                    for (s, e) in phrases
+                ]
+                srt_text = _rows_to_srt(precomputed_cues)
+                line_count = len(precomputed_cues)
+                method = (
+                    f"🎯 {src_label} 보컬구간 {len(phrases)}개 감지 — "
+                    f"아래 ✏️ 표에서 각 구간에 가사를 입력하세요"
+                )
             if not phrases:
                 st.warning(
-                    "보컬 구간을 감지하지 못해 가사를 곡 전체에 고르게 배치했습니다. "
-                    "보컬 분리(Demucs)를 켜면 정확도가 올라갑니다."
+                    "보컬 구간을 감지하지 못했습니다. '🎤 보컬 분리'를 켜고 다시 시도해보세요."
                 )
         else:
             # OpenAI 만 25MB 한도. 로컬은 제한 없음.
@@ -5504,7 +5519,10 @@ def render_sync_tab() -> None:
             "line_count": line_count,
             "audio_filename": audio_file.name,
             "waveform": waveform,
-            "cues": _parse_srt_cues(srt_text),
+            "cues": (
+                precomputed_cues if precomputed_cues is not None
+                else _parse_srt_cues(srt_text)
+            ),
             "audio_b64": (
                 base64.b64encode(player_bytes).decode("ascii")
                 if player_bytes else None
@@ -5520,9 +5538,10 @@ def render_sync_tab() -> None:
 def _render_sync_editor(info: dict) -> None:
     """가사·타이밍을 표에서 직접 수정 → SRT/플레이어에 즉시 반영."""
     st.caption(
-        "표에서 가사를 직접 고치거나(틀린 단어 수정·내 가사로 교체), 시작/끝 시간을 조정하세요. "
-        "위 플레이어를 재생하며 시간을 확인하면 됩니다. 행은 추가·삭제할 수 있습니다. "
-        "다 고치면 아래 **적용** 버튼을 누르세요. (시간 단위: 초)"
+        "각 줄은 노래에서 감지한 **가사 구간(시작~끝 시간)** 입니다. **'가사' 칸이 비어 있으면 "
+        "그 구간에 들리는 가사를 직접 입력**하세요. 위 플레이어에서 그 줄을 클릭하면 해당 "
+        "구간이 재생됩니다. 시작/끝 시간 조정·행 추가/삭제도 가능합니다. 다 채우면 아래 "
+        "**적용** 버튼을 누르세요. (시간 단위: 초)"
     )
     cues = info.get("cues") or []
     df = pd.DataFrame(
