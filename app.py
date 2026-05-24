@@ -4859,9 +4859,21 @@ _SYNC_PLAYER_TEMPLATE = """
      'Malgun Gothic',sans-serif;color:#e6e6e6;">
   <audio id="lp-aud" controls preload="auto" style="width:100%;outline:none;"
          src="__AUDIO_SRC__"></audio>
-  <canvas id="lp-wave" style="width:100%;height:120px;display:block;
-          margin-top:10px;border-radius:8px;background:#161b22;cursor:pointer;">
-  </canvas>
+  <div style="display:flex;align-items:center;gap:6px;margin-top:8px;">
+    <button id="lp-zout" style="background:#21262d;color:#ddd;border:1px solid #333;
+      border-radius:6px;padding:4px 10px;cursor:pointer;font-size:14px;">🔍−</button>
+    <button id="lp-zin" style="background:#21262d;color:#ddd;border:1px solid #333;
+      border-radius:6px;padding:4px 10px;cursor:pointer;font-size:14px;">🔍＋</button>
+    <button id="lp-zfit" style="background:#21262d;color:#ddd;border:1px solid #333;
+      border-radius:6px;padding:4px 10px;cursor:pointer;font-size:13px;">전체</button>
+    <span id="lp-zlbl" style="color:#8b96a5;font-size:12px;">1×</span>
+    <span id="lp-time" style="margin-left:auto;color:#7fd4ff;font-size:14px;
+      font-variant-numeric:tabular-nums;">0:00.0 / 0:00</span>
+  </div>
+  <div id="lp-wrap" style="overflow-x:auto;overflow-y:hidden;margin-top:6px;
+       border-radius:8px;background:#161b22;">
+    <canvas id="lp-wave" style="height:150px;display:block;cursor:pointer;"></canvas>
+  </div>
   <div id="lp-now" style="text-align:center;font-size:22px;font-weight:700;
        min-height:34px;margin:12px 4px 6px;line-height:1.4;color:#fff;">
   </div>
@@ -4874,12 +4886,26 @@ _SYNC_PLAYER_TEMPLATE = """
   const D = __PAYLOAD__;
   const aud = document.getElementById('lp-aud');
   const cv  = document.getElementById('lp-wave');
+  const wrap= document.getElementById('lp-wrap');
   const now = document.getElementById('lp-now');
   const list= document.getElementById('lp-list');
+  const timeEl = document.getElementById('lp-time');
+  const zlbl = document.getElementById('lp-zlbl');
   const ctx = cv.getContext('2d');
   const env = D.envelope || [];
   const dur = D.duration || (aud.duration || 0);
   const cues = D.cues || [];
+
+  function fmt(t){
+    if(!isFinite(t)) t = 0;
+    const m = Math.floor(t/60), s = t - m*60;
+    return m + ':' + (s<10?'0':'') + s.toFixed(1);
+  }
+  function fmtShort(t){
+    if(!isFinite(t)) t = 0;
+    const m = Math.floor(t/60), s = Math.floor(t%60);
+    return m + ':' + (s<10?'0':'') + s;
+  }
 
   // ----- build lyric list -----
   const rows = [];
@@ -4915,14 +4941,29 @@ _SYNC_PLAYER_TEMPLATE = """
     }
   }
 
-  // ----- canvas sizing -----
-  let W = 0, H = 0, dpr = window.devicePixelRatio || 1;
+  // ----- canvas sizing + zoom -----
+  let W = 0, H = 0, W0 = 0, zoom = 1, dpr = window.devicePixelRatio || 1;
   function resize(){
-    W = cv.clientWidth; H = cv.clientHeight;
+    W0 = wrap.clientWidth || 600;
+    W = Math.max(W0, Math.floor(W0 * zoom));
+    H = 150;
+    cv.style.width = W + 'px';
     cv.width = Math.max(1, Math.floor(W*dpr));
     cv.height= Math.max(1, Math.floor(H*dpr));
     ctx.setTransform(dpr,0,0,dpr,0,0);
+    zlbl.textContent = zoom.toFixed(zoom<10?1:0) + '×';
   }
+  function setZoom(z){
+    const dd = dur || aud.duration || 1;
+    const center = (aud.currentTime||0)/dd;  // keep playhead-ish centered
+    zoom = Math.min(60, Math.max(1, z));
+    resize();
+    const target = center*W - W0/2;
+    wrap.scrollLeft = Math.max(0, target);
+  }
+  document.getElementById('lp-zin').onclick  = () => setZoom(zoom*1.7);
+  document.getElementById('lp-zout').onclick = () => setZoom(zoom/1.7);
+  document.getElementById('lp-zfit').onclick = () => setZoom(1);
   window.addEventListener('resize', resize);
   resize();
 
@@ -4930,7 +4971,6 @@ _SYNC_PLAYER_TEMPLATE = """
     for(let i=0;i<cues.length;i++){
       if(t >= cues[i].start && t < (cues[i].end || cues[i].start)) return i;
     }
-    // between cues: keep last started
     let last = -1;
     for(let i=0;i<cues.length;i++){ if(t >= cues[i].start) last = i; else break; }
     return last;
@@ -4945,17 +4985,16 @@ _SYNC_PLAYER_TEMPLATE = """
     const bw = W / n;
     for(let i=0;i<n;i++){
       const a = env[i] || 0;
-      const bh = Math.max(1, a * (H*0.92));
+      const bh = Math.max(1, a * (H*0.9));
       const played = (i/n)*dd <= t;
       ctx.fillStyle = played ? '#4CAF50' : '#2e7d4f';
       ctx.fillRect(i*bw, (H-bh)/2, Math.max(1,bw*0.9), bh);
     }
     // cue start markers
-    ctx.fillStyle = 'rgba(255,112,67,0.55)';
+    ctx.fillStyle = 'rgba(255,112,67,0.6)';
     cues.forEach(c => {
       if(c.start>=0 && c.start<=dd){
-        const x = (c.start/dd)*W;
-        ctx.fillRect(x, 0, 1, H);
+        ctx.fillRect((c.start/dd)*W, 0, 1, H);
       }
     });
     // playhead
@@ -4965,6 +5004,15 @@ _SYNC_PLAYER_TEMPLATE = """
     ctx.fillStyle = '#ff5252';
     ctx.beginPath(); ctx.arc(px, 6, 4, 0, Math.PI*2); ctx.fill();
 
+    // 재생 중엔 재생헤드가 화면 밖으로 나가면 따라가도록 스크롤.
+    if(!aud.paused && zoom > 1){
+      const vw = wrap.clientWidth, pad = vw*0.15;
+      if(px < wrap.scrollLeft + pad || px > wrap.scrollLeft + vw - pad){
+        wrap.scrollLeft = Math.max(0, px - vw*0.3);
+      }
+    }
+
+    timeEl.textContent = fmt(t) + ' / ' + fmtShort(dd);
     setActive(curIndex(t));
     requestAnimationFrame(draw);
   }
@@ -5006,11 +5054,12 @@ def _render_sync_player(info: dict) -> None:
         .replace("__AUDIO_SRC__", src)
         .replace("__PAYLOAD__", json.dumps(payload, ensure_ascii=False))
     )
-    components.html(html, height=520, scrolling=False)
+    components.html(html, height=600, scrolling=False)
     st.caption(
-        "▶️ 재생하면 파형 위 흰색 막대(재생 헤드)가 움직이고, 현재 부르는 가사가 "
-        "아래에서 실시간으로 강조됩니다. 파형이나 가사 줄을 클릭하면 그 지점으로 이동합니다. "
-        "🔴 주황선 = 자막 시작 지점."
+        "▶️ 재생하면 흰색 막대(재생 헤드)가 움직이고 현재 가사가 강조됩니다. "
+        "**🔍＋ / 🔍− 로 파형을 가로로 확대**하면 긴 곡도 정밀하게 클릭할 수 있어요. "
+        "파형/가사 줄을 클릭하면 그 지점으로 이동하고, 오른쪽 위에 **현재 시간**이 표시됩니다. "
+        "그 시간을 보고 아래 ✏️ 표에서 가사를 수정하세요. 🔴 주황선 = 자막 시작 지점."
     )
 
 
