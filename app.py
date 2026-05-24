@@ -4485,6 +4485,53 @@ def _parse_srt_cues(srt_text: str) -> list[dict]:
     return cues
 
 
+def _even_distribute_lyrics(
+    lyrics_lines: list[str], start: float, end: float
+) -> str:
+    """가사 라인들을 [start, end] 구간에 시간 기준으로 고르게 배치한 SRT."""
+    lines = [ln.strip() for ln in lyrics_lines if ln.strip()]
+    if not lines:
+        return ""
+    if end <= start:
+        end = start + len(lines) * 2.0
+    per = (end - start) / len(lines)
+    rows = []
+    for i, line in enumerate(lines):
+        rows.append({
+            "start": start + i * per,
+            "end": start + (i + 1) * per,
+            "text": line,
+        })
+    return _rows_to_srt(rows)
+
+
+def _ensure_lyrics_cover_song(
+    srt_text: str,
+    lyrics_lines: list[str],
+    total_duration: float | None,
+) -> tuple[str, bool]:
+    """Whisper 가 곡 앞부분만 인식해 가사가 앞에 몰린 경우,
+    가사를 곡 전체(보컬 시작 ~ 곡 끝 부근)에 고르게 다시 펼친다.
+
+    반환: (보정된 SRT, 보정여부)
+    """
+    D = float(total_duration or 0)
+    if D <= 0:
+        return srt_text, False
+    cues = _parse_srt_cues(srt_text)
+    if not cues:
+        return srt_text, False
+    onset = float(cues[0]["start"])
+    last_end = float(cues[-1]["end"])
+    # 자막이 곡의 70% 지점 이전에서 끝나면 = 뒷부분을 못 잡은 것으로 보고 곡 끝까지 펼친다.
+    if last_end >= 0.7 * D:
+        return srt_text, False
+    new_srt = _even_distribute_lyrics(lyrics_lines, onset, 0.97 * D)
+    if not new_srt:
+        return srt_text, False
+    return new_srt, True
+
+
 def _encode_player_audio(audio_path: str) -> tuple[bytes | None, str]:
     """재생 플레이어 내장용 오디오를 만든다.
 
@@ -4812,46 +4859,6 @@ def _render_sync_player(info: dict) -> None:
         "아래에서 실시간으로 강조됩니다. 파형이나 가사 줄을 클릭하면 그 지점으로 이동합니다. "
         "🔴 주황선 = 자막 시작 지점."
     )
-
-
-def _render_waveform(waveform: dict) -> None:
-    """파형 + SRT 자막 시작 마커 시각화 (matplotlib)."""
-    raw_env = waveform.get("envelope")
-    duration = float(waveform.get("duration", 0))
-    srt_starts: list[float] = waveform.get("srt_starts", [])
-
-    if raw_env is None or duration <= 0:
-        st.info("파형 데이터를 사용할 수 없습니다.")
-        return
-
-    try:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-    except ImportError:
-        st.info("파형 시각화: `pip install matplotlib` 후 재시도하세요.")
-        return
-
-    envelope = np.array(raw_env, dtype=np.float32)
-    times = np.linspace(0, duration, len(envelope))
-
-    fig, ax = plt.subplots(figsize=(12, 2.5))
-    fig.patch.set_facecolor("#0e1117")
-    ax.set_facecolor("#161b22")
-    ax.fill_between(times, envelope, alpha=0.75, color="#4CAF50")
-    ax.plot(times, envelope, lw=0.5, color="#81C784", alpha=0.85)
-    for t in srt_starts[:60]:
-        if 0 <= t <= duration:
-            ax.axvline(x=t, color="#FF7043", alpha=0.55, lw=0.9)
-    ax.set_xlim(0, duration)
-    ax.set_ylim(0, 1.05)
-    ax.set_xlabel("시간 (초)", color="#aaa", fontsize=8)
-    ax.tick_params(colors="#aaa", labelsize=7)
-    for sp in ax.spines.values():
-        sp.set_edgecolor("#333")
-    ax.set_title("🎵 파형  ·  🔴 자막 시작 지점", color="#ddd", fontsize=9, pad=6)
-    st.pyplot(fig, use_container_width=True)
-    plt.close(fig)
 
 
 def render_sync_tab() -> None:
@@ -5206,6 +5213,15 @@ def render_sync_tab() -> None:
             line_count = len(lyrics_lines)
             method = f"{engine_label} · 가사 정렬 · 입력 {line_count}줄 → Whisper {len(segments)}구간"
 
+        # 곡 끝까지 커버 보정 — Whisper 가 앞부분만 잡아 가사가 앞에 몰린 경우
+        # 가사를 곡 전체에 고르게 펼친다. (가사 입력 모드에서만)
+        if user_lyrics.strip() and not mode.startswith("Whisper 인식 결과만"):
+            srt_text, stretched = _ensure_lyrics_cover_song(
+                srt_text, lyrics_lines, result.get("duration")
+            )
+            if stretched:
+                method += " + 곡 전체 커버 보정"
+
         # 후렴구 보정 (가사 입력 모드에서만)
         if chorus_correct and user_lyrics.strip() and not mode.startswith("Whisper 인식 결과만"):
             srt_text = _chorus_correct_srt(srt_text)
@@ -5360,15 +5376,6 @@ def _render_sync_result() -> None:
     if info.get("cues"):
         with st.expander("✏️ 가사·타이밍 직접 수정 → 정확도 100% 만들기", expanded=True):
             _render_sync_editor(info)
-
-    # 파형 시각화 (정적 — 전체 흐름 한눈에 보기)
-    waveform = info.get("waveform")
-    if waveform and waveform.get("envelope"):
-        with st.expander("📊 파형 + 자막 시작 마커 (정적)", expanded=False):
-            st.caption(
-                "🟢 파형 · 🔴 자막 시작 지점 — 마커와 음악 피크가 잘 맞는지 확인하세요."
-            )
-            _render_waveform(waveform)
 
     with st.expander("📄 생성된 SRT 미리보기", expanded=True):
         preview = info["content"]
