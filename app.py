@@ -4433,6 +4433,54 @@ def align_lyrics_to_segments(
     return "\n".join(out).strip() + "\n"
 
 
+def _norm_text(s: str) -> str:
+    """매칭용 정규화: 소문자 + 구두점 제거 + 공백 정리."""
+    s = (s or "").lower()
+    s = re.sub(r"[^\w\s]", " ", s, flags=re.UNICODE)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def align_lyrics_by_similarity(
+    lyrics_lines: list[str], segments: list[dict]
+) -> str:
+    """Whisper 가 곡 전체에서 들은 구간마다, 내 가사 중 가장 비슷한 줄을 매칭한다.
+
+    Whisper 가 후렴 반복까지 음향으로 감지하므로, 반복되는 구간에는 같은 가사 줄이
+    자동으로 다시 채워진다. 텍스트는 내 가사 원본을 그대로 사용 → 정확.
+    """
+    import difflib
+
+    lines = [ln.strip() for ln in lyrics_lines if ln.strip()]
+    if not lines or not segments:
+        return ""
+    norm_lines = [_norm_text(l) for l in lines]
+
+    cues: list[dict] = []
+    for seg in segments:
+        s = float(seg.get("start", 0) or 0)
+        e = float(seg.get("end", s) or s)
+        if e <= s:
+            e = s + 0.5
+        seg_norm = _norm_text(seg.get("text", ""))
+        best_i, best_r = 0, -1.0
+        for i, nl in enumerate(norm_lines):
+            if not nl:
+                continue
+            r = difflib.SequenceMatcher(None, seg_norm, nl).ratio()
+            if r > best_r:
+                best_r, best_i = r, i
+        cues.append({"start": s, "end": e, "text": lines[best_i]})
+
+    # 연속으로 같은 가사 줄이 매칭되면 하나로 합친다.
+    merged: list[dict] = []
+    for c in cues:
+        if merged and merged[-1]["text"] == c["text"]:
+            merged[-1]["end"] = c["end"]
+        else:
+            merged.append(dict(c))
+    return _rows_to_srt(merged)
+
+
 def _parse_srt_time(ts: str) -> float:
     """SRT 타임스탬프 → 초. '00:01:23,456' → 83.456"""
     h, m, rest = ts.split(":")
@@ -5017,10 +5065,20 @@ def render_sync_tab() -> None:
     with col2:
         mode = st.radio(
             "동기화 모드",
-            options=["내 가사를 Whisper 타이밍에 정렬", "Whisper 인식 결과만 사용"],
+            options=[
+                "내 가사로 곡 전체 자동 채움 (반복 포함·권장)",
+                "내 가사를 Whisper 타이밍에 정렬",
+                "Whisper 인식 결과만 사용",
+            ],
             index=0,
             key="sync_mode",
-            help="가사 미입력 시 자동으로 'Whisper 결과만' 모드가 됩니다.",
+            help=(
+                "• 곡 전체 자동 채움: Whisper 가 곡 전체에서 들은 구간마다 내 가사 중 "
+                "가장 비슷한 줄을 매칭합니다. 후렴이 반복되면 그 자리에 후렴 가사가 "
+                "자동으로 다시 채워져 곡 끝까지 커버됩니다. (보컬 분리 켜면 정확도 ↑)\n"
+                "• Whisper 타이밍에 정렬: 내 가사 줄을 순서대로 구간에 배치 (반복 없는 곡용).\n"
+                "• Whisper 결과만: 가사 없이 들은 그대로. 가사 미입력 시 자동 적용."
+            ),
         )
 
     user_lyrics = st.text_area(
@@ -5196,10 +5254,20 @@ def render_sync_tab() -> None:
         if engine == "local":
             engine_label += f"({model_size})"
 
+        fill_mode = mode.startswith("내 가사로 곡 전체")
+
         if mode.startswith("Whisper 인식 결과만") or not user_lyrics.strip():
             srt_text = whisper_segments_to_srt(segments)
             method = f"{engine_label} · Whisper 직접 변환 · {len(segments)}구간"
             line_count = len(segments)
+        elif fill_mode:
+            lyrics_lines = [ln for ln in user_lyrics.splitlines() if ln.strip()]
+            srt_text = align_lyrics_by_similarity(lyrics_lines, segments)
+            line_count = srt_text.count(" --> ")
+            method = (
+                f"{engine_label} · 곡 전체 자동 채움(반복 매칭) · "
+                f"가사 {len(lyrics_lines)}줄 → {len(segments)}구간 → 자막 {line_count}줄"
+            )
         elif use_word_level:
             lyrics_lines = [ln for ln in user_lyrics.splitlines() if ln.strip()]
             srt_text = _word_level_align(lyrics_lines, words)
@@ -5213,17 +5281,20 @@ def render_sync_tab() -> None:
             line_count = len(lyrics_lines)
             method = f"{engine_label} · 가사 정렬 · 입력 {line_count}줄 → Whisper {len(segments)}구간"
 
-        # 곡 끝까지 커버 보정 — Whisper 가 앞부분만 잡아 가사가 앞에 몰린 경우
-        # 가사를 곡 전체에 고르게 펼친다. (가사 입력 모드에서만)
-        if user_lyrics.strip() and not mode.startswith("Whisper 인식 결과만"):
+        # 곡 끝까지 커버 보정 — '정렬' 모드에서 Whisper 가 앞부분만 잡아 가사가
+        # 앞에 몰린 경우 곡 전체에 고르게 펼친다. (자동 채움 모드는 이미 곡 전체 커버)
+        if user_lyrics.strip() and not mode.startswith("Whisper 인식 결과만") and not fill_mode:
             srt_text, stretched = _ensure_lyrics_cover_song(
                 srt_text, lyrics_lines, result.get("duration")
             )
             if stretched:
                 method += " + 곡 전체 커버 보정"
 
-        # 후렴구 보정 (가사 입력 모드에서만)
-        if chorus_correct and user_lyrics.strip() and not mode.startswith("Whisper 인식 결과만"):
+        # 후렴구 보정 ('정렬' 모드에서만 — 자동 채움은 Whisper 타이밍을 그대로 사용)
+        if (
+            chorus_correct and user_lyrics.strip()
+            and not mode.startswith("Whisper 인식 결과만") and not fill_mode
+        ):
             srt_text = _chorus_correct_srt(srt_text)
             method += " + 후렴구 보정"
 
