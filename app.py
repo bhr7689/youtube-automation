@@ -1730,7 +1730,32 @@ def render_results(df: pd.DataFrame, filtered: pd.DataFrame, cfg: SearchConfig) 
     render_recommendations(filtered, df, cfg)
 
     with st.expander("🔬 전체 검색 결과 보기 (필터 적용 전)"):
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        full_cols = [
+            c for c in [
+                "thumbnail_url", "video_title", "channel_title",
+                "subscriber_count", "view_count", "views_per_hour",
+                "comment_count", "like_view_ratio", "view_sub_ratio",
+                "published_at", "video_url",
+            ] if c in df.columns
+        ]
+        st.dataframe(
+            df[full_cols],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "thumbnail_url": st.column_config.ImageColumn("썸네일"),
+                "video_title": st.column_config.TextColumn("제목", width="large"),
+                "channel_title": st.column_config.TextColumn("채널명"),
+                "subscriber_count": st.column_config.NumberColumn("구독자수", format="%d"),
+                "view_count": st.column_config.NumberColumn("조회수", format="%d"),
+                "views_per_hour": st.column_config.NumberColumn("시간당조회수", format="%d"),
+                "comment_count": st.column_config.NumberColumn("댓글수", format="%d"),
+                "like_view_ratio": st.column_config.NumberColumn("좋아요(비)", format="%.1f%%"),
+                "view_sub_ratio": st.column_config.NumberColumn("조회/구독", format="%.1f"),
+                "published_at": st.column_config.DatetimeColumn("업로드일", format="YYYY-MM-DD HH:mm"),
+                "video_url": st.column_config.LinkColumn("유튜브", display_text="▶ 열기"),
+            },
+        )
 
 
 def render_narrative(filtered: pd.DataFrame, full: pd.DataFrame) -> None:
@@ -1888,9 +1913,6 @@ def render_recommendations(
     else:
         for i, rec in enumerate(recommendations, 1):
             st.markdown(f"**{i}.** {rec['title']}")
-            with st.expander("이 제목이 만들어진 근거", expanded=False):
-                st.code(rec["template"], language=None)
-                st.json(rec["values"])
 
         st.download_button(
             "📥 제목 5개 텍스트 다운로드",
@@ -6158,10 +6180,6 @@ def render_title_lab_tab() -> None:
         with st.container(border=True):
             st.markdown(f"**#{i}**")
             st.code(item["title"], language="text")
-            with st.expander("사용된 공식 / 슬롯값"):
-                st.caption(f"템플릿: `{item['template']}`")
-                if item.get("values"):
-                    st.json(item["values"])
 
     bundle = "\n".join(f"{i}. {item['title']}" for i, item in enumerate(generated, 1))
     st.download_button(
