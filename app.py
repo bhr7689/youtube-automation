@@ -1663,9 +1663,14 @@ def render_results(df: pd.DataFrame, filtered: pd.DataFrame, cfg: SearchConfig) 
             sort_opts[sort_label], ascending=not order_desc, na_position="last"
         ).reset_index(drop=True)
 
-        st.caption(f"총 {len(filtered):,}개 결과 · {sort_label} {'높은' if order_desc else '낮은'} 순")
+        st.caption(
+            f"총 {len(filtered):,}개 결과 · {sort_label} {'높은' if order_desc else '낮은'} 순  ·  "
+            "마음에 드는 영상의 **‘✓ 제목 담기’** 를 체크하면 아래에서 한꺼번에 복사·다운로드할 수 있어요."
+        )
         MAX_CARDS = 60
-        for _, r in filtered.head(MAX_CARDS).iterrows():
+        selected_titles: list[str] = []
+        for idx, (_, r) in enumerate(filtered.head(MAX_CARDS).iterrows()):
+            vid = f"{idx}_{r.get('video_id') or ''}"
             with st.container(border=True):
                 ci, ct = st.columns([1, 3])
                 with ci:
@@ -1686,12 +1691,37 @@ def render_results(df: pd.DataFrame, filtered: pd.DataFrame, cfg: SearchConfig) 
                     pub = r["published_at"]
                     pub_s = pub.strftime("%Y-%m-%d") if pd.notna(pub) else ""
                     st.caption(f"채널: {r['channel_title']}  ·  업로드: {pub_s}")
-                    st.markdown(f"[▶ 영상 열기]({r['video_url']})")
+                    lc, rc = st.columns([1, 2])
+                    if lc.checkbox("✓ 제목 담기", key=f"pick_{vid}"):
+                        selected_titles.append(str(r["video_title"]))
+                    rc.markdown(f"[▶ 영상 열기]({r['video_url']})")
         if len(filtered) > MAX_CARDS:
             st.caption(f"… 외 {len(filtered) - MAX_CARDS:,}개는 아래 CSV로 확인하세요.")
 
+        # 담은 제목 모음 — 복사 / 다운로드 / 제목 공식 Lab 으로 보내기
+        if selected_titles:
+            st.markdown(f"#### 📋 담은 제목 {len(selected_titles)}개")
+            joined = "\n".join(selected_titles)
+            st.text_area(
+                "복사용 (칸 안 클릭 → Ctrl+A → Ctrl+C)",
+                value=joined, height=160, key="picked_titles_area",
+            )
+            bc1, bc2 = st.columns(2)
+            bc1.download_button(
+                "📥 담은 제목 다운로드 (.txt)",
+                data=joined.encode("utf-8-sig"),
+                file_name=f"picked_titles_{datetime.now():%Y%m%d_%H%M%S}.txt",
+                mime="text/plain",
+                use_container_width=True,
+            )
+            if bc2.button(
+                "➡️ '제목 공식 Lab' 입력칸에 넣기", use_container_width=True
+            ):
+                st.session_state["title_lab_input"] = joined
+                st.success("✅ '제목 공식 Lab' 탭의 입력칸에 넣었습니다. 그 탭으로 이동해 분석하세요.")
+
         st.download_button(
-            "📥 CSV 다운로드",
+            "📥 CSV 다운로드 (전체)",
             data=filtered.to_csv(index=False).encode("utf-8-sig"),
             file_name=f"breakout_channels_{datetime.now():%Y%m%d_%H%M%S}.csv",
             mime="text/csv",
