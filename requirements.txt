@@ -20,4 +20,5 @@ faster-whisper>=1.0.0
 # soundfile 은 demucs 가 분리 결과(wav)를 저장할 때 필요한 백엔드.
 demucs>=4.0.0
 soundfile>=0.12.1
+lameenc>=1.4.0
 

@@ -4152,11 +4152,25 @@ def separate_vocals(audio_path: str, outdir: str) -> tuple[str | None, str]:
     """
     if not demucs_available():
         return None, "demucs 미설치"
+
+    # 한글/공백 경로와 torchaudio 의존을 피하려고 ASCII 이름으로 복사 후 처리한다.
+    in_ext = os.path.splitext(audio_path)[1].lower() or ".mp3"
+    safe_in = os.path.join(
+        os.path.dirname(outdir) or tempfile.gettempdir(),
+        "demucs_input" + in_ext,
+    )
+    try:
+        shutil.copyfile(audio_path, safe_in)
+    except OSError:
+        safe_in = audio_path
+
+    # --mp3: wav 저장(torchaudio→torchcodec 의존) 대신 lameenc 로 mp3 저장 → 호환성 ↑
     cmd = [
         sys.executable, "-m", "demucs",
         "--two-stems=vocals",
+        "--mp3", "--mp3-bitrate", "128",
         "-o", outdir,
-        audio_path,
+        safe_in,
     ]
     try:
         proc = subprocess.run(
@@ -4172,11 +4186,16 @@ def separate_vocals(audio_path: str, outdir: str) -> tuple[str | None, str]:
         return found, "ok"
 
     log = _clean_proc_log((proc.stderr or "") + "\n" + (proc.stdout or ""))
-    # wav 저장 백엔드(soundfile) 누락이 흔한 원인 — 친절한 힌트 추가.
-    if "soundfile" in log.lower() or "backend" in log.lower() or "sox" in log.lower():
+    if "torchcodec" in log.lower():
         log += (
-            "\n\n💡 오디오 저장 백엔드가 없어 보입니다. "
-            "'보컬분리_설치.bat' 을 다시 더블클릭하면 soundfile 이 함께 설치됩니다."
+            "\n\n💡 torchaudio 저장 백엔드 문제입니다. "
+            "최신 코드는 mp3 로 저장하도록 우회했으니, 대시보드 실행 .bat 을 다시 "
+            "더블클릭해 최신 코드를 받은 뒤 재시도하세요."
+        )
+    elif "lameenc" in log.lower():
+        log += (
+            "\n\n💡 mp3 인코더(lameenc)가 없습니다. "
+            "'보컬분리_설치.bat' 을 다시 더블클릭하면 함께 설치됩니다."
         )
     return None, log or "분리 결과(vocals)를 찾지 못했습니다."
 
