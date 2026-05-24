@@ -4433,6 +4433,111 @@ def align_lyrics_to_segments(
     return "\n".join(out).strip() + "\n"
 
 
+def detect_vocal_phrases(
+    envelope, duration: float, *,
+    thresh_ratio: float = 0.12, min_phrase: float = 0.6, min_gap: float = 0.30,
+) -> list[tuple[float, float]]:
+    """진폭 envelope 에서 '노래하는 구간'(보컬 에너지가 있는 구간)을 찾는다.
+
+    무슨 단어인지 인식하지 않고 소리가 있는 구간만 검출하므로, Whisper 가
+    가사를 못 알아듣는 곡에서도 동작한다. (보컬 분리된 트랙이면 더 정확)
+    """
+    if envelope is None or duration <= 0:
+        return []
+    env = np.asarray(envelope, dtype=np.float32)
+    n = len(env)
+    if n == 0:
+        return []
+    # 약 0.1초 창으로 평활화해 잡음으로 인한 잘게 쪼개짐 방지.
+    w = max(1, int(n / duration * 0.1))
+    if w > 1:
+        env = np.convolve(env, np.ones(w, dtype=np.float32) / w, mode="same")
+    ref = float(np.percentile(env, 95)) or float(env.max()) or 1.0
+    if ref <= 0:
+        return []
+    active = (env / ref) > thresh_ratio
+    dt = duration / n
+
+    phrases: list[list[float]] = []
+    cur: list[float] | None = None
+    for idx, a in enumerate(active):
+        if a:
+            t = idx * dt
+            if cur is None:
+                cur = [t, t + dt]
+            else:
+                cur[1] = t + dt
+        elif cur is not None:
+            phrases.append(cur)
+            cur = None
+    if cur is not None:
+        phrases.append(cur)
+
+    # 짧은 무음 간격(min_gap 미만)은 한 구간으로 병합.
+    merged: list[list[float]] = []
+    for p in phrases:
+        if merged and p[0] - merged[-1][1] < min_gap:
+            merged[-1][1] = p[1]
+        else:
+            merged.append(p[:])
+    # 너무 짧은 구간은 제거.
+    merged = [p for p in merged if (p[1] - p[0]) >= min_phrase]
+    return [(round(s, 3), round(e, 3)) for s, e in merged]
+
+
+def align_lyrics_to_phrases(
+    lyrics_lines: list[str],
+    phrases: list[tuple[float, float]],
+    duration: float | None,
+) -> str:
+    """감지된 보컬 구간에 내 가사를 순서대로 배치한 SRT."""
+    lines = [ln.strip() for ln in lyrics_lines if ln.strip()]
+    if not lines:
+        return ""
+    if not phrases:
+        D = float(duration or 0) or len(lines) * 3.0
+        return _even_distribute_lyrics(lines, 0.0, 0.97 * D)
+
+    L, P = len(lines), len(phrases)
+    rows: list[dict] = []
+    if L == P:
+        for line, (s, e) in zip(lines, phrases):
+            rows.append({"start": s, "end": e, "text": line})
+    elif L < P:
+        # 가사보다 보컬 구간이 많으면 구간을 묶어 한 줄에 매핑.
+        for i, line in enumerate(lines):
+            s_idx = int(round(i * P / L))
+            e_idx = min(max(int(round((i + 1) * P / L)) - 1, s_idx), P - 1)
+            rows.append({
+                "start": phrases[s_idx][0], "end": phrases[e_idx][1], "text": line,
+            })
+    else:
+        # 가사가 더 많으면 한 구간을 여러 줄로 분할.
+        cursor = 0
+        for j, (s, e) in enumerate(phrases):
+            target = max(1, int(round((j + 1) * L / P)) - int(round(j * L / P)))
+            sub = lines[cursor:cursor + target]
+            cursor += target
+            if not sub:
+                continue
+            d = (e - s) / len(sub)
+            for k, line in enumerate(sub):
+                rows.append({
+                    "start": s + k * d, "end": s + (k + 1) * d, "text": line,
+                })
+        if cursor < L:  # 남은 줄은 마지막 구간 끝 ~ 곡 끝에 분배.
+            tail = lines[cursor:]
+            last_e = phrases[-1][1]
+            D = float(duration or 0)
+            span_end = 0.97 * D if D > last_e else last_e + 2.0 * len(tail)
+            per = max(0.8, (span_end - last_e) / len(tail))
+            ts = last_e
+            for line in tail:
+                rows.append({"start": ts, "end": ts + per, "text": line})
+                ts += per
+    return _rows_to_srt(rows)
+
+
 def _norm_text(s: str) -> str:
     """매칭용 정규화: 소문자 + 구두점 제거 + 공백 정리."""
     s = (s or "").lower()
@@ -5066,18 +5171,22 @@ def render_sync_tab() -> None:
         mode = st.radio(
             "동기화 모드",
             options=[
-                "내 가사로 곡 전체 자동 채움 (반복 포함·권장)",
+                "🎯 보컬 구간 감지로 가사 배치 (인식 불필요·권장)",
+                "내 가사로 곡 전체 자동 채움 (반복 매칭)",
                 "내 가사를 Whisper 타이밍에 정렬",
                 "Whisper 인식 결과만 사용",
             ],
             index=0,
             key="sync_mode",
             help=(
-                "• 곡 전체 자동 채움: Whisper 가 곡 전체에서 들은 구간마다 내 가사 중 "
-                "가장 비슷한 줄을 매칭합니다. 후렴이 반복되면 그 자리에 후렴 가사가 "
-                "자동으로 다시 채워져 곡 끝까지 커버됩니다. (보컬 분리 켜면 정확도 ↑)\n"
-                "• Whisper 타이밍에 정렬: 내 가사 줄을 순서대로 구간에 배치 (반복 없는 곡용).\n"
-                "• Whisper 결과만: 가사 없이 들은 그대로. 가사 미입력 시 자동 적용."
+                "• 🎯 보컬 구간 감지: Whisper 가 가사를 못 알아들어도 동작합니다. "
+                "노래하는 구간(소리 에너지)을 곡 끝까지 감지해 내 가사를 순서대로 얹습니다. "
+                "**보컬 분리(Demucs)를 켜면 정확도가 크게 오릅니다.** 후렴 반복까지 자막을 "
+                "채우려면 가사를 부르는 순서·반복 그대로 적어주세요.\n"
+                "• 곡 전체 자동 채움: Whisper 가 들은 구간에 내 가사 중 가장 비슷한 줄을 매칭 "
+                "(Whisper 인식이 좋은 곡용).\n"
+                "• Whisper 타이밍에 정렬: 내 가사 줄을 순서대로 구간에 배치.\n"
+                "• Whisper 결과만: 가사 없이 들은 그대로."
             ),
         )
 
@@ -5186,117 +5295,144 @@ def render_sync_tab() -> None:
                 with st.expander("🔎 보컬 분리 실패 사유 (전체 로그)", expanded=True):
                     st.code(dlog or "(로그 없음)", language=None)
 
-        # OpenAI 만 25MB 한도. 로컬은 제한 없음.
-        if engine == "openai" and os.path.getsize(transcribe_path) > WHISPER_MAX_BYTES:
-            compressed = os.path.join(workdir, "compressed.mp3")
-            with st.spinner(
-                f"📦 파일이 25MB 를 넘어 mono 64kbps 로 압축 중... "
-                f"({os.path.getsize(transcribe_path)/1024/1024:.1f}MB)"
-            ):
-                ok, log = compress_audio_for_whisper(transcribe_path, compressed)
-            if not ok or os.path.getsize(compressed) > WHISPER_MAX_BYTES:
-                st.error(
-                    f"파일이 너무 큽니다 ({os.path.getsize(transcribe_path)/1024/1024:.1f}MB). "
-                    "25MB 이하로 직접 줄여서 다시 시도해주세요. "
-                    "(또는 '💻 로컬 Whisper' 로 전환하면 용량 제한 없음)"
-                )
-                return
-            transcribe_path = compressed
+        phrase_mode = mode.startswith("🎯") and bool(user_lyrics.strip())
 
-        # Whisper 호출 — 엔진별 분기.
-        size_mb = os.path.getsize(transcribe_path) / 1024 / 1024
-        if engine == "local":
-            spinner_msg = (
-                f"💻 로컬 Whisper 로 분석 중... ({model_size} 모델, {size_mb:.1f}MB)\n\n"
-                "첫 실행이면 모델 다운로드(수 분)가 먼저 진행돼요. "
-                "이후엔 캐시에서 즉시 로드됩니다."
-            )
-            with st.spinner(spinner_msg):
-                try:
-                    result = whisper_transcribe_local(
-                        transcribe_path,
-                        model_size=model_size,
-                        language=lang_pick[1],
-                    )
-                except RuntimeError as e:
-                    st.error(str(e))
-                    return
-                except Exception as e:
-                    st.error(f"로컬 Whisper 추론 실패: {type(e).__name__}: {e}")
-                    return
-        else:
-            with st.spinner(
-                f"🎤 OpenAI Whisper API 가 가사 타이밍을 분석 중... "
-                f"(업로드 {size_mb:.1f}MB · 곡 길이의 5~15% 소요)"
-            ):
-                try:
-                    result = whisper_transcribe(
-                        transcribe_path, api_key.strip(), language=lang_pick[1]
-                    )
-                except Exception as e:
-                    st.error(f"Whisper API 호출 실패: {e}")
-                    return
-
-        segments = result.get("segments") or []
-        if not segments:
-            st.warning("Whisper 가 음성 구간을 찾지 못했습니다. (반주만 있는 구간일 수 있음)")
-            return
-
-        words: list[dict] = result.get("words") or []
-        use_word_level = (
-            align_precision.startswith("Word")
-            and bool(words)
-            and user_lyrics.strip()
-            and not mode.startswith("Whisper 인식 결과만")
-        )
-
-        engine_label = "💻 로컬" if engine == "local" else "🌐 OpenAI"
-        if engine == "local":
-            engine_label += f"({model_size})"
-
-        fill_mode = mode.startswith("내 가사로 곡 전체")
-
-        if mode.startswith("Whisper 인식 결과만") or not user_lyrics.strip():
-            srt_text = whisper_segments_to_srt(segments)
-            method = f"{engine_label} · Whisper 직접 변환 · {len(segments)}구간"
-            line_count = len(segments)
-        elif fill_mode:
+        if phrase_mode:
+            # 인식에 의존하지 않음 — 보컬 에너지로 노래 구간을 찾아 가사를 배치.
             lyrics_lines = [ln for ln in user_lyrics.splitlines() if ln.strip()]
-            srt_text = align_lyrics_by_similarity(lyrics_lines, segments)
+            with st.spinner("🎯 보컬 구간(부르는 부분) 감지 중..."):
+                ph_env, ph_dur = extract_waveform_data(transcribe_path, n_points=2500)
+            phrases = detect_vocal_phrases(ph_env, ph_dur)
+            srt_text = align_lyrics_to_phrases(lyrics_lines, phrases, ph_dur)
+            segments = []
+            result = {
+                "duration": ph_dur, "language": None, "segments": [], "words": [],
+            }
             line_count = srt_text.count(" --> ")
+            src_label = (
+                "보컬분리" if (use_demucs and transcribe_path != audio_path) else "원곡"
+            )
             method = (
-                f"{engine_label} · 곡 전체 자동 채움(반복 매칭) · "
-                f"가사 {len(lyrics_lines)}줄 → {len(segments)}구간 → 자막 {line_count}줄"
+                f"🎯 {src_label} 에너지 감지 · 보컬구간 {len(phrases)}개 "
+                f"→ 자막 {line_count}줄"
             )
-        elif use_word_level:
-            lyrics_lines = [ln for ln in user_lyrics.splitlines() if ln.strip()]
-            srt_text = _word_level_align(lyrics_lines, words)
-            line_count = len(lyrics_lines)
-            method = f"{engine_label} · Word 단위 정밀 정렬 · {line_count}줄 → {len(words)}단어"
+            if not phrases:
+                st.warning(
+                    "보컬 구간을 감지하지 못해 가사를 곡 전체에 고르게 배치했습니다. "
+                    "보컬 분리(Demucs)를 켜면 정확도가 올라갑니다."
+                )
         else:
-            lyrics_lines = [ln for ln in user_lyrics.splitlines() if ln.strip()]
-            srt_text = align_lyrics_to_segments(
-                lyrics_lines, segments, result.get("duration")
-            )
-            line_count = len(lyrics_lines)
-            method = f"{engine_label} · 가사 정렬 · 입력 {line_count}줄 → Whisper {len(segments)}구간"
+            # OpenAI 만 25MB 한도. 로컬은 제한 없음.
+            if engine == "openai" and os.path.getsize(transcribe_path) > WHISPER_MAX_BYTES:
+                compressed = os.path.join(workdir, "compressed.mp3")
+                with st.spinner(
+                    f"📦 파일이 25MB 를 넘어 mono 64kbps 로 압축 중... "
+                    f"({os.path.getsize(transcribe_path)/1024/1024:.1f}MB)"
+                ):
+                    ok, log = compress_audio_for_whisper(transcribe_path, compressed)
+                if not ok or os.path.getsize(compressed) > WHISPER_MAX_BYTES:
+                    st.error(
+                        f"파일이 너무 큽니다 ({os.path.getsize(transcribe_path)/1024/1024:.1f}MB). "
+                        "25MB 이하로 직접 줄여서 다시 시도해주세요. "
+                        "(또는 '💻 로컬 Whisper' 로 전환하면 용량 제한 없음)"
+                    )
+                    return
+                transcribe_path = compressed
 
-        # 곡 끝까지 커버 보정 — '정렬' 모드에서 Whisper 가 앞부분만 잡아 가사가
-        # 앞에 몰린 경우 곡 전체에 고르게 펼친다. (자동 채움 모드는 이미 곡 전체 커버)
-        if user_lyrics.strip() and not mode.startswith("Whisper 인식 결과만") and not fill_mode:
-            srt_text, stretched = _ensure_lyrics_cover_song(
-                srt_text, lyrics_lines, result.get("duration")
-            )
-            if stretched:
-                method += " + 곡 전체 커버 보정"
+            # Whisper 호출 — 엔진별 분기.
+            size_mb = os.path.getsize(transcribe_path) / 1024 / 1024
+            if engine == "local":
+                spinner_msg = (
+                    f"💻 로컬 Whisper 로 분석 중... ({model_size} 모델, {size_mb:.1f}MB)\n\n"
+                    "첫 실행이면 모델 다운로드(수 분)가 먼저 진행돼요. "
+                    "이후엔 캐시에서 즉시 로드됩니다."
+                )
+                with st.spinner(spinner_msg):
+                    try:
+                        result = whisper_transcribe_local(
+                            transcribe_path,
+                            model_size=model_size,
+                            language=lang_pick[1],
+                        )
+                    except RuntimeError as e:
+                        st.error(str(e))
+                        return
+                    except Exception as e:
+                        st.error(f"로컬 Whisper 추론 실패: {type(e).__name__}: {e}")
+                        return
+            else:
+                with st.spinner(
+                    f"🎤 OpenAI Whisper API 가 가사 타이밍을 분석 중... "
+                    f"(업로드 {size_mb:.1f}MB · 곡 길이의 5~15% 소요)"
+                ):
+                    try:
+                        result = whisper_transcribe(
+                            transcribe_path, api_key.strip(), language=lang_pick[1]
+                        )
+                    except Exception as e:
+                        st.error(f"Whisper API 호출 실패: {e}")
+                        return
 
-        # 후렴구 보정 ('정렬' 모드에서만 — 자동 채움은 Whisper 타이밍을 그대로 사용)
-        if (
-            chorus_correct and user_lyrics.strip()
-            and not mode.startswith("Whisper 인식 결과만") and not fill_mode
-        ):
-            srt_text = _chorus_correct_srt(srt_text)
-            method += " + 후렴구 보정"
+            segments = result.get("segments") or []
+            if not segments:
+                st.warning("Whisper 가 음성 구간을 찾지 못했습니다. (반주만 있는 구간일 수 있음)")
+                return
+
+            words: list[dict] = result.get("words") or []
+            use_word_level = (
+                align_precision.startswith("Word")
+                and bool(words)
+                and user_lyrics.strip()
+                and not mode.startswith("Whisper 인식 결과만")
+            )
+
+            engine_label = "💻 로컬" if engine == "local" else "🌐 OpenAI"
+            if engine == "local":
+                engine_label += f"({model_size})"
+
+            fill_mode = mode.startswith("내 가사로 곡 전체")
+
+            if mode.startswith("Whisper 인식 결과만") or not user_lyrics.strip():
+                srt_text = whisper_segments_to_srt(segments)
+                method = f"{engine_label} · Whisper 직접 변환 · {len(segments)}구간"
+                line_count = len(segments)
+            elif fill_mode:
+                lyrics_lines = [ln for ln in user_lyrics.splitlines() if ln.strip()]
+                srt_text = align_lyrics_by_similarity(lyrics_lines, segments)
+                line_count = srt_text.count(" --> ")
+                method = (
+                    f"{engine_label} · 곡 전체 자동 채움(반복 매칭) · "
+                    f"가사 {len(lyrics_lines)}줄 → {len(segments)}구간 → 자막 {line_count}줄"
+                )
+            elif use_word_level:
+                lyrics_lines = [ln for ln in user_lyrics.splitlines() if ln.strip()]
+                srt_text = _word_level_align(lyrics_lines, words)
+                line_count = len(lyrics_lines)
+                method = f"{engine_label} · Word 단위 정밀 정렬 · {line_count}줄 → {len(words)}단어"
+            else:
+                lyrics_lines = [ln for ln in user_lyrics.splitlines() if ln.strip()]
+                srt_text = align_lyrics_to_segments(
+                    lyrics_lines, segments, result.get("duration")
+                )
+                line_count = len(lyrics_lines)
+                method = f"{engine_label} · 가사 정렬 · 입력 {line_count}줄 → Whisper {len(segments)}구간"
+
+            # 곡 끝까지 커버 보정 — '정렬' 모드에서 Whisper 가 앞부분만 잡아 가사가
+            # 앞에 몰린 경우 곡 전체에 고르게 펼친다. (자동 채움 모드는 이미 곡 전체 커버)
+            if user_lyrics.strip() and not mode.startswith("Whisper 인식 결과만") and not fill_mode:
+                srt_text, stretched = _ensure_lyrics_cover_song(
+                    srt_text, lyrics_lines, result.get("duration")
+                )
+                if stretched:
+                    method += " + 곡 전체 커버 보정"
+
+            # 후렴구 보정 ('정렬' 모드에서만 — 자동 채움은 Whisper 타이밍을 그대로 사용)
+            if (
+                chorus_correct and user_lyrics.strip()
+                and not mode.startswith("Whisper 인식 결과만") and not fill_mode
+            ):
+                srt_text = _chorus_correct_srt(srt_text)
+                method += " + 후렴구 보정"
 
         # 파형 추출 + 재생 플레이어용 오디오 인코딩 (workdir 정리 전)
         with st.spinner("🎵 파형 추출 중... (시각화용)"):
