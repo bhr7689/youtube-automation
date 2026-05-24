@@ -1406,6 +1406,71 @@ def run_pipeline(cfg: SearchConfig) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 
+LANG_NAMES: dict[str, str] = {
+    "ko": "Korean", "en": "English", "ja": "Japanese", "zh": "Chinese",
+    "es": "Spanish", "hi": "Hindi", "fr": "French", "de": "German",
+    "pt": "Portuguese", "id": "Indonesian", "vi": "Vietnamese", "th": "Thai",
+    "ar": "Arabic", "ru": "Russian", "it": "Italian",
+}
+
+# (라벨, 지역코드, 언어코드). 마지막 항목은 직접 입력용.
+COUNTRY_PRESETS: list[tuple[str, str, str]] = [
+    ("🇰🇷 한국 (한국어)", "KR", "ko"),
+    ("🇺🇸 미국 (English)", "US", "en"),
+    ("🇬🇧 영국 (English)", "GB", "en"),
+    ("🇯🇵 일본 (日本語)", "JP", "ja"),
+    ("🇹🇼 대만 (中文)", "TW", "zh"),
+    ("🇪🇸 스페인 (Español)", "ES", "es"),
+    ("🇲🇽 멕시코 (Español)", "MX", "es"),
+    ("🇮🇳 인도 (हिन्दी)", "IN", "hi"),
+    ("🇫🇷 프랑스 (Français)", "FR", "fr"),
+    ("🇩🇪 독일 (Deutsch)", "DE", "de"),
+    ("🇧🇷 브라질 (Português)", "BR", "pt"),
+    ("🇮🇩 인도네시아", "ID", "id"),
+    ("🇻🇳 베트남", "VN", "vi"),
+    ("🇹🇭 태국", "TH", "th"),
+    ("🇸🇦 사우디 (العربية)", "SA", "ar"),
+    ("🌐 직접 입력", "", ""),
+]
+
+
+def translate_keywords(
+    keywords: tuple[str, ...], target_lang_name: str
+) -> tuple[list[str] | None, str]:
+    """키워드를 대상 언어로 번역. (translated_list|None, info). 키 없으면 'no_key'."""
+    gem = os.getenv("GEMINI_API_KEY") or SAVED_KEYS.get("gemini", "")
+    oai = os.getenv("OPENAI_API_KEY") or SAVED_KEYS.get("openai", "")
+    if gem:
+        provider, key, model = "gemini", gem, DEFAULT_MODELS["gemini"]
+    elif oai:
+        provider, key, model = "openai", oai, DEFAULT_MODELS["openai"]
+    else:
+        return None, "no_key"
+    prompt = (
+        "You are a YouTube SEO translator. Translate each search keyword into natural "
+        f"{target_lang_name} phrases that native creators and viewers would actually type "
+        "to find that kind of music/mood. Preserve the mood/situation nuance. "
+        'Return ONLY JSON in this shape: {"translated": ["...", "..."]} — same count and order.\n\n'
+        + json.dumps(list(keywords), ensure_ascii=False)
+    )
+    try:
+        raw = call_llm(provider, key, prompt, model=model, response_json=True)
+    except Exception as e:
+        return None, f"error: {e}"
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            arr = data.get("translated") or data.get("keywords") or []
+        elif isinstance(data, list):
+            arr = data
+        else:
+            arr = []
+        out = [str(x).strip() for x in arr if str(x).strip()]
+        return (out or None), provider
+    except Exception as e:
+        return None, f"parse_error: {e}"
+
+
 def render_sidebar() -> SearchConfig | None:
     st.sidebar.header("🔍 검색 설정")
 
@@ -1463,9 +1528,37 @@ def render_sidebar() -> SearchConfig | None:
     )
 
     st.sidebar.markdown("---")
+    st.sidebar.subheader("🌍 검색 대상 국가·언어")
+    preset_labels = [p[0] for p in COUNTRY_PRESETS]
+    pick = st.sidebar.selectbox(
+        "국가 / 언어 선택",
+        options=preset_labels,
+        index=0,
+        key="country_preset",
+        help="선택한 국가·언어권의 채널을 검색합니다. (지역코드 + 언어 우선순위 적용)",
+    )
+    sel = COUNTRY_PRESETS[preset_labels.index(pick)]
+    if sel[1] == "":  # 직접 입력
+        region = st.sidebar.text_input("지역 코드 (ISO 3166-1)", value="KR")
+        language = st.sidebar.text_input("언어 코드 (예: ko, en, ja)", value="ko")
+    else:
+        region, language = sel[1], sel[2]
+        st.sidebar.caption(f"→ 지역 `{region}` · 언어 `{language}` 로 검색")
+    target_lang_name = LANG_NAMES.get(language, language)
+
+    translate_kw = st.sidebar.checkbox(
+        "🌐 키워드를 대상 언어로 자동 번역",
+        value=(language != "ko"),
+        key="translate_kw",
+        help=(
+            "켜면 한국어로 키워드를 써도 대상 국가 언어로 자동 번역해 그 언어권 채널을 "
+            "찾아줍니다. (예: '비 오는 날 카페' → 미국 선택 시 'rainy day cafe' 로 검색) "
+            "Gemini 또는 OpenAI 키가 필요합니다 (AI 스토리텔링 탭에서 저장)."
+        ),
+    )
+
+    st.sidebar.markdown("---")
     st.sidebar.subheader("⚙️ 고급")
-    region = st.sidebar.text_input("지역 코드 (ISO 3166-1)", value="KR")
-    language = st.sidebar.text_input("언어 코드 (예: ko, en, ja)", value="ko")
     order = st.sidebar.selectbox(
         "정렬 기준",
         options=["date", "viewCount", "relevance"],
@@ -1488,6 +1581,26 @@ def render_sidebar() -> SearchConfig | None:
     if not keywords:
         st.sidebar.error("키워드를 1개 이상 입력하세요.")
         return None
+
+    # 대상 언어로 키워드 자동 번역 (한국어 외 대상 + 토글 ON).
+    if translate_kw and language and language != "ko":
+        with st.spinner(f"키워드를 {target_lang_name} 로 번역 중..."):
+            translated, info = translate_keywords(keywords, target_lang_name)
+        if translated:
+            keywords = tuple(translated)
+            st.sidebar.success(
+                "번역된 키워드로 검색합니다:\n\n"
+                + "\n".join(f"• {k}" for k in translated)
+            )
+        elif info == "no_key":
+            st.sidebar.warning(
+                "번역하려면 'AI 스토리텔링 & 가사 생성' 탭에서 Gemini 또는 OpenAI 키를 "
+                "저장하세요. 이번에는 원본 키워드로 검색합니다."
+            )
+        else:
+            st.sidebar.warning(
+                f"키워드 번역에 실패해 원본으로 검색합니다. ({info})"
+            )
 
     return SearchConfig(
         api_key=api_key,
