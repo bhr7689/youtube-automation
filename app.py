@@ -247,7 +247,19 @@ def build_dataframe(videos: list[dict], channels: dict[str, dict]) -> pd.DataFra
 
     df = pd.DataFrame(rows)
     if not df.empty:
-        df["published_at"] = pd.to_datetime(df["published_at"], errors="coerce")
+        df["published_at"] = pd.to_datetime(
+            df["published_at"], errors="coerce", utc=True
+        )
+        # 시간당 조회수 = 조회수 / 업로드 후 경과 시간(시간). 최소 1시간으로 클립.
+        now = pd.Timestamp.now(tz="UTC")
+        age_h = (now - df["published_at"]).dt.total_seconds() / 3600.0
+        df["views_per_hour"] = (
+            df["view_count"] / age_h.clip(lower=1)
+        ).round(0).astype("Int64")
+        # 좋아요(비) = 좋아요/조회수 (%).
+        df["like_view_ratio"] = (
+            df["like_count"] / df["view_count"].clip(lower=1) * 100
+        ).round(1)
         df = df.sort_values("view_sub_ratio", ascending=False).reset_index(drop=True)
     return df
 
@@ -1632,29 +1644,32 @@ def render_results(df: pd.DataFrame, filtered: pd.DataFrame, cfg: SearchConfig) 
         )
     else:
         display_cols = [
+            "thumbnail_url",
             "video_title",
             "channel_title",
             "subscriber_count",
             "view_count",
-            "view_sub_ratio",
-            "like_count",
+            "views_per_hour",
             "comment_count",
+            "like_view_ratio",
             "published_at",
-            "duration_sec",
             "video_url",
-            "channel_url",
         ]
         st.dataframe(
             filtered[display_cols],
             use_container_width=True,
             hide_index=True,
             column_config={
-                "video_url": st.column_config.LinkColumn("영상", display_text="열기"),
-                "channel_url": st.column_config.LinkColumn("채널", display_text="열기"),
-                "subscriber_count": st.column_config.NumberColumn(format="%d"),
-                "view_count": st.column_config.NumberColumn(format="%d"),
-                "view_sub_ratio": st.column_config.NumberColumn(format="%.2f"),
-                "published_at": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm"),
+                "thumbnail_url": st.column_config.ImageColumn("썸네일", width="medium"),
+                "video_title": st.column_config.TextColumn("제목", width="large"),
+                "channel_title": st.column_config.TextColumn("채널명"),
+                "subscriber_count": st.column_config.NumberColumn("구독자수", format="%d"),
+                "view_count": st.column_config.NumberColumn("조회수", format="%d"),
+                "views_per_hour": st.column_config.NumberColumn("시간당조회수", format="%d"),
+                "comment_count": st.column_config.NumberColumn("댓글수", format="%d"),
+                "like_view_ratio": st.column_config.NumberColumn("좋아요(비)", format="%.1f%%"),
+                "published_at": st.column_config.DatetimeColumn("업로드일", format="YYYY-MM-DD HH:mm"),
+                "video_url": st.column_config.LinkColumn("액션", display_text="열기"),
             },
         )
 
