@@ -1651,7 +1651,7 @@ def render_results(df: pd.DataFrame, filtered: pd.DataFrame, cfg: SearchConfig) 
                 with ci:
                     thumb = r.get("thumbnail_url")
                     if isinstance(thumb, str) and thumb:
-                        st.image(thumb, use_column_width=True)
+                        st.image(thumb, width="stretch")
                 with ct:
                     st.markdown(f"**{r['video_title']}**")
                     vph = int(r["views_per_hour"]) if pd.notna(r.get("views_per_hour")) else 0
