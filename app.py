@@ -1643,35 +1643,32 @@ def render_results(df: pd.DataFrame, filtered: pd.DataFrame, cfg: SearchConfig) 
             "(예: 최대 구독자 수↑, 최소 조회수↓, 최소 비율↓)."
         )
     else:
-        display_cols = [
-            "thumbnail_url",
-            "video_title",
-            "channel_title",
-            "subscriber_count",
-            "view_count",
-            "views_per_hour",
-            "comment_count",
-            "like_view_ratio",
-            "published_at",
-            "video_url",
-        ]
-        st.dataframe(
-            filtered[display_cols],
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "thumbnail_url": st.column_config.ImageColumn("썸네일", width="medium"),
-                "video_title": st.column_config.TextColumn("제목", width="large"),
-                "channel_title": st.column_config.TextColumn("채널명"),
-                "subscriber_count": st.column_config.NumberColumn("구독자수", format="%d"),
-                "view_count": st.column_config.NumberColumn("조회수", format="%d"),
-                "views_per_hour": st.column_config.NumberColumn("시간당조회수", format="%d"),
-                "comment_count": st.column_config.NumberColumn("댓글수", format="%d"),
-                "like_view_ratio": st.column_config.NumberColumn("좋아요(비)", format="%.1f%%"),
-                "published_at": st.column_config.DatetimeColumn("업로드일", format="YYYY-MM-DD HH:mm"),
-                "video_url": st.column_config.LinkColumn("액션", display_text="열기"),
-            },
-        )
+        st.caption(f"총 {len(filtered):,}개 결과 (조회/구독 비율 높은 순)")
+        MAX_CARDS = 60
+        for _, r in filtered.head(MAX_CARDS).iterrows():
+            with st.container(border=True):
+                ci, ct = st.columns([1, 1])
+                with ci:
+                    thumb = r.get("thumbnail_url")
+                    if isinstance(thumb, str) and thumb:
+                        st.image(thumb, use_column_width=True)
+                with ct:
+                    st.markdown(f"**{r['video_title']}**")
+                    vph = int(r["views_per_hour"]) if pd.notna(r.get("views_per_hour")) else 0
+                    st.markdown(
+                        f"조회수 **{int(r['view_count']):,}** · 시간당 **{vph:,}** · "
+                        f"구독자 **{int(r['subscriber_count']):,}**"
+                    )
+                    st.markdown(
+                        f"댓글 {int(r['comment_count']):,} · 좋아요(비) {r['like_view_ratio']}% · "
+                        f"조회/구독 {r['view_sub_ratio']:.1f}배"
+                    )
+                    pub = r["published_at"]
+                    pub_s = pub.strftime("%Y-%m-%d") if pd.notna(pub) else ""
+                    st.caption(f"채널: {r['channel_title']}  ·  업로드: {pub_s}")
+                    st.markdown(f"[▶ 영상 열기]({r['video_url']})")
+        if len(filtered) > MAX_CARDS:
+            st.caption(f"… 외 {len(filtered) - MAX_CARDS:,}개는 아래 CSV로 확인하세요.")
 
         st.download_button(
             "📥 CSV 다운로드",
@@ -1681,9 +1678,7 @@ def render_results(df: pd.DataFrame, filtered: pd.DataFrame, cfg: SearchConfig) 
         )
 
     render_title_patterns(filtered, df)
-    render_narrative(filtered, df)
     render_recommendations(filtered, df, cfg)
-    render_thumbnails(filtered, df, cfg)
 
     with st.expander("🔬 전체 검색 결과 보기 (필터 적용 전)"):
         st.dataframe(df, use_container_width=True, hide_index=True)
