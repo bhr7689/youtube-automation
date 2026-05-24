@@ -1643,11 +1643,31 @@ def render_results(df: pd.DataFrame, filtered: pd.DataFrame, cfg: SearchConfig) 
             "(예: 최대 구독자 수↑, 최소 조회수↓, 최소 비율↓)."
         )
     else:
-        st.caption(f"총 {len(filtered):,}개 결과 (조회/구독 비율 높은 순)")
+        sort_opts = {
+            "조회수 ÷ 구독자 (급상승)": "view_sub_ratio",
+            "시간당 조회수": "views_per_hour",
+            "조회수": "view_count",
+            "구독자수": "subscriber_count",
+            "좋아요(비)": "like_view_ratio",
+            "최신 업로드": "published_at",
+        }
+        sc1, sc2 = st.columns([3, 2])
+        sort_label = sc1.selectbox(
+            "정렬 기준", list(sort_opts.keys()), index=0, key="disc_sort"
+        )
+        order_desc = sc2.radio(
+            "순서", ["높은 순", "낮은 순"], index=0, key="disc_sort_order",
+            horizontal=True,
+        ) == "높은 순"
+        filtered = filtered.sort_values(
+            sort_opts[sort_label], ascending=not order_desc, na_position="last"
+        ).reset_index(drop=True)
+
+        st.caption(f"총 {len(filtered):,}개 결과 · {sort_label} {'높은' if order_desc else '낮은'} 순")
         MAX_CARDS = 60
         for _, r in filtered.head(MAX_CARDS).iterrows():
             with st.container(border=True):
-                ci, ct = st.columns([1, 1])
+                ci, ct = st.columns([1, 3])
                 with ci:
                     thumb = r.get("thumbnail_url")
                     if isinstance(thumb, str) and thumb:
@@ -1677,7 +1697,6 @@ def render_results(df: pd.DataFrame, filtered: pd.DataFrame, cfg: SearchConfig) 
             mime="text/csv",
         )
 
-    render_title_patterns(filtered, df)
     render_recommendations(filtered, df, cfg)
 
     with st.expander("🔬 전체 검색 결과 보기 (필터 적용 전)"):
@@ -2108,20 +2127,22 @@ def render_discovery_tab() -> None:
 
     new_cfg = render_sidebar()
     if new_cfg is not None:
+        # '발굴 시작'을 눌렀을 때만 API 를 호출하고 결과를 캐시한다.
         st.session_state.active_cfg = new_cfg
-    cfg = st.session_state.get("active_cfg")
-    if cfg is None:
-        st.info("👈 사이드바에서 키워드와 필터를 설정한 뒤 **발굴 시작**을 눌러주세요.")
-        return
+        try:
+            with st.spinner("YouTube API 호출 및 분석 중..."):
+                st.session_state["disc_df"] = run_pipeline(new_cfg)
+        except HttpError as e:
+            st.error(f"YouTube API 오류: {e}")
+            return
+        except Exception as e:
+            st.error(f"실행 중 오류: {e}")
+            return
 
-    try:
-        with st.spinner("YouTube API 호출 및 분석 중..."):
-            df = run_pipeline(cfg)
-    except HttpError as e:
-        st.error(f"YouTube API 오류: {e}")
-        return
-    except Exception as e:
-        st.error(f"실행 중 오류: {e}")
+    cfg = st.session_state.get("active_cfg")
+    df = st.session_state.get("disc_df")
+    if cfg is None or df is None:
+        st.info("👈 사이드바에서 키워드와 필터를 설정한 뒤 **발굴 시작**을 눌러주세요.")
         return
 
     if df.empty:
