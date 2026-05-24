@@ -21,8 +21,8 @@ if errorlevel 1 (
 )
 echo [2/3] pip 업그레이드...
 python -m pip install --upgrade pip
-echo [3/3] demucs 설치 중... (보컬 분리 엔진)
-python -m pip install demucs
+echo [3/3] demucs + soundfile 설치 중... (보컬 분리 엔진 + 저장 백엔드)
+python -m pip install demucs soundfile
 if errorlevel 1 (
     echo.
     echo [오류] 설치에 실패했습니다. 인터넷 연결을 확인하고 다시 시도하세요.

@@ -4111,6 +4111,33 @@ def compress_audio_for_whisper(input_path: str, output_path: str) -> tuple[bool,
     return proc.returncode == 0, (proc.stderr or "")[-2000:]
 
 
+def _clean_proc_log(text: str, keep: int = 800) -> str:
+    """subprocess 로그에서 tqdm 진행바 조각을 제거하고 의미있는 끝부분만 남긴다."""
+    if not text:
+        return ""
+    # 진행바는 \r 로 갱신되므로 \r 기준으로도 쪼갠다.
+    parts = re.split(r"[\r\n]+", text)
+    meaningful = [
+        p.strip() for p in parts
+        if p.strip()
+        and "%|" not in p
+        and "it/s" not in p
+        and "seconds/s" not in p
+        and not re.match(r"^\d+%", p.strip())
+    ]
+    out = "\n".join(meaningful).strip()
+    return out[-keep:] if out else text[-keep:]
+
+
+def _find_vocals_stem(outdir: str) -> str | None:
+    """demucs 출력 폴더에서 vocals 스템 파일을 찾는다."""
+    for root, _dirs, files in os.walk(outdir):
+        for name in ("vocals.wav", "vocals.mp3", "vocals.flac"):
+            if name in files:
+                return os.path.join(root, name)
+    return None
+
+
 def demucs_available() -> bool:
     """Demucs(보컬 분리) 패키지 설치 여부."""
     import importlib.util
@@ -4121,7 +4148,7 @@ def separate_vocals(audio_path: str, outdir: str) -> tuple[str | None, str]:
     """Demucs 로 반주를 제거하고 보컬 스템만 추출한다. (vocals_path|None, log).
 
     `python -m demucs --two-stems=vocals` 를 호출해 보컬/반주 2-stem 으로 분리하고
-    생성된 vocals.wav 경로를 돌려준다. 미설치/실패 시 (None, 로그).
+    생성된 vocals 파일 경로를 돌려준다. 미설치/실패 시 (None, 정리된 로그).
     """
     if not demucs_available():
         return None, "demucs 미설치"
@@ -4138,15 +4165,20 @@ def separate_vocals(audio_path: str, outdir: str) -> tuple[str | None, str]:
         )
     except subprocess.TimeoutExpired:
         return None, "보컬 분리가 30분 안에 끝나지 않았습니다."
-    if proc.returncode != 0:
-        return None, (proc.stderr or proc.stdout or "")[-2000:]
-    # outdir/<model>/<trackname>/vocals.wav 형태로 생성됨.
-    for root, _dirs, files in os.walk(outdir):
-        if "vocals.wav" in files:
-            return os.path.join(root, "vocals.wav"), "ok"
-        if "vocals.mp3" in files:
-            return os.path.join(root, "vocals.mp3"), "ok"
-    return None, "분리 결과(vocals)를 찾지 못했습니다."
+
+    # returncode 와 무관하게 결과 파일이 생겼으면 그대로 사용한다.
+    found = _find_vocals_stem(outdir)
+    if found:
+        return found, "ok"
+
+    log = _clean_proc_log((proc.stderr or "") + "\n" + (proc.stdout or ""))
+    # wav 저장 백엔드(soundfile) 누락이 흔한 원인 — 친절한 힌트 추가.
+    if "soundfile" in log.lower() or "backend" in log.lower() or "sox" in log.lower():
+        log += (
+            "\n\n💡 오디오 저장 백엔드가 없어 보입니다. "
+            "'보컬분리_설치.bat' 을 다시 더블클릭하면 soundfile 이 함께 설치됩니다."
+        )
+    return None, log or "분리 결과(vocals)를 찾지 못했습니다."
 
 
 def whisper_transcribe(
@@ -5053,10 +5085,9 @@ def render_sync_tab() -> None:
                 transcribe_path = vocal_path
                 st.caption("✓ 보컬 분리 완료 — 반주를 제거한 보컬로 인식합니다.")
             else:
-                st.warning(
-                    "보컬 분리에 실패해 원곡 그대로 인식합니다. "
-                    f"(사유: {dlog[:200]})"
-                )
+                st.warning("보컬 분리에 실패해 원곡 그대로 인식합니다. 아래 사유를 확인하세요.")
+                with st.expander("🔎 보컬 분리 실패 사유 (전체 로그)", expanded=True):
+                    st.code(dlog or "(로그 없음)", language=None)
 
         # OpenAI 만 25MB 한도. 로컬은 제한 없음.
         if engine == "openai" and os.path.getsize(transcribe_path) > WHISPER_MAX_BYTES:
