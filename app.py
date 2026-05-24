@@ -4859,27 +4859,43 @@ _SYNC_PLAYER_TEMPLATE = """
      'Malgun Gothic',sans-serif;color:#e6e6e6;">
   <audio id="lp-aud" controls preload="auto" style="width:100%;outline:none;"
          src="__AUDIO_SRC__"></audio>
-  <div style="display:flex;align-items:center;gap:6px;margin-top:8px;">
+  <div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;">
+    <button id="lp-play" style="background:#1f6feb;color:#fff;border:none;
+      border-radius:6px;padding:6px 14px;cursor:pointer;font-size:14px;font-weight:700;">
+      ▶ 재생 / ⏸</button>
+    <button id="lp-add" style="background:#238636;color:#fff;border:none;
+      border-radius:6px;padding:6px 14px;cursor:pointer;font-size:14px;font-weight:700;">
+      ➕ 지금 줄 추가</button>
     <button id="lp-zout" style="background:#21262d;color:#ddd;border:1px solid #333;
-      border-radius:6px;padding:4px 10px;cursor:pointer;font-size:14px;">🔍−</button>
+      border-radius:6px;padding:6px 10px;cursor:pointer;font-size:14px;">🔍−</button>
     <button id="lp-zin" style="background:#21262d;color:#ddd;border:1px solid #333;
-      border-radius:6px;padding:4px 10px;cursor:pointer;font-size:14px;">🔍＋</button>
+      border-radius:6px;padding:6px 10px;cursor:pointer;font-size:14px;">🔍＋</button>
     <button id="lp-zfit" style="background:#21262d;color:#ddd;border:1px solid #333;
-      border-radius:6px;padding:4px 10px;cursor:pointer;font-size:13px;">전체</button>
-    <span id="lp-zlbl" style="color:#8b96a5;font-size:12px;">1×</span>
+      border-radius:6px;padding:6px 10px;cursor:pointer;font-size:13px;">전체</button>
     <span id="lp-time" style="margin-left:auto;color:#7fd4ff;font-size:14px;
       font-variant-numeric:tabular-nums;">0:00.0 / 0:00</span>
   </div>
   <div id="lp-wrap" style="overflow-x:auto;overflow-y:hidden;margin-top:6px;
        border-radius:8px;background:#161b22;">
-    <canvas id="lp-wave" style="height:150px;display:block;cursor:pointer;"></canvas>
+    <canvas id="lp-wave" style="height:140px;display:block;cursor:pointer;"></canvas>
   </div>
-  <div id="lp-now" style="text-align:center;font-size:22px;font-weight:700;
-       min-height:34px;margin:12px 4px 6px;line-height:1.4;color:#fff;">
+  <div id="lp-now" style="text-align:center;font-size:20px;font-weight:700;
+       min-height:30px;margin:10px 4px 6px;line-height:1.4;color:#fff;">
   </div>
-  <div id="lp-list" style="max-height:220px;overflow-y:auto;padding:4px;
+  <div id="lp-list" style="max-height:240px;overflow-y:auto;padding:4px;
        background:#0e1117;border-radius:8px;border:1px solid #222;">
   </div>
+  <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;">
+    <button id="lp-dl" style="background:#fa5252;color:#fff;border:none;
+      border-radius:6px;padding:8px 16px;cursor:pointer;font-size:14px;font-weight:700;">
+      📥 SRT 다운로드</button>
+    <button id="lp-copy" style="background:#21262d;color:#ddd;border:1px solid #333;
+      border-radius:6px;padding:8px 14px;cursor:pointer;font-size:14px;">📋 복사</button>
+    <span id="lp-msg" style="color:#7ee787;font-size:13px;"></span>
+  </div>
+  <textarea id="lp-srt" readonly style="display:none;width:100%;height:120px;
+    margin-top:8px;background:#0e1117;color:#ddd;border:1px solid #333;border-radius:6px;
+    font-size:12px;"></textarea>
 </div>
 <script>
 (function(){
@@ -4890,140 +4906,188 @@ _SYNC_PLAYER_TEMPLATE = """
   const now = document.getElementById('lp-now');
   const list= document.getElementById('lp-list');
   const timeEl = document.getElementById('lp-time');
-  const zlbl = document.getElementById('lp-zlbl');
+  const msg = document.getElementById('lp-msg');
+  const srtArea = document.getElementById('lp-srt');
   const ctx = cv.getContext('2d');
   const env = D.envelope || [];
   const dur = D.duration || (aud.duration || 0);
-  const cues = D.cues || [];
+
+  // 편집 가능한 자막 항목 (시작시간 + 텍스트). 시작시간 순으로 유지.
+  let items = (D.cues || []).map(c => ({start: +c.start || 0, text: c.text || ''}));
+  items.sort((a,b)=>a.start-b.start);
 
   function fmt(t){
-    if(!isFinite(t)) t = 0;
-    const m = Math.floor(t/60), s = t - m*60;
-    return m + ':' + (s<10?'0':'') + s.toFixed(1);
+    if(!isFinite(t)) t=0;
+    const m=Math.floor(t/60), s=t-m*60;
+    return m+':'+(s<10?'0':'')+s.toFixed(1);
   }
   function fmtShort(t){
-    if(!isFinite(t)) t = 0;
-    const m = Math.floor(t/60), s = Math.floor(t%60);
-    return m + ':' + (s<10?'0':'') + s;
+    if(!isFinite(t)) t=0;
+    const m=Math.floor(t/60), s=Math.floor(t%60);
+    return m+':'+(s<10?'0':'')+s;
+  }
+  function pad(n,l){ n=String(Math.floor(n)); while(n.length<l) n='0'+n; return n; }
+  function srtTime(t){
+    if(!isFinite(t)||t<0) t=0;
+    const h=Math.floor(t/3600), m=Math.floor((t%3600)/60), s=Math.floor(t%60);
+    const ms=Math.round((t-Math.floor(t))*1000);
+    return pad(h,2)+':'+pad(m,2)+':'+pad(s,2)+','+pad(ms,3);
   }
 
-  // ----- build lyric list -----
-  const rows = [];
-  cues.forEach((c, i) => {
-    const d = document.createElement('div');
-    d.textContent = (c.text || '').trim() || '\\u00a0';
-    d.style.cssText = 'padding:6px 10px;border-radius:6px;cursor:pointer;'+
-      'font-size:15px;color:#9aa;transition:all .12s;margin:1px 0;';
-    d.onmouseenter = () => { if(i!==active) d.style.background='#1b2230'; };
-    d.onmouseleave = () => { if(i!==active) d.style.background='transparent'; };
-    d.onclick = () => { if(isFinite(c.start)){ aud.currentTime = c.start; aud.play(); } };
-    list.appendChild(d);
-    rows.push(d);
-  });
+  // ----- 리스트(편집 행) 렌더 -----
+  let rowsUI = [];
+  function render(){
+    list.innerHTML=''; rowsUI=[];
+    items.forEach((it, idx) => {
+      const row=document.createElement('div');
+      row.style.cssText='display:flex;gap:6px;align-items:center;margin:2px 0;';
+      const tb=document.createElement('button');
+      tb.textContent='▶ '+fmt(it.start);
+      tb.style.cssText='background:#21262d;color:#9cf;border:1px solid #333;'+
+        'border-radius:5px;padding:4px 6px;cursor:pointer;font-size:12px;'+
+        'min-width:64px;font-variant-numeric:tabular-nums;';
+      tb.onclick=()=>{ aud.currentTime=it.start; aud.play(); };
+      const inp=document.createElement('input');
+      inp.type='text'; inp.value=it.text; inp.placeholder='여기에 가사 입력';
+      inp.style.cssText='flex:1;background:#161b22;color:#fff;border:1px solid #2a3340;'+
+        'border-radius:5px;padding:6px 8px;font-size:15px;';
+      inp.oninput=()=>{ it.text=inp.value; };
+      const del=document.createElement('button');
+      del.textContent='✕';
+      del.style.cssText='background:#2d2230;color:#f88;border:1px solid #533;'+
+        'border-radius:5px;padding:4px 8px;cursor:pointer;font-size:12px;';
+      del.onclick=()=>{ items.splice(idx,1); render(); };
+      row.appendChild(tb); row.appendChild(inp); row.appendChild(del);
+      list.appendChild(row);
+      rowsUI.push({row, inp, start: it.start});
+    });
+    active = -1;
+  }
+  let active=-1;
+  render();
 
-  let active = -1;
   function setActive(i){
-    if(i === active) return;
-    if(active >= 0 && rows[active]){
-      rows[active].style.background='transparent';
-      rows[active].style.color='#9aa';
-      rows[active].style.fontWeight='400';
-    }
-    active = i;
-    if(i >= 0 && rows[i]){
-      rows[i].style.background='#1f6feb33';
-      rows[i].style.color='#fff';
-      rows[i].style.fontWeight='700';
-      rows[i].scrollIntoView({block:'nearest', behavior:'smooth'});
-      now.textContent = cues[i].text || '';
-    } else {
-      now.textContent = '';
-    }
+    if(i===active) return;
+    if(active>=0 && rowsUI[active]) rowsUI[active].row.style.background='transparent';
+    active=i;
+    if(i>=0 && rowsUI[i]){
+      rowsUI[i].row.style.background='#1f6feb33';
+      now.textContent = items[i].text || '(가사 입력)';
+    } else { now.textContent=''; }
   }
-
-  // ----- canvas sizing + zoom -----
-  let W = 0, H = 0, W0 = 0, zoom = 1, dpr = window.devicePixelRatio || 1;
-  function resize(){
-    W0 = wrap.clientWidth || 600;
-    W = Math.max(W0, Math.floor(W0 * zoom));
-    H = 150;
-    cv.style.width = W + 'px';
-    cv.width = Math.max(1, Math.floor(W*dpr));
-    cv.height= Math.max(1, Math.floor(H*dpr));
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-    zlbl.textContent = zoom.toFixed(zoom<10?1:0) + '×';
-  }
-  function setZoom(z){
-    const dd = dur || aud.duration || 1;
-    const center = (aud.currentTime||0)/dd;  // keep playhead-ish centered
-    zoom = Math.min(60, Math.max(1, z));
-    resize();
-    const target = center*W - W0/2;
-    wrap.scrollLeft = Math.max(0, target);
-  }
-  document.getElementById('lp-zin').onclick  = () => setZoom(zoom*1.7);
-  document.getElementById('lp-zout').onclick = () => setZoom(zoom/1.7);
-  document.getElementById('lp-zfit').onclick = () => setZoom(1);
-  window.addEventListener('resize', resize);
-  resize();
-
   function curIndex(t){
-    for(let i=0;i<cues.length;i++){
-      if(t >= cues[i].start && t < (cues[i].end || cues[i].start)) return i;
-    }
-    let last = -1;
-    for(let i=0;i<cues.length;i++){ if(t >= cues[i].start) last = i; else break; }
+    let last=-1;
+    for(let i=0;i<items.length;i++){ if(t>=items[i].start-0.01) last=i; else break; }
     return last;
   }
 
+  // ----- 줄 추가 -----
+  document.getElementById('lp-add').onclick=()=>{
+    const t=aud.currentTime||0;
+    items.push({start:t, text:''});
+    items.sort((a,b)=>a.start-b.start);
+    render();
+    const i=items.findIndex(it=>Math.abs(it.start-t)<0.0001 && it.text==='');
+    if(rowsUI[i]){ rowsUI[i].row.scrollIntoView({block:'nearest'}); rowsUI[i].inp.focus(); }
+    msg.textContent='줄 추가됨 ('+fmt(t)+')'; setTimeout(()=>msg.textContent='',1500);
+  };
+
+  // ----- 재생/일시정지 -----
+  document.getElementById('lp-play').onclick=()=>{ if(aud.paused) aud.play(); else aud.pause(); };
+  document.addEventListener('keydown',(e)=>{
+    if(e.code==='Space' && e.target.tagName!=='INPUT' && e.target.tagName!=='TEXTAREA'){
+      e.preventDefault(); if(aud.paused) aud.play(); else aud.pause();
+    }
+  });
+
+  // ----- SRT 만들기/내보내기 -----
+  function buildSRT(){
+    const arr=items.filter(it=>(it.text||'').trim()!=='').slice().sort((a,b)=>a.start-b.start);
+    let out='';
+    for(let i=0;i<arr.length;i++){
+      const s=arr[i].start;
+      let e=(i+1<arr.length)? arr[i+1].start-0.05 : ((dur||s+3));
+      if(e<=s) e=s+1.5;
+      out += (i+1)+'\\n'+srtTime(s)+' --> '+srtTime(e)+'\\n'+arr[i].text.trim()+'\\n\\n';
+    }
+    return out.trim()+'\\n';
+  }
+  document.getElementById('lp-dl').onclick=()=>{
+    const txt=buildSRT();
+    if(txt.trim()===''){ msg.style.color='#f88'; msg.textContent='가사를 먼저 입력하세요'; return; }
+    try{
+      const blob=new Blob([txt],{type:'application/x-subrip;charset=utf-8'});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url; a.download='lyrics.srt'; document.body.appendChild(a); a.click();
+      setTimeout(()=>{URL.revokeObjectURL(url); a.remove();},1000);
+      msg.style.color='#7ee787'; msg.textContent='다운로드 시작!';
+    }catch(err){
+      // 다운로드가 막히면 텍스트로 보여줌.
+      srtArea.style.display='block'; srtArea.value=txt; srtArea.select();
+      msg.style.color='#7ee787'; msg.textContent='아래 칸의 내용을 복사해 .srt 로 저장하세요';
+    }
+  };
+  document.getElementById('lp-copy').onclick=()=>{
+    const txt=buildSRT();
+    if(txt.trim()===''){ msg.style.color='#f88'; msg.textContent='가사를 먼저 입력하세요'; return; }
+    const done=()=>{ msg.style.color='#7ee787'; msg.textContent='복사됨!'; };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(txt).then(done, ()=>{
+        srtArea.style.display='block'; srtArea.value=txt; srtArea.select(); done();
+      });
+    } else {
+      srtArea.style.display='block'; srtArea.value=txt; srtArea.select();
+      try{ document.execCommand('copy'); }catch(e){}
+      done();
+    }
+  };
+
+  // ----- 파형 + 줌 -----
+  let W=0, H=0, W0=0, zoom=1, dpr=window.devicePixelRatio||1;
+  function resize(){
+    W0=wrap.clientWidth||600; W=Math.max(W0, Math.floor(W0*zoom)); H=140;
+    cv.style.width=W+'px'; cv.width=Math.max(1,Math.floor(W*dpr));
+    cv.height=Math.max(1,Math.floor(H*dpr)); ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  function setZoom(z){
+    const dd=dur||aud.duration||1; const center=(aud.currentTime||0)/dd;
+    zoom=Math.min(60,Math.max(1,z)); resize();
+    wrap.scrollLeft=Math.max(0, center*W - W0/2);
+  }
+  document.getElementById('lp-zin').onclick =()=>setZoom(zoom*1.7);
+  document.getElementById('lp-zout').onclick=()=>setZoom(zoom/1.7);
+  document.getElementById('lp-zfit').onclick=()=>setZoom(1);
+  window.addEventListener('resize', resize);
+  resize();
+
   function draw(){
-    const t = aud.currentTime || 0;
-    const dd = dur || aud.duration || 1;
+    const t=aud.currentTime||0; const dd=dur||aud.duration||1;
     ctx.clearRect(0,0,W,H);
-    // waveform bars
-    const n = env.length || 1;
-    const bw = W / n;
+    const n=env.length||1, bw=W/n;
     for(let i=0;i<n;i++){
-      const a = env[i] || 0;
-      const bh = Math.max(1, a * (H*0.9));
-      const played = (i/n)*dd <= t;
-      ctx.fillStyle = played ? '#4CAF50' : '#2e7d4f';
-      ctx.fillRect(i*bw, (H-bh)/2, Math.max(1,bw*0.9), bh);
+      const a=env[i]||0, bh=Math.max(1,a*(H*0.9));
+      ctx.fillStyle=((i/n)*dd<=t)?'#4CAF50':'#2e7d4f';
+      ctx.fillRect(i*bw,(H-bh)/2,Math.max(1,bw*0.9),bh);
     }
-    // cue start markers
-    ctx.fillStyle = 'rgba(255,112,67,0.6)';
-    cues.forEach(c => {
-      if(c.start>=0 && c.start<=dd){
-        ctx.fillRect((c.start/dd)*W, 0, 1, H);
-      }
-    });
-    // playhead
-    const px = (t/dd)*W;
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(px-1, 0, 2, H);
-    ctx.fillStyle = '#ff5252';
-    ctx.beginPath(); ctx.arc(px, 6, 4, 0, Math.PI*2); ctx.fill();
-
-    // 재생 중엔 재생헤드가 화면 밖으로 나가면 따라가도록 스크롤.
-    if(!aud.paused && zoom > 1){
-      const vw = wrap.clientWidth, pad = vw*0.15;
-      if(px < wrap.scrollLeft + pad || px > wrap.scrollLeft + vw - pad){
-        wrap.scrollLeft = Math.max(0, px - vw*0.3);
-      }
+    ctx.fillStyle='rgba(255,112,67,0.6)';
+    items.forEach(it=>{ if(it.start>=0&&it.start<=dd) ctx.fillRect((it.start/dd)*W,0,1,H); });
+    const px=(t/dd)*W;
+    ctx.fillStyle='#fff'; ctx.fillRect(px-1,0,2,H);
+    ctx.fillStyle='#ff5252'; ctx.beginPath(); ctx.arc(px,6,4,0,Math.PI*2); ctx.fill();
+    if(!aud.paused && zoom>1){
+      const vw=wrap.clientWidth, p=vw*0.15;
+      if(px<wrap.scrollLeft+p || px>wrap.scrollLeft+vw-p) wrap.scrollLeft=Math.max(0,px-vw*0.3);
     }
-
-    timeEl.textContent = fmt(t) + ' / ' + fmtShort(dd);
+    timeEl.textContent=fmt(t)+' / '+fmtShort(dd);
     setActive(curIndex(t));
     requestAnimationFrame(draw);
   }
-
-  cv.addEventListener('click', (e) => {
-    const r = cv.getBoundingClientRect();
-    const frac = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
-    const dd = dur || aud.duration || 0;
-    if(dd > 0){ aud.currentTime = frac * dd; aud.play(); }
+  cv.addEventListener('click',(e)=>{
+    const r=cv.getBoundingClientRect();
+    const frac=Math.min(1,Math.max(0,(e.clientX-r.left)/r.width));
+    const dd=dur||aud.duration||0; if(dd>0){ aud.currentTime=frac*dd; aud.play(); }
   });
-
   requestAnimationFrame(draw);
 })();
 </script>
@@ -5054,12 +5118,12 @@ def _render_sync_player(info: dict) -> None:
         .replace("__AUDIO_SRC__", src)
         .replace("__PAYLOAD__", json.dumps(payload, ensure_ascii=False))
     )
-    components.html(html, height=600, scrolling=False)
+    components.html(html, height=720, scrolling=False)
     st.caption(
-        "▶️ 재생하면 흰색 막대(재생 헤드)가 움직이고 현재 가사가 강조됩니다. "
-        "**🔍＋ / 🔍− 로 파형을 가로로 확대**하면 긴 곡도 정밀하게 클릭할 수 있어요. "
-        "파형/가사 줄을 클릭하면 그 지점으로 이동하고, 오른쪽 위에 **현재 시간**이 표시됩니다. "
-        "그 시간을 보고 아래 ✏️ 표에서 가사를 수정하세요. 🔴 주황선 = 자막 시작 지점."
+        "▶ 재생하다가 한 줄이 시작되는 순간 **`➕ 지금 줄 추가`** 를 누르면 그 시점에 자막 줄이 "
+        "생깁니다. 아래 칸에 가사를 입력하세요. (스페이스바 = 재생/일시정지) 다 만들면 "
+        "**`📥 SRT 다운로드`** 로 받아 캡컷에 넣으면 됩니다. 🔍＋ 로 파형을 확대하면 정밀하게 "
+        "맞출 수 있고, ▶ 시간칩이나 가사 줄을 누르면 그 구간이 재생됩니다."
     )
 
 
