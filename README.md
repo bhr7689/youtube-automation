@@ -144,6 +144,59 @@ winget install --id=Gyan.FFmpeg -e
 - Negative prompt 동봉, Markdown 으로 일괄 다운로드
 - **🔄 다시 생성** + 비주얼 컨셉 시드 입력 가능
 
+## 🤖 무인 자동화 파이프라인 (`pipeline.py` — mp3 → MP4)
+
+대시보드(`app.py`)가 사람이 보고 조작하는 도구라면, `pipeline.py` 는 **사람 없이 매일
+도는 헤드리스 엔진**입니다. **폴더를 통합 지점**으로 삼아, 사람이 직접 Suno 결과 mp3 를
+떨구든 / 비공식 Suno API 가 자동으로 떨구든 **동일하게 동작**합니다 (느슨한 결합).
+
+인코딩·자막·합성 로직은 대시보드 합성 탭과 **`media_core.py` 를 공유**합니다 (단일 소스).
+
+### 폴더 구조 (`--root`, 기본 `./pipeline_data`)
+
+```
+pipeline_data/
+├── inbox/<job_id>/      # 작업 투입: job.json + 오디오(.mp3 …) + (선택) 배경
+├── output/<job_id>/     # 결과물: <job_id>.mp4, <job_id>.srt, meta.json
+├── processed/<job_id>/  # 성공한 입력 보관 (재처리 방지 = 멱등성)
+├── failed/<job_id>/     # 실패한 입력 + error.log
+└── pipeline_log.jsonl   # 처리 이력 (한 줄 = 한 건)
+```
+
+### job.json (모두 선택 · 합리적 기본값)
+
+```json
+{
+  "title": "달려보자 인생길",
+  "audio": ["track1.mp3", "track2.mp3"],
+  "background": "bg.jpg",
+  "background_color": "0x101418",
+  "lyrics": "얼씨구 좋다\n달려보자 인생길",
+  "resolution": "1920x1080",
+  "audio_bitrate": "192k",
+  "crf": 22,
+  "fade_seconds": 2.0,
+  "burn_subtitles": false
+}
+```
+
+- `audio` 생략 → 폴더 내 오디오 파일을 이름순으로 전부 이어붙임
+- `background` 생략 → 폴더 내 이미지/영상 자동 탐색, 그래도 없으면 `background_color` 단색 배경 자동 생성
+- `lyrics` 입력 → 길이에 맞춰 균등 분배한 SRT 자동 생성 (`tracks` 로 곡별 가사도 가능)
+- `burn_subtitles: true` → 영상에 자막 굽기, `false` → SRT 파일만 별도 출력
+- 부분 업로드 방지: 폴더가 `--min-age` 초(기본 10) 동안 변경 없으면 "준비됨" 으로 판단. `.ready` 빈 파일을 넣으면 즉시 처리
+
+### 실행
+
+```bash
+python pipeline.py init                      # 폴더 구조 + 샘플 job 생성
+python pipeline.py --once                    # inbox 1회 스캔 후 종료 (cron / n8n Execute Command 용)
+python pipeline.py --watch --interval 30     # 데몬 모드 (폴더 상시 감시)
+```
+
+`--once` 는 외부 스케줄러(cron, n8n)가 주기적으로 호출하는 용도, `--watch` 는 자체 폴링
+데몬으로 상주시키는 용도입니다. ffmpeg(+ffprobe) 설치가 필요합니다.
+
 ## 로드맵
 
 - [x] Phase 1: 급상승 레퍼런스 채널 발굴 대시보드
@@ -153,8 +206,9 @@ winget install --id=Gyan.FFmpeg -e
 - [x] Phase 1.8: AI 스토리텔링 — SEO · 오프닝 대본 · 구조화된 가사
 - [x] Phase 1.9: 영상 합성 — 다중 트랙 concat + 가사 SRT (선택 burn-in) + MP4 인코딩
 - [x] Phase 2.0: 가사 자동 동기화 — Whisper API 기반 SRT 생성 (CapCut/Premiere 임포트용)
+- [x] Phase 2.1: 무인 mp3 → MP4 합성 파이프라인 (`pipeline.py`, 폴더 감시 · 멱등 · cron/n8n 연동)
 - [ ] Phase 2: 자동 발굴 스케줄러 (cron + Slack/Sheets 동기화)
-- [ ] Phase 3: 오프닝 TTS 자동 더빙 + 영상 자동 합성 파이프라인
+- [ ] Phase 3: 오프닝 TTS 자동 더빙 + Suno 연동 (수동 B / 비공식 API A)
 
 ### 🎤 가사 자동 동기화 (탭 4 — SRT 생성)
 직접 만든 곡의 가사를 **실제로 불리는 시점에 정확히** 맞춘 SRT 자막을 만들어 CapCut/Premiere/Davinci 에 그대로 임포트하기 위한 도구.

@@ -9,3 +9,6 @@ venv/
 .idea/
 .vscode/
 *.log
+
+# 자동화 파이프라인 런타임 데이터 (inbox/output/processed/failed)
+pipeline_data/
