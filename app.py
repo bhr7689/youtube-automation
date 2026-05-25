@@ -43,6 +43,8 @@ from media_core import format_srt_time as _format_srt_time
 import suno_studio
 import recipes
 import analyzer
+import store
+import score as scorer
 
 load_dotenv()
 
@@ -3453,6 +3455,92 @@ def render_reverse_tab() -> None:
             st.success(f"저장됨: {rec['name']}  (스튜디오 탭에서 변주·블렌딩 가능)")
 
 
+def render_review_tab() -> None:
+    st.subheader("🙋 검수 큐 (합산 상위 후보)")
+    st.caption(
+        "오케스트레이터(orchestrator.py)가 매일 쌓은 정량+정성 합산 상위 후보입니다. "
+        "승인하면 역설계 분석 → 레시피로 보내 생성 자산에 편입합니다."
+    )
+
+    db_path = st.text_input("데이터 토대 DB 경로", value=str(store.DB_PATH), key="rv_db")
+    if not os.path.exists(db_path):
+        st.info("DB 가 아직 없습니다. 먼저 `python orchestrator.py --once --keywords ...` 로 "
+                "수집·채점하세요.")
+        return
+
+    try:
+        cands = scorer.ranked_candidates(limit=30, db_path=db_path)
+    except Exception as e:
+        st.error(f"랭킹 조회 실패: {e}")
+        return
+    if not cands:
+        st.info("합산 후보가 없습니다 (정량+정성이 모두 매겨진 영상 필요). "
+                "orchestrator 로 collect→score 를 먼저 돌리세요.")
+        return
+
+    key = st.text_input(
+        "Gemini API 키 (역설계용)", type="password",
+        value=os.getenv("GEMINI_API_KEY", ""), key="rv_key",
+        help=".env 의 GEMINI_API_KEY 기본값. 키는 저장/커밋되지 않습니다.",
+    )
+    vocab = _load_vocab()
+    decisions = store.latest_reviews("video", path=db_path)
+    badge = {"approved": "✅ 승인됨", "rejected": "❌ 반려됨"}
+
+    st.divider()
+    for c in cands:
+        vid = c["video_id"]
+        status = decisions.get(vid, "")
+        with st.container(border=True):
+            head = f"**[{(c.get('total_score') or 0):.1f}]** {c.get('title','')}"
+            if status:
+                head += f"  ·  {badge.get(status, status)}"
+            st.markdown(head)
+            st.caption(
+                f"{c.get('channel_title','')}  ·  정량 {c.get('quant_score')} · "
+                f"정성 {c.get('qual_score')} · {c.get('mood')} · {c.get('emotion_summary','')}"
+            )
+            cols = st.columns([1, 1, 2])
+            if cols[0].button("✅ 승인", key=f"rv_appr_{vid}"):
+                store.add_review(item_type="video", item_id=vid, decision="approved",
+                                 path=db_path)
+                st.rerun()
+            if cols[1].button("❌ 반려", key=f"rv_rej_{vid}"):
+                store.add_review(item_type="video", item_id=vid, decision="rejected",
+                                 path=db_path)
+                st.rerun()
+            if cols[2].button("🔎 역설계 → 레시피 저장", key=f"rv_rev_{vid}"):
+                if not key.strip():
+                    st.warning("역설계에는 Gemini API 키가 필요합니다.")
+                else:
+                    video = store.get_video(vid, path=db_path) or {}
+                    comments = [cc["text"] for cc in store.get_comments(vid, path=db_path)
+                                if cc.get("text")]
+                    meta = {
+                        "title": video.get("title", ""),
+                        "channel": video.get("channel_title", ""),
+                        "description": video.get("description", ""),
+                        "comments": comments,
+                    }
+                    try:
+                        with st.spinner("Gemini 역설계 분석 중..."):
+                            result = analyzer.analyze_metadata(
+                                meta, vocab, api_key=key.strip())
+                        rec = recipes.save_recipe(
+                            video.get("title", "") or vid, result["preset"],
+                            result["picks"], bpm=result.get("bpm"),
+                            source_video_id=vid, notes=result.get("rationale", ""),
+                        )
+                        store.add_review(item_type="video", item_id=vid,
+                                         decision="approved",
+                                         note=f"recipe:{rec['id']}", path=db_path)
+                        st.success(f"레시피 저장됨: {rec['name']} — 스튜디오 탭에서 변주·블렌딩 가능")
+                        if result.get("new_terms"):
+                            st.caption(f"새 어휘 후보(보완): {result['new_terms']}")
+                    except Exception as e:
+                        st.error(f"역설계 실패: {type(e).__name__}: {e}")
+
+
 def main() -> None:
     st.set_page_config(
         page_title="유튜브 음악 채널 자동화",
@@ -3463,7 +3551,7 @@ def main() -> None:
     st.title("🎵 유튜브 음악 채널 자동화 대시보드")
 
     (tab_discovery, tab_story, tab_compose, tab_sync,
-     tab_studio, tab_reverse) = st.tabs(
+     tab_studio, tab_reverse, tab_review) = st.tabs(
         [
             "🔍 레퍼런스 발굴",
             "✍️ AI 스토리텔링 & 가사 생성",
@@ -3471,6 +3559,7 @@ def main() -> None:
             "🎤 가사 자동 동기화 (SRT)",
             "🎚️ Suno 프롬프트 스튜디오",
             "🔎 곡 역설계",
+            "🙋 검수 큐",
         ]
     )
     with tab_discovery:
@@ -3485,6 +3574,8 @@ def main() -> None:
         render_suno_studio_tab()
     with tab_reverse:
         render_reverse_tab()
+    with tab_review:
+        render_review_tab()
 
 
 if __name__ == "__main__":

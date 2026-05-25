@@ -461,6 +461,19 @@ def get_comments(video_id: str, path: str | Path = DB_PATH) -> list[dict]:
         conn.close()
 
 
+def latest_reviews(item_type: str, path: str | Path = DB_PATH) -> dict[str, str]:
+    """item_id → 가장 최근 결정(approved/rejected). 검수 큐 상태 표시용."""
+    conn = connect(path)
+    try:
+        rows = conn.execute(
+            "SELECT item_id, decision FROM review_log WHERE item_type=? ORDER BY id",
+            (item_type,),
+        ).fetchall()
+        return {r["item_id"]: r["decision"] for r in rows}  # 나중 행이 덮어씀
+    finally:
+        conn.close()
+
+
 def counts(path: str | Path = DB_PATH) -> dict[str, int]:
     """테이블별 행 수 — 자산이 얼마나 쌓였는지 한눈에."""
     tables = ["videos", "video_stats", "comments", "video_features", "prompts",
