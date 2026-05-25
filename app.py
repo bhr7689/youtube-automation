@@ -40,6 +40,8 @@ from media_core import find_ffmpeg as _find_ffmpeg
 from media_core import fmt_duration as _fmt_duration
 from media_core import format_srt_time as _format_srt_time
 
+import suno_studio
+
 load_dotenv()
 
 DEFAULT_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
@@ -3140,6 +3142,139 @@ def _render_sync_result() -> None:
 # ---------------------------------------------------------------------------
 
 
+@st.cache_data(show_spinner=False)
+def _load_vocab() -> dict:
+    return suno_studio.load_vocab()
+
+
+# 차원 → (한국어 라벨, 단일선택 여부)
+_STUDIO_DIMS: list[tuple[str, str, bool]] = [
+    ("rhythm", "리듬 패턴", False),
+    ("instruments", "악기", False),
+    ("solo", "솔로/간주", False),
+    ("vocal_ensemble", "보컬 편성", True),
+    ("vocal_gender", "보컬 성별", True),
+    ("vocal_register", "음색/음역", True),
+    ("vocal_technique", "보컬 기교", False),
+    ("production", "프로덕션/음향", False),
+]
+
+
+def _studio_picks_card(vocab: dict, preset_key: str, picks: dict, idx: int) -> None:
+    prompt = suno_studio.picks_to_prompt(vocab, preset_key, picks)
+    st.code(prompt, language=None)
+
+
+def render_suno_studio_tab() -> None:
+    st.subheader("🎚️ Suno 프롬프트 스튜디오")
+    st.caption(
+        "나라·무드·보컬(편성/성별/음색)·악기·솔로·리듬·빠르기를 골라 Suno 스타일 프롬프트를 "
+        "즉시 조립하고, 마음에 드는 조합과 '비슷한 유형'의 변주를 여러 개 생성(벤치마킹)합니다."
+    )
+
+    vocab = _load_vocab()
+    presets = suno_studio.list_presets(vocab)
+    moods = suno_studio.list_moods(vocab)
+
+    top = st.columns([1, 1])
+    with top[0]:
+        preset_key = st.selectbox(
+            "나라/장르 프리셋",
+            options=[k for k, _ in presets],
+            format_func=lambda k: dict(presets)[k],
+            key="ss_preset",
+        )
+    with top[1]:
+        mood = st.selectbox(
+            "무드/정서",
+            options=[s for s, _ in moods],
+            format_func=lambda s: dict(moods)[s],
+            key="ss_mood",
+        )
+
+    country = vocab["presets"][preset_key].get("country")
+
+    st.markdown("##### 🎛️ 수동 조합")
+    picks: dict[str, list[str]] = {"mood": [mood]}
+    dim_cols = st.columns(2)
+    for i, (dim, label, _single) in enumerate(_STUDIO_DIMS):
+        cands = suno_studio.candidates(vocab, dim, country=country, mood=mood)
+        label_map = {c["suno"]: c["ko"] for c in cands}
+        with dim_cols[i % 2]:
+            chosen = st.multiselect(
+                label,
+                options=list(label_map.keys()),
+                format_func=lambda s, m=label_map: m[s],
+                key=f"ss_dim_{dim}",
+            )
+        picks[dim] = chosen
+
+    lo_bpm, hi_bpm = suno_studio.mood_bpm_range(vocab, mood)
+    bpm = st.slider(
+        f"빠르기 BPM  (이 무드 권장: {lo_bpm}~{hi_bpm})",
+        min_value=50, max_value=160, value=(lo_bpm + hi_bpm) // 2, key="ss_bpm",
+    )
+    picks["_bpm"] = [str(bpm)]
+
+    st.markdown("**📋 조합된 Suno 프롬프트**")
+    prompt = suno_studio.picks_to_prompt(vocab, preset_key, picks)
+    st.code(prompt, language=None)
+
+    hook = st.text_input("한국어 후렴구(hook) 아이디어 (선택)", key="ss_hook",
+                         placeholder="예: 얼씨구 좋다, 달려보자 인생길")
+
+    dl = f"# Suno 프롬프트\n\n## Style\n{prompt}\n"
+    if hook.strip():
+        dl += f"\n## Korean Hook\n{hook.strip()}\n"
+    st.download_button("⬇️ 프롬프트 다운로드 (.md)", dl,
+                       file_name="suno_prompt.md", key="ss_dl")
+
+    st.divider()
+    st.markdown("##### 🎲 자동 추천 · 🔁 벤치마킹 변주")
+    act = st.columns([1, 1, 2])
+    with act[0]:
+        seed = st.number_input("시드", value=7, step=1, key="ss_seed")
+    with act[1]:
+        n_var = st.number_input("변주 개수", value=5, min_value=1, max_value=20,
+                                step=1, key="ss_nvar")
+    with act[2]:
+        lock_opts = st.multiselect(
+            "변주 시 고정할 차원 (정체성 보존)",
+            options=["mood", "vocal_gender", "vocal_register", "rhythm"],
+            default=["mood", "vocal_gender"],
+            key="ss_lock",
+        )
+
+    btns = st.columns(2)
+    if btns[0].button("🎲 무드 기반 자동 조합 추천", key="ss_auto_btn"):
+        auto = suno_studio.auto_select(vocab, preset_key, mood, seed=int(seed))
+        st.session_state["ss_auto_result"] = (preset_key, auto)
+    if btns[1].button("🔁 위 수동 조합과 비슷한 변주 생성", key="ss_var_btn"):
+        variations = suno_studio.generate_variations(
+            vocab, preset_key, picks, n=int(n_var),
+            lock=set(lock_opts), seed=int(seed),
+        )
+        st.session_state["ss_var_result"] = (preset_key, variations)
+
+    auto_res = st.session_state.get("ss_auto_result")
+    if auto_res:
+        st.markdown("**🎲 자동 추천 조합**")
+        _studio_picks_card(vocab, auto_res[0], auto_res[1], 0)
+
+    var_res = st.session_state.get("ss_var_result")
+    if var_res:
+        pk, variations = var_res
+        st.markdown(f"**🔁 벤치마킹 변주 {len(variations)}개**")
+        md_lines = ["# Suno 벤치마킹 변주\n"]
+        for i, var in enumerate(variations, 1):
+            p = suno_studio.picks_to_prompt(vocab, pk, var)
+            st.markdown(f"변주 {i}")
+            st.code(p, language=None)
+            md_lines.append(f"## 변주 {i}\n{p}\n")
+        st.download_button("⬇️ 변주 전체 다운로드 (.md)", "\n".join(md_lines),
+                           file_name="suno_variations.md", key="ss_var_dl")
+
+
 def main() -> None:
     st.set_page_config(
         page_title="유튜브 음악 채널 자동화",
@@ -3149,12 +3284,13 @@ def main() -> None:
 
     st.title("🎵 유튜브 음악 채널 자동화 대시보드")
 
-    tab_discovery, tab_story, tab_compose, tab_sync = st.tabs(
+    tab_discovery, tab_story, tab_compose, tab_sync, tab_studio = st.tabs(
         [
             "🔍 레퍼런스 발굴",
             "✍️ AI 스토리텔링 & 가사 생성",
             "🎬 영상 합성 (인코딩)",
             "🎤 가사 자동 동기화 (SRT)",
+            "🎚️ Suno 프롬프트 스튜디오",
         ]
     )
     with tab_discovery:
@@ -3165,6 +3301,8 @@ def main() -> None:
         render_compose_tab()
     with tab_sync:
         render_sync_tab()
+    with tab_studio:
+        render_suno_studio_tab()
 
 
 if __name__ == "__main__":
