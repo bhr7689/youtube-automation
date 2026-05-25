@@ -215,6 +215,21 @@ python collect.py --keywords "트로트 발라드,효도 트로트" --days 14 --
 # YOUTUBE_API_KEY 는 .env 또는 --api-key
 ```
 
+## 🧠 스코어러 (`score.py` — 댓글 정성 분석)
+
+수집기가 모은 댓글을 **영상 단위로 묶어 Gemini 1회 호출**(레이트리밋·비용 절감)로 시니어
+감성을 채점해 `store.video_features` 에 적재합니다. **콘텐츠 해시 캐시**로 같은 입력은
+재호출하지 않아 비용과 점수 일관성을 동시에 잡습니다.
+
+- **정성 점수(0~45)** = `comment_reaction`(≤20) + `senior_emotion`(≤15) + `performance_energy`(≤10)
+- 무드는 `vocab.json` 통제 어휘에서 선택 → 스튜디오/분석기와 정렬
+- `ranked_candidates()` 가 **정량(55)+정성(45)=100** 합산으로 상위 후보 랭킹 → 검수/생성 큐
+
+```bash
+python score.py --show-ranking          # 미채점 영상 정성 분석 후 합산 랭킹 출력
+# GEMINI_API_KEY 는 .env 또는 --api-key
+```
+
 ## 🤖 무인 자동화 파이프라인 (`pipeline.py` — mp3 → MP4)
 
 대시보드(`app.py`)가 사람이 보고 조작하는 도구라면, `pipeline.py` 는 **사람 없이 매일
@@ -284,7 +299,8 @@ python pipeline.py --watch --interval 30     # 데몬 모드 (폴더 상시 감�
 - [ ] Phase 2.5: 역설계 하이브리드 2단계 — 선별 곡만 오디오 정밀 분석(BPM/성별 DSP 보강)
 - [x] Phase 3.0: 데이터 토대 — SQLite 자산 조인 체인 (`store.py`)
 - [x] Phase 3.1: 수집기 `collect.py` — YouTube→통계/댓글→store 적재 + 정량점수(≤55)
-- [ ] Phase 3.2: 스코어러 `score.py` — Gemini 정성점수(배치·캐시) + 오케스트레이터/스케줄러
+- [x] Phase 3.2: 스코어러 `score.py` — Gemini 정성점수(배치·해시캐시) + 정량+정성 합산 랭킹
+- [ ] Phase 3.3: 오케스트레이터/스케줄러 — collect→score→(검수)→생성 매일 자동
 - [ ] Phase 2: 자동 발굴 스케줄러 (cron + Slack/Sheets 동기화)
 - [ ] Phase 3: 오프닝 TTS 자동 더빙 + Suno 연동 (수동 B / 비공식 API A)
 

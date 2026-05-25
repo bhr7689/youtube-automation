@@ -17,3 +17,6 @@ pipeline_data/
 *.db
 *.db-wal
 *.db-shm
+
+# Gemini 정성점수 캐시 (파생 데이터)
+score_cache.json
