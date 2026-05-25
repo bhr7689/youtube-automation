@@ -41,6 +41,7 @@ from media_core import fmt_duration as _fmt_duration
 from media_core import format_srt_time as _format_srt_time
 
 import suno_studio
+import recipes
 
 load_dotenv()
 
@@ -3273,6 +3274,92 @@ def render_suno_studio_tab() -> None:
             md_lines.append(f"## 변주 {i}\n{p}\n")
         st.download_button("⬇️ 변주 전체 다운로드 (.md)", "\n".join(md_lines),
                            file_name="suno_variations.md", key="ss_var_dl")
+
+    # ----- 📒 나만의 레시피 (저장·불러오기·블렌딩) -----
+    st.divider()
+    st.markdown("##### 📒 나만의 레시피")
+    st.caption("마음에 든 조합을 이름 붙여 저장하고, 여러 레시피를 섞어 새 조합을 만듭니다.")
+
+    def _recipe_prompt(rec: dict) -> str:
+        p = dict(rec.get("picks", {}))
+        if rec.get("bpm"):
+            p["_bpm"] = [str(rec["bpm"])]
+        return suno_studio.picks_to_prompt(vocab, rec.get("preset", preset_key), p)
+
+    save_cols = st.columns([2, 1])
+    with save_cols[0]:
+        rcp_name = st.text_input("레시피 이름", key="ss_rcp_name",
+                                 placeholder="예: 내 트로트 황금레시피 v1")
+    with save_cols[1]:
+        st.write("")
+        st.write("")
+        if st.button("💾 현재 조합 저장", key="ss_rcp_save"):
+            if not any(picks.get(d) for d, _, _ in _STUDIO_DIMS):
+                st.warning("저장할 조합이 비어 있습니다. 위에서 항목을 골라주세요.")
+            else:
+                rec = recipes.save_recipe(
+                    rcp_name or "이름없는 레시피", preset_key, picks,
+                    bpm=bpm, hook=hook,
+                )
+                st.success(f"저장됨: {rec['name']}")
+
+    saved = recipes.list_recipes()
+    if not saved:
+        st.info("아직 저장된 레시피가 없습니다. 위에서 조합을 만들고 저장해보세요.")
+        return
+
+    label_map = {r["id"]: f"{r['name']}  ·  {dict(presets).get(r['preset'], r['preset'])}"
+                 for r in saved}
+
+    load_cols = st.columns([3, 1])
+    with load_cols[0]:
+        sel_id = st.selectbox("저장된 레시피", options=list(label_map.keys()),
+                              format_func=lambda i: label_map[i], key="ss_rcp_sel")
+    with load_cols[1]:
+        st.write("")
+        st.write("")
+        if st.button("🗑️ 삭제", key="ss_rcp_del"):
+            if recipes.delete_recipe(sel_id):
+                st.success("삭제됨.")
+                st.rerun()
+
+    sel = recipes.get_recipe(sel_id)
+    if sel:
+        st.code(_recipe_prompt(sel), language=None)
+        if st.button("🔁 이 레시피로 변주 생성", key="ss_rcp_var"):
+            sel_picks = dict(sel.get("picks", {}))
+            if sel.get("bpm"):
+                sel_picks["_bpm"] = [str(sel["bpm"])]
+            st.session_state["ss_var_result"] = (
+                sel.get("preset", preset_key),
+                suno_studio.generate_variations(
+                    vocab, sel.get("preset", preset_key), sel_picks,
+                    n=int(n_var), lock=set(lock_opts), seed=int(seed),
+                ),
+            )
+            st.rerun()
+
+    if len(saved) >= 2:
+        st.markdown("**🧪 레시피 블렌딩**")
+        blend_ids = st.multiselect("섞을 레시피 (2개 이상)", options=list(label_map.keys()),
+                                   format_func=lambda i: label_map[i], key="ss_blend_sel")
+        if st.button("🧪 블렌딩", key="ss_blend_btn"):
+            chosen = [r for r in saved if r["id"] in blend_ids]
+            if len(chosen) < 2:
+                st.warning("2개 이상 골라주세요.")
+            else:
+                pk, blended = recipes.blend_recipes(chosen, seed=int(seed))
+                st.session_state["ss_blend_result"] = (pk, blended)
+        blend_res = st.session_state.get("ss_blend_result")
+        if blend_res:
+            pk, blended = blend_res
+            st.code(suno_studio.picks_to_prompt(vocab, pk, blended), language=None)
+            bname = st.text_input("블렌딩 결과 저장 이름", key="ss_blend_name",
+                                  placeholder="예: 눈물+흥 블렌드")
+            if st.button("💾 블렌딩을 레시피로 저장", key="ss_blend_save"):
+                bpm_b = int(blended["_bpm"][0]) if blended.get("_bpm") else None
+                rec = recipes.save_recipe(bname or "블렌드 레시피", pk, blended, bpm=bpm_b)
+                st.success(f"저장됨: {rec['name']}")
 
 
 def main() -> None:

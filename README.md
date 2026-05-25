@@ -159,6 +159,9 @@ winget install --id=Gyan.FFmpeg -e
 - **벤치마킹 변주**: 현재 조합을 기준으로, 고정할 차원(예: 무드·성별)만 잠그고 나머지를 다시
   샘플링해 서로 다른 N개 변주를 생성. 마음에 든 곡 스타일로 양산할 때 사용
 - **확장**: `vocab.json` 에 프리셋(`jp_enka`, `global_senior`)과 어휘만 추가하면 나라 확장 완료
+- **📒 나만의 레시피**: 마음에 든 조합을 이름 붙여 `recipes.json`(내 자산)에 저장 → 불러와 변주 생성,
+  여러 레시피를 **블렌딩**(단일 차원은 하나 선택, 다중 차원은 합집합, BPM 평균)해 새 조합 합성.
+  엔진은 `recipes.py`. 향후 역설계 분석기가 추출한 picks 도 같은 형식으로 적재 → 스타일 지문 자산화
 
 ```bash
 python suno_studio.py   # 헤드리스 데모: 자동 추천 1건 + 벤치마킹 변주 4건 출력
@@ -228,6 +231,8 @@ python pipeline.py --watch --interval 30     # 데몬 모드 (폴더 상시 감�
 - [x] Phase 2.0: 가사 자동 동기화 — Whisper API 기반 SRT 생성 (CapCut/Premiere 임포트용)
 - [x] Phase 2.1: 무인 mp3 → MP4 합성 파이프라인 (`pipeline.py`, 폴더 감시 · 멱등 · cron/n8n 연동)
 - [x] Phase 2.2: Suno 프롬프트 스튜디오 (`vocab.json` + `suno_studio.py`, 조합·자동추천·벤치마킹 변주)
+- [x] Phase 2.3: 나만의 레시피 저장·블렌딩 (`recipes.py` + `recipes.json`)
+- [ ] Phase 2.4: 역설계 분석기 — 유튜브 링크 → 스타일 추출 → picks (하이브리드: 메타데이터 + 선별 오디오)
 - [ ] Phase 2: 자동 발굴 스케줄러 (cron + Slack/Sheets 동기화)
 - [ ] Phase 3: 오프닝 TTS 자동 더빙 + Suno 연동 (수동 B / 비공식 API A)
 
