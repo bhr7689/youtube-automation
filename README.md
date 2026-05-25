@@ -230,6 +230,25 @@ python score.py --show-ranking          # 미채점 영상 정성 분석 후 합
 # GEMINI_API_KEY 는 .env 또는 --api-key
 ```
 
+## 🗓️ 오케스트레이터 (`orchestrator.py` — 매일 자동)
+
+`collect → score → 합산 랭킹`을 순서대로 한 번에 실행합니다. **스테이지별 실패를 격리**하고
+(한 단계가 죽어도 나머지 진행), 키가 없으면 해당 스테이지만 건너뛰며, 실행 이력을
+`orchestrator_log.jsonl` 에 남깁니다. n8n 없이 파이썬만으로 "매일 알아서 도는" 부분.
+
+```bash
+# cron 으로 매일 호출 (권장) — 새벽 5시 예시
+0 5 * * * cd /path/to/repo && python orchestrator.py --once \
+          --keywords "트로트 발라드,효도 트로트" --comments >> cron.log 2>&1
+
+# 또는 자체 폴링 데몬 (1일 간격)
+python orchestrator.py --watch --interval 86400 --keywords "트로트 발라드"
+```
+
+- `--stage collect|score|all` 로 단계 분리 실행(디버깅·독립 스케줄)
+- 키는 `.env`(YOUTUBE_API_KEY/GEMINI_API_KEY) 또는 `--youtube-key`/`--gemini-key`
+- 끝에 정량+정성 합산 상위 후보(검수/생성 큐)를 출력
+
 ## 🤖 무인 자동화 파이프라인 (`pipeline.py` — mp3 → MP4)
 
 대시보드(`app.py`)가 사람이 보고 조작하는 도구라면, `pipeline.py` 는 **사람 없이 매일
@@ -300,7 +319,8 @@ python pipeline.py --watch --interval 30     # 데몬 모드 (폴더 상시 감�
 - [x] Phase 3.0: 데이터 토대 — SQLite 자산 조인 체인 (`store.py`)
 - [x] Phase 3.1: 수집기 `collect.py` — YouTube→통계/댓글→store 적재 + 정량점수(≤55)
 - [x] Phase 3.2: 스코어러 `score.py` — Gemini 정성점수(배치·해시캐시) + 정량+정성 합산 랭킹
-- [ ] Phase 3.3: 오케스트레이터/스케줄러 — collect→score→(검수)→생성 매일 자동
+- [x] Phase 3.3: 오케스트레이터 `orchestrator.py` — collect→score→랭킹 매일 자동(cron/데몬)
+- [ ] Phase 3.4: 검수 대시보드 — 합산 상위 후보를 사람이 승인 → 역설계→레시피 연결
 - [ ] Phase 2: 자동 발굴 스케줄러 (cron + Slack/Sheets 동기화)
 - [ ] Phase 3: 오프닝 TTS 자동 더빙 + Suno 연동 (수동 B / 비공식 API A)
 

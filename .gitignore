@@ -20,3 +20,7 @@ pipeline_data/
 
 # Gemini 정성점수 캐시 (파생 데이터)
 score_cache.json
+
+# 오케스트레이터 실행 이력
+orchestrator_log.jsonl
+cron.log
