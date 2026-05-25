@@ -199,6 +199,22 @@ python store.py   # 헤드리스 데모: 수집→분석→체인 적재 후 테
 > 성능 피드백 루프의 토대: 게시한 곡의 `performance` 를 `prompts.picks` 와 조인하면
 > "어떤 스타일 조합이 실제로 먹혔는지"를 데이터로 역산할 수 있습니다.
 
+## 📥 수집기 (`collect.py` — YouTube → 데이터 토대)
+
+파이썬-우선 자동화의 1단계. 공식 YouTube Data API v3 로 키워드 검색 → 영상 통계·채널
+구독자 → (선택) 상위 영상 댓글을 수집해 `store` 에 적재합니다. 매일 돌려도 멱등성 덕에
+중복이 없고, 수집마다 `video_stats` 시계열이 쌓여 바이럴 속도를 잡습니다.
+
+- **정량 점수(0~55, 0원·결정론적)**: `view/subscriber 비율`(≤30) + `시간당 조회수`(≤25).
+  소형이지만 폭발하는 채널이 높게 나옴 (급상승 탐지). 임계는 `RATIO_FULL`/`SPEED_FULL` 로 튜닝.
+- **댓글은 정량 상위 N개만**(쿼터 절약), 작성자는 store 에서 해시로 저장
+- 정성 점수(Gemini)는 다음 단계 `score.py` 가 채움
+
+```bash
+python collect.py --keywords "트로트 발라드,효도 트로트" --days 14 --max 50 --comments
+# YOUTUBE_API_KEY 는 .env 또는 --api-key
+```
+
 ## 🤖 무인 자동화 파이프라인 (`pipeline.py` — mp3 → MP4)
 
 대시보드(`app.py`)가 사람이 보고 조작하는 도구라면, `pipeline.py` 는 **사람 없이 매일
@@ -267,7 +283,8 @@ python pipeline.py --watch --interval 30     # 데몬 모드 (폴더 상시 감�
 - [x] Phase 2.4: 역설계 분석기 — 메타데이터 → Gemini → picks (`analyzer.py` + 🔎 곡 역설계 탭)
 - [ ] Phase 2.5: 역설계 하이브리드 2단계 — 선별 곡만 오디오 정밀 분석(BPM/성별 DSP 보강)
 - [x] Phase 3.0: 데이터 토대 — SQLite 자산 조인 체인 (`store.py`)
-- [ ] Phase 3.1: 수집기 `collect.py` + 스코어러 `score.py` (매일 자동, 파이썬 스케줄러)
+- [x] Phase 3.1: 수집기 `collect.py` — YouTube→통계/댓글→store 적재 + 정량점수(≤55)
+- [ ] Phase 3.2: 스코어러 `score.py` — Gemini 정성점수(배치·캐시) + 오케스트레이터/스케줄러
 - [ ] Phase 2: 자동 발굴 스케줄러 (cron + Slack/Sheets 동기화)
 - [ ] Phase 3: 오프닝 TTS 자동 더빙 + Suno 연동 (수동 B / 비공식 API A)
 
