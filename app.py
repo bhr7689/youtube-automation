@@ -42,6 +42,7 @@ from media_core import format_srt_time as _format_srt_time
 
 import suno_studio
 import recipes
+import analyzer
 
 load_dotenv()
 
@@ -3362,6 +3363,96 @@ def render_suno_studio_tab() -> None:
                 st.success(f"저장됨: {rec['name']}")
 
 
+def render_reverse_tab() -> None:
+    st.subheader("🔎 곡 역설계 (메타데이터 → Suno picks)")
+    st.caption(
+        "유튜브 곡의 제목·태그·설명·댓글을 Gemini 가 분석해 통제 어휘(vocab) 안에서 스타일을 "
+        "추출합니다. 오디오 다운로드 없이(ToS 안전) picks 로 변환 → 레시피로 저장하면 자산이 됩니다. "
+        "사전에 없던 표현은 '새 어휘 후보'로 모아 vocab 보완에 씁니다."
+    )
+
+    vocab = _load_vocab()
+    presets = suno_studio.list_presets(vocab)
+
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        preset_key = st.selectbox(
+            "나라/장르 프리셋", options=[k for k, _ in presets],
+            format_func=lambda k: dict(presets)[k], key="rev_preset",
+        )
+    with c2:
+        source_id = st.text_input("영상 URL 또는 ID (자산 연결용, 선택)", key="rev_src")
+
+    title = st.text_input("제목", key="rev_title")
+    cc = st.columns([1, 1])
+    with cc[0]:
+        channel = st.text_input("채널명 (선택)", key="rev_channel")
+    with cc[1]:
+        tags = st.text_input("태그 (쉼표로 구분, 선택)", key="rev_tags")
+    description = st.text_area("설명 (선택)", key="rev_desc", height=80)
+    comments = st.text_area("상위 댓글 (한 줄에 하나, 선택)", key="rev_comments", height=100)
+
+    key = st.text_input(
+        "Gemini API 키", type="password",
+        value=os.getenv("GEMINI_API_KEY", ""), key="rev_key",
+        help=".env 의 GEMINI_API_KEY 를 기본값으로 불러옵니다. 키는 저장/커밋되지 않습니다.",
+    )
+    model = st.text_input("모델 ID", value=analyzer.DEFAULT_MODEL, key="rev_model")
+
+    if st.button("🔎 분석하기", key="rev_run"):
+        if not title.strip():
+            st.warning("최소한 제목은 입력해주세요.")
+        elif not key.strip():
+            st.warning("Gemini API 키가 필요합니다. (.env 의 GEMINI_API_KEY 또는 위 입력)")
+        else:
+            meta = {
+                "title": title.strip(),
+                "channel": channel.strip(),
+                "tags": [t.strip() for t in tags.split(",") if t.strip()],
+                "description": description.strip(),
+                "comments": [c.strip() for c in comments.splitlines() if c.strip()],
+            }
+            try:
+                with st.spinner("Gemini 분석 중..."):
+                    result = analyzer.analyze_metadata(
+                        meta, vocab, preset_hint=preset_key,
+                        api_key=key.strip(), model=model.strip() or analyzer.DEFAULT_MODEL,
+                    )
+                st.session_state["rev_result"] = result
+            except Exception as e:
+                st.error(f"분석 실패: {type(e).__name__}: {e}")
+
+    result = st.session_state.get("rev_result")
+    if result:
+        st.markdown("**📋 추출된 Suno 프롬프트**")
+        prompt = suno_studio.picks_to_prompt(vocab, result["preset"], result["picks"])
+        st.code(prompt, language=None)
+        meta_cols = st.columns(3)
+        meta_cols[0].metric("무드", result.get("mood") or "-")
+        meta_cols[1].metric("BPM", result.get("bpm") or "-")
+        meta_cols[2].metric("프리셋", result["preset"])
+        if result.get("rationale"):
+            st.caption(f"근거: {result['rationale']}")
+
+        new_terms = result.get("new_terms") or {}
+        if new_terms:
+            st.markdown("**🧩 새 어휘 후보 (vocab 보완용)**")
+            st.caption("아래 표현들은 사전에 없어 picks 에 미반영되었습니다. 검토 후 vocab.json 에 추가하세요.")
+            st.json(new_terms)
+
+        rname = st.text_input("레시피 이름", key="rev_rcp_name",
+                              placeholder="예: 비오는밤 색소폰 트로트")
+        if st.button("💾 이 결과를 레시피로 저장", key="rev_rcp_save"):
+            rec = recipes.save_recipe(
+                rname or (title.strip() or "역설계 레시피"),
+                result["preset"], result["picks"],
+                bpm=result.get("bpm"),
+                source_video_id=source_id.strip() or None,
+                notes=result.get("rationale", ""),
+            )
+            st.success(f"저장됨: {rec['name']}  (스튜디오 탭에서 변주·블렌딩 가능)")
+
+
 def main() -> None:
     st.set_page_config(
         page_title="유튜브 음악 채널 자동화",
@@ -3371,13 +3462,15 @@ def main() -> None:
 
     st.title("🎵 유튜브 음악 채널 자동화 대시보드")
 
-    tab_discovery, tab_story, tab_compose, tab_sync, tab_studio = st.tabs(
+    (tab_discovery, tab_story, tab_compose, tab_sync,
+     tab_studio, tab_reverse) = st.tabs(
         [
             "🔍 레퍼런스 발굴",
             "✍️ AI 스토리텔링 & 가사 생성",
             "🎬 영상 합성 (인코딩)",
             "🎤 가사 자동 동기화 (SRT)",
             "🎚️ Suno 프롬프트 스튜디오",
+            "🔎 곡 역설계",
         ]
     )
     with tab_discovery:
@@ -3390,6 +3483,8 @@ def main() -> None:
         render_sync_tab()
     with tab_studio:
         render_suno_studio_tab()
+    with tab_reverse:
+        render_reverse_tab()
 
 
 if __name__ == "__main__":
