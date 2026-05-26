@@ -1,0 +1,103 @@
+{
+  "presets": {
+    "kr_trot": {
+      "label": "한국 트로트",
+      "anchors": ["Korean trot", "ppongjjak"],
+      "country": "kr"
+    },
+    "jp_enka": {
+      "label": "일본 엔카",
+      "anchors": ["Japanese enka"],
+      "country": "jp"
+    },
+    "global_senior": {
+      "label": "글로벌 시니어 (이지리스닝)",
+      "anchors": ["easy listening", "adult contemporary ballad"],
+      "country": "gl"
+    }
+  },
+
+  "dimensions": {
+    "mood": [
+      { "suno": "nostalgic, comforting", "ko": "추억·위로", "energy": "low", "bpm": [68, 82] },
+      { "suno": "tearful, emotional, heartfelt", "ko": "눈물·애절", "energy": "low", "bpm": [62, 78] },
+      { "suno": "warm, healing, gentle", "ko": "따뜻·힐링", "energy": "low", "bpm": [72, 88] },
+      { "suno": "hopeful, bright", "ko": "희망·밝음", "energy": "mid", "bpm": [92, 108] },
+      { "suno": "festive, joyful, celebratory", "ko": "흥·잔치", "energy": "high", "bpm": [112, 128] },
+      { "suno": "exciting, upbeat, driving", "ko": "신남·드라이브", "energy": "high", "bpm": [118, 135] }
+    ],
+
+    "rhythm": [
+      { "suno": "ppongjjak 2-beat shuffle", "ko": "뽕짝 2박", "country": ["kr"], "mood": ["*"] },
+      { "suno": "trot dance groove, 4/4", "ko": "댄스 트로트 4/4", "country": ["kr"], "mood": ["festive, joyful, celebratory", "exciting, upbeat, driving", "hopeful, bright"] },
+      { "suno": "slow 6/8 ballad sway", "ko": "발라드 6/8", "country": ["kr", "jp", "gl"], "mood": ["nostalgic, comforting", "tearful, emotional, heartfelt", "warm, healing, gentle"] }
+    ],
+
+    "instruments": [
+      { "suno": "janggu", "ko": "장구", "country": ["kr"], "mood": ["festive, joyful, celebratory", "exciting, upbeat, driving"] },
+      { "suno": "accordion", "ko": "아코디언", "country": ["kr", "jp"], "mood": ["*"] },
+      { "suno": "synth brass stabs", "ko": "신스 브라스", "country": ["kr"], "mood": ["festive, joyful, celebratory", "exciting, upbeat, driving"] },
+      { "suno": "electric guitar", "ko": "일렉 기타", "country": ["kr"], "mood": ["*"] },
+      { "suno": "lush strings", "ko": "현악 스트링", "country": ["kr", "jp", "gl"], "mood": ["nostalgic, comforting", "tearful, emotional, heartfelt", "warm, healing, gentle"] },
+      { "suno": "shamisen", "ko": "샤미센", "country": ["jp"], "mood": ["*"] },
+      { "suno": "warm piano", "ko": "따뜻한 피아노", "country": ["kr", "jp", "gl"], "mood": ["*"] }
+    ],
+
+    "solo": [
+      { "suno": "saxophone solo", "ko": "색소폰 솔로", "country": ["kr", "gl"], "mood": ["nostalgic, comforting", "tearful, emotional, heartfelt", "warm, healing, gentle"] },
+      { "suno": "electric guitar solo", "ko": "일렉 기타 솔로", "country": ["kr"], "mood": ["festive, joyful, celebratory", "exciting, upbeat, driving"] },
+      { "suno": "accordion break", "ko": "아코디언 간주", "country": ["kr", "jp"], "mood": ["*"] },
+      { "suno": "trumpet solo", "ko": "트럼펫 솔로", "country": ["kr", "gl"], "mood": ["festive, joyful, celebratory", "hopeful, bright"] }
+    ],
+
+    "vocal_ensemble": [
+      { "suno": "solo vocal", "ko": "독창", "mood": ["*"] },
+      { "suno": "duet harmony", "ko": "듀엣 화음", "mood": ["*"] },
+      { "suno": "group choir backing", "ko": "그룹/코러스", "mood": ["festive, joyful, celebratory", "hopeful, bright"] }
+    ],
+
+    "vocal_gender": [
+      { "suno": "female vocal", "ko": "여성", "mood": ["*"] },
+      { "suno": "male vocal", "ko": "남성", "mood": ["*"] },
+      { "suno": "mixed male-female duet", "ko": "혼성 듀엣", "mood": ["*"] }
+    ],
+
+    "vocal_register": [
+      { "suno": "deep low baritone, rich chest voice", "ko": "중저음(굵은)", "mood": ["nostalgic, comforting", "tearful, emotional, heartfelt", "warm, healing, gentle"] },
+      { "suno": "warm mezzo mid-range", "ko": "중음(따뜻)", "mood": ["*"] },
+      { "suno": "bright high tenor", "ko": "고음(남성 미성)", "mood": ["festive, joyful, celebratory", "hopeful, bright", "exciting, upbeat, driving"] },
+      { "suno": "soaring high soprano", "ko": "고음(여성 미성)", "mood": ["hopeful, bright", "tearful, emotional, heartfelt"] },
+      { "suno": "husky raspy timbre", "ko": "허스키", "mood": ["nostalgic, comforting", "tearful, emotional, heartfelt"] },
+      { "suno": "clear smooth tone", "ko": "맑고 부드러운", "mood": ["*"] }
+    ],
+
+    "vocal_technique": [
+      { "suno": "expressive vibrato", "ko": "비브라토", "country": ["kr", "jp"], "mood": ["*"] },
+      { "suno": "kkeokki note-bending ornamentation", "ko": "꺾기", "country": ["kr"], "mood": ["*"] },
+      { "suno": "kobushi ornamentation", "ko": "코부시", "country": ["jp"], "mood": ["*"] },
+      { "suno": "emotional belting", "ko": "강한 성량(벨팅)", "country": ["kr", "gl"], "mood": ["festive, joyful, celebratory", "exciting, upbeat, driving", "tearful, emotional, heartfelt"] },
+      { "suno": "gentle crooning", "ko": "잔잔한 크루닝", "country": ["kr", "jp", "gl"], "mood": ["nostalgic, comforting", "warm, healing, gentle"] }
+    ],
+
+    "production": [
+      { "suno": "warm vintage 80s production", "ko": "복고 80s", "mood": ["nostalgic, comforting", "tearful, emotional, heartfelt"] },
+      { "suno": "modern clean polished mix", "ko": "현대적 깔끔", "mood": ["*"] },
+      { "suno": "lo-fi nostalgic texture", "ko": "로파이 복고", "mood": ["nostalgic, comforting", "warm, healing, gentle"] },
+      { "suno": "lush cinematic orchestral", "ko": "웅장 오케스트럴", "mood": ["tearful, emotional, heartfelt", "hopeful, bright"] }
+    ]
+  },
+
+  "compose_order": [
+    "genre",
+    "mood",
+    "rhythm",
+    "instruments",
+    "solo",
+    "vocal_ensemble",
+    "vocal_gender",
+    "vocal_register",
+    "vocal_technique",
+    "production",
+    "bpm"
+  ]
+}

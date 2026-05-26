@@ -9,3 +9,18 @@ venv/
 .idea/
 .vscode/
 *.log
+
+# 자동화 파이프라인 런타임 데이터 (inbox/output/processed/failed)
+pipeline_data/
+
+# 데이터 자산 DB (로컬, 백업/이전은 별도)
+*.db
+*.db-wal
+*.db-shm
+
+# Gemini 정성점수 캐시 (파생 데이터)
+score_cache.json
+
+# 오케스트레이터 실행 이력
+orchestrator_log.jsonl
+cron.log

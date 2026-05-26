@@ -30,6 +30,22 @@ from dotenv import load_dotenv
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+from media_core import (
+    concat_audio_files,
+    encode_music_video,
+    generate_srt,
+)
+from media_core import ffprobe_duration as _ffprobe_duration
+from media_core import find_ffmpeg as _find_ffmpeg
+from media_core import fmt_duration as _fmt_duration
+from media_core import format_srt_time as _format_srt_time
+
+import suno_studio
+import recipes
+import analyzer
+import store
+import score as scorer
+
 load_dotenv()
 
 DEFAULT_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
@@ -2164,197 +2180,6 @@ VIDEO_IMAGE_EXTS: tuple[str, ...] = (
 )
 
 
-def _find_ffmpeg() -> str | None:
-    return shutil.which("ffmpeg")
-
-
-def _ffprobe_duration(path: str) -> float | None:
-    """초 단위 길이. ffprobe 없으면 None 반환."""
-    ffprobe = shutil.which("ffprobe")
-    if not ffprobe:
-        return None
-    try:
-        out = subprocess.run(
-            [
-                ffprobe, "-v", "error", "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1", path,
-            ],
-            capture_output=True, text=True, timeout=30,
-        )
-        return float(out.stdout.strip()) if out.returncode == 0 else None
-    except Exception:
-        return None
-
-
-def concat_audio_files(
-    audio_paths: list[str], output_path: str, *, bitrate: str = "320k"
-) -> tuple[bool, str]:
-    """여러 오디오를 하나로 이어붙임. concat 필터로 재인코딩(샘플레이트 통일)."""
-    ffmpeg = _find_ffmpeg()
-    if not ffmpeg:
-        return False, "ffmpeg 가 PATH 에 없습니다."
-    if not audio_paths:
-        return False, "이어붙일 오디오가 없습니다."
-    if len(audio_paths) == 1:
-        try:
-            shutil.copyfile(audio_paths[0], output_path)
-            return True, "단일 파일 복사 완료."
-        except Exception as e:
-            return False, f"단일 파일 복사 실패: {e}"
-
-    cmd: list[str] = [ffmpeg, "-y", "-hide_banner"]
-    for p in audio_paths:
-        cmd += ["-i", p]
-    n = len(audio_paths)
-    filter_str = "".join(f"[{i}:a]" for i in range(n)) + f"concat=n={n}:v=0:a=1[out]"
-    cmd += [
-        "-filter_complex", filter_str,
-        "-map", "[out]",
-        "-c:a", "aac",
-        "-b:a", bitrate,
-        output_path,
-    ]
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60 * 60 * 2)
-    except subprocess.TimeoutExpired:
-        return False, "오디오 이어붙이기가 2시간 안에 끝나지 않았습니다."
-    return proc.returncode == 0, (proc.stderr or "")[-2400:]
-
-
-def _format_srt_time(seconds: float) -> str:
-    seconds = max(0.0, seconds)
-    h = int(seconds // 3600)
-    m = int((seconds % 3600) // 60)
-    s = int(seconds % 60)
-    ms = int(round((seconds - int(seconds)) * 1000))
-    if ms == 1000:
-        ms = 0
-        s += 1
-    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
-
-
-def generate_srt(tracks: list[dict]) -> str:
-    """
-    tracks: [{"title": str, "duration": float, "lyrics_lines": list[str]}]
-    각 트랙 안에서는 가사 라인을 트랙 길이에 따라 균등 분배,
-    트랙 간에는 누적 타임스탬프로 SRT 한 파일을 만든다.
-    """
-    out: list[str] = []
-    cumulative = 0.0
-    counter = 1
-    for tr in tracks:
-        duration = max(float(tr.get("duration", 0) or 0), 0.0)
-        lines = [ln.strip() for ln in tr.get("lyrics_lines", []) if ln.strip()]
-        if not lines or duration <= 0:
-            cumulative += duration
-            continue
-        per_line = duration / len(lines)
-        for i, line in enumerate(lines):
-            start = cumulative + i * per_line
-            end = cumulative + (i + 1) * per_line
-            out.append(str(counter))
-            out.append(f"{_format_srt_time(start)} --> {_format_srt_time(end)}")
-            out.append(line)
-            out.append("")
-            counter += 1
-        cumulative += duration
-    return "\n".join(out).strip() + "\n"
-
-
-def encode_music_video(
-    audio_path: str,
-    visual_path: str,
-    output_path: str,
-    *,
-    is_image: bool,
-    resolution: str = "1920x1080",
-    audio_bitrate: str = "192k",
-    crf: int = 22,
-    fade_seconds: float = 0.0,
-    audio_duration: float | None = None,
-    subtitles_path: str | None = None,
-) -> tuple[bool, str]:
-    """ffmpeg 로 합성. (성공여부, 로그 꼬리 ~2KB) 반환."""
-    ffmpeg = _find_ffmpeg()
-    if not ffmpeg:
-        return False, "ffmpeg 가 PATH 에 없습니다. 시스템에 ffmpeg 를 설치해주세요."
-
-    cmd: list[str] = [ffmpeg, "-y", "-hide_banner"]
-
-    # 입력 0: 비주얼 (이미지면 loop, 영상이면 stream_loop)
-    if is_image:
-        cmd += ["-loop", "1"]
-    else:
-        cmd += ["-stream_loop", "-1"]
-    cmd += ["-i", visual_path]
-
-    # 입력 1: 오디오
-    cmd += ["-i", audio_path]
-
-    # 해상도 맞춤(레터박스), yuv420p 로 호환성 확보.
-    vf_parts = [
-        f"scale={resolution}:force_original_aspect_ratio=decrease",
-        f"pad={resolution}:(ow-iw)/2:(oh-ih)/2:color=black",
-        "setsar=1",
-    ]
-    if subtitles_path:
-        # 경로의 콜론/역슬래시 등 ffmpeg 필터 그래프 특수문자 이스케이프.
-        esc = (
-            subtitles_path
-            .replace("\\", "\\\\")
-            .replace(":", "\\:")
-            .replace("'", "\\'")
-        )
-        vf_parts.append(
-            f"subtitles='{esc}':force_style='FontSize=24,PrimaryColour=&H00FFFFFF&,"
-            "OutlineColour=&H80000000&,BorderStyle=3,Outline=2,Shadow=0,MarginV=60'"
-        )
-    vf = ",".join(vf_parts)
-
-    cmd += [
-        "-map", "0:v:0",
-        "-map", "1:a:0",
-        "-c:v", "libx264",
-        "-preset", "medium",
-        "-crf", str(crf),
-        "-pix_fmt", "yuv420p",
-        "-vf", vf,
-        "-c:a", "aac",
-        "-b:a", audio_bitrate,
-        "-movflags", "+faststart",
-        "-shortest",
-    ]
-    if is_image:
-        cmd += ["-tune", "stillimage", "-r", "24"]
-
-    # 오디오 페이드 인/아웃 (선택).
-    if fade_seconds > 0 and audio_duration and audio_duration > fade_seconds * 2:
-        fade_out_start = max(audio_duration - fade_seconds, 0)
-        cmd += [
-            "-af",
-            f"afade=t=in:st=0:d={fade_seconds},"
-            f"afade=t=out:st={fade_out_start}:d={fade_seconds}",
-        ]
-
-    cmd.append(output_path)
-
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60 * 60)
-    except subprocess.TimeoutExpired:
-        return False, "1시간 안에 인코딩이 끝나지 않았습니다. 해상도/CRF 를 조정해보세요."
-    log_tail = (proc.stderr or "")[-2400:]
-    return proc.returncode == 0, log_tail
-
-
-def _fmt_duration(seconds: float | None) -> str:
-    if not seconds or seconds <= 0:
-        return "??"
-    h = int(seconds // 3600)
-    m = int((seconds % 3600) // 60)
-    s = int(seconds % 60)
-    return f"{h:d}:{m:02d}:{s:02d}" if h else f"{m:d}:{s:02d}"
-
-
 def render_compose_tab() -> None:
     st.subheader("🎬 영상 합성 (MP3 + 배경 → MP4 인코딩)")
     st.caption(
@@ -3321,6 +3146,401 @@ def _render_sync_result() -> None:
 # ---------------------------------------------------------------------------
 
 
+@st.cache_data(show_spinner=False)
+def _load_vocab() -> dict:
+    return suno_studio.load_vocab()
+
+
+# 차원 → (한국어 라벨, 단일선택 여부)
+_STUDIO_DIMS: list[tuple[str, str, bool]] = [
+    ("rhythm", "리듬 패턴", False),
+    ("instruments", "악기", False),
+    ("solo", "솔로/간주", False),
+    ("vocal_ensemble", "보컬 편성", True),
+    ("vocal_gender", "보컬 성별", True),
+    ("vocal_register", "음색/음역", True),
+    ("vocal_technique", "보컬 기교", False),
+    ("production", "프로덕션/음향", False),
+]
+
+
+def _studio_picks_card(vocab: dict, preset_key: str, picks: dict, idx: int) -> None:
+    prompt = suno_studio.picks_to_prompt(vocab, preset_key, picks)
+    st.code(prompt, language=None)
+
+
+def render_suno_studio_tab() -> None:
+    st.subheader("🎚️ Suno 프롬프트 스튜디오")
+    st.caption(
+        "나라·무드·보컬(편성/성별/음색)·악기·솔로·리듬·빠르기를 골라 Suno 스타일 프롬프트를 "
+        "즉시 조립하고, 마음에 드는 조합과 '비슷한 유형'의 변주를 여러 개 생성(벤치마킹)합니다."
+    )
+
+    vocab = _load_vocab()
+    presets = suno_studio.list_presets(vocab)
+    moods = suno_studio.list_moods(vocab)
+
+    top = st.columns([1, 1])
+    with top[0]:
+        preset_key = st.selectbox(
+            "나라/장르 프리셋",
+            options=[k for k, _ in presets],
+            format_func=lambda k: dict(presets)[k],
+            key="ss_preset",
+        )
+    with top[1]:
+        mood = st.selectbox(
+            "무드/정서",
+            options=[s for s, _ in moods],
+            format_func=lambda s: dict(moods)[s],
+            key="ss_mood",
+        )
+
+    country = vocab["presets"][preset_key].get("country")
+
+    st.markdown("##### 🎛️ 수동 조합")
+    picks: dict[str, list[str]] = {"mood": [mood]}
+    dim_cols = st.columns(2)
+    for i, (dim, label, _single) in enumerate(_STUDIO_DIMS):
+        cands = suno_studio.candidates(vocab, dim, country=country, mood=mood)
+        label_map = {c["suno"]: c["ko"] for c in cands}
+        with dim_cols[i % 2]:
+            chosen = st.multiselect(
+                label,
+                options=list(label_map.keys()),
+                format_func=lambda s, m=label_map: m[s],
+                key=f"ss_dim_{dim}",
+            )
+        picks[dim] = chosen
+
+    lo_bpm, hi_bpm = suno_studio.mood_bpm_range(vocab, mood)
+    bpm = st.slider(
+        f"빠르기 BPM  (이 무드 권장: {lo_bpm}~{hi_bpm})",
+        min_value=50, max_value=160, value=(lo_bpm + hi_bpm) // 2, key="ss_bpm",
+    )
+    picks["_bpm"] = [str(bpm)]
+
+    st.markdown("**📋 조합된 Suno 프롬프트**")
+    prompt = suno_studio.picks_to_prompt(vocab, preset_key, picks)
+    st.code(prompt, language=None)
+
+    hook = st.text_input("한국어 후렴구(hook) 아이디어 (선택)", key="ss_hook",
+                         placeholder="예: 얼씨구 좋다, 달려보자 인생길")
+
+    dl = f"# Suno 프롬프트\n\n## Style\n{prompt}\n"
+    if hook.strip():
+        dl += f"\n## Korean Hook\n{hook.strip()}\n"
+    st.download_button("⬇️ 프롬프트 다운로드 (.md)", dl,
+                       file_name="suno_prompt.md", key="ss_dl")
+
+    st.divider()
+    st.markdown("##### 🎲 자동 추천 · 🔁 벤치마킹 변주")
+    act = st.columns([1, 1, 2])
+    with act[0]:
+        seed = st.number_input("시드", value=7, step=1, key="ss_seed")
+    with act[1]:
+        n_var = st.number_input("변주 개수", value=5, min_value=1, max_value=20,
+                                step=1, key="ss_nvar")
+    with act[2]:
+        lock_opts = st.multiselect(
+            "변주 시 고정할 차원 (정체성 보존)",
+            options=["mood", "vocal_gender", "vocal_register", "rhythm"],
+            default=["mood", "vocal_gender"],
+            key="ss_lock",
+        )
+
+    btns = st.columns(2)
+    if btns[0].button("🎲 무드 기반 자동 조합 추천", key="ss_auto_btn"):
+        auto = suno_studio.auto_select(vocab, preset_key, mood, seed=int(seed))
+        st.session_state["ss_auto_result"] = (preset_key, auto)
+    if btns[1].button("🔁 위 수동 조합과 비슷한 변주 생성", key="ss_var_btn"):
+        variations = suno_studio.generate_variations(
+            vocab, preset_key, picks, n=int(n_var),
+            lock=set(lock_opts), seed=int(seed),
+        )
+        st.session_state["ss_var_result"] = (preset_key, variations)
+
+    auto_res = st.session_state.get("ss_auto_result")
+    if auto_res:
+        st.markdown("**🎲 자동 추천 조합**")
+        _studio_picks_card(vocab, auto_res[0], auto_res[1], 0)
+
+    var_res = st.session_state.get("ss_var_result")
+    if var_res:
+        pk, variations = var_res
+        st.markdown(f"**🔁 벤치마킹 변주 {len(variations)}개**")
+        md_lines = ["# Suno 벤치마킹 변주\n"]
+        for i, var in enumerate(variations, 1):
+            p = suno_studio.picks_to_prompt(vocab, pk, var)
+            st.markdown(f"변주 {i}")
+            st.code(p, language=None)
+            md_lines.append(f"## 변주 {i}\n{p}\n")
+        st.download_button("⬇️ 변주 전체 다운로드 (.md)", "\n".join(md_lines),
+                           file_name="suno_variations.md", key="ss_var_dl")
+
+    # ----- 📒 나만의 레시피 (저장·불러오기·블렌딩) -----
+    st.divider()
+    st.markdown("##### 📒 나만의 레시피")
+    st.caption("마음에 든 조합을 이름 붙여 저장하고, 여러 레시피를 섞어 새 조합을 만듭니다.")
+
+    def _recipe_prompt(rec: dict) -> str:
+        p = dict(rec.get("picks", {}))
+        if rec.get("bpm"):
+            p["_bpm"] = [str(rec["bpm"])]
+        return suno_studio.picks_to_prompt(vocab, rec.get("preset", preset_key), p)
+
+    save_cols = st.columns([2, 1])
+    with save_cols[0]:
+        rcp_name = st.text_input("레시피 이름", key="ss_rcp_name",
+                                 placeholder="예: 내 트로트 황금레시피 v1")
+    with save_cols[1]:
+        st.write("")
+        st.write("")
+        if st.button("💾 현재 조합 저장", key="ss_rcp_save"):
+            if not any(picks.get(d) for d, _, _ in _STUDIO_DIMS):
+                st.warning("저장할 조합이 비어 있습니다. 위에서 항목을 골라주세요.")
+            else:
+                rec = recipes.save_recipe(
+                    rcp_name or "이름없는 레시피", preset_key, picks,
+                    bpm=bpm, hook=hook,
+                )
+                st.success(f"저장됨: {rec['name']}")
+
+    saved = recipes.list_recipes()
+    if not saved:
+        st.info("아직 저장된 레시피가 없습니다. 위에서 조합을 만들고 저장해보세요.")
+        return
+
+    label_map = {r["id"]: f"{r['name']}  ·  {dict(presets).get(r['preset'], r['preset'])}"
+                 for r in saved}
+
+    load_cols = st.columns([3, 1])
+    with load_cols[0]:
+        sel_id = st.selectbox("저장된 레시피", options=list(label_map.keys()),
+                              format_func=lambda i: label_map[i], key="ss_rcp_sel")
+    with load_cols[1]:
+        st.write("")
+        st.write("")
+        if st.button("🗑️ 삭제", key="ss_rcp_del"):
+            if recipes.delete_recipe(sel_id):
+                st.success("삭제됨.")
+                st.rerun()
+
+    sel = recipes.get_recipe(sel_id)
+    if sel:
+        st.code(_recipe_prompt(sel), language=None)
+        if st.button("🔁 이 레시피로 변주 생성", key="ss_rcp_var"):
+            sel_picks = dict(sel.get("picks", {}))
+            if sel.get("bpm"):
+                sel_picks["_bpm"] = [str(sel["bpm"])]
+            st.session_state["ss_var_result"] = (
+                sel.get("preset", preset_key),
+                suno_studio.generate_variations(
+                    vocab, sel.get("preset", preset_key), sel_picks,
+                    n=int(n_var), lock=set(lock_opts), seed=int(seed),
+                ),
+            )
+            st.rerun()
+
+    if len(saved) >= 2:
+        st.markdown("**🧪 레시피 블렌딩**")
+        blend_ids = st.multiselect("섞을 레시피 (2개 이상)", options=list(label_map.keys()),
+                                   format_func=lambda i: label_map[i], key="ss_blend_sel")
+        if st.button("🧪 블렌딩", key="ss_blend_btn"):
+            chosen = [r for r in saved if r["id"] in blend_ids]
+            if len(chosen) < 2:
+                st.warning("2개 이상 골라주세요.")
+            else:
+                pk, blended = recipes.blend_recipes(chosen, seed=int(seed))
+                st.session_state["ss_blend_result"] = (pk, blended)
+        blend_res = st.session_state.get("ss_blend_result")
+        if blend_res:
+            pk, blended = blend_res
+            st.code(suno_studio.picks_to_prompt(vocab, pk, blended), language=None)
+            bname = st.text_input("블렌딩 결과 저장 이름", key="ss_blend_name",
+                                  placeholder="예: 눈물+흥 블렌드")
+            if st.button("💾 블렌딩을 레시피로 저장", key="ss_blend_save"):
+                bpm_b = int(blended["_bpm"][0]) if blended.get("_bpm") else None
+                rec = recipes.save_recipe(bname or "블렌드 레시피", pk, blended, bpm=bpm_b)
+                st.success(f"저장됨: {rec['name']}")
+
+
+def render_reverse_tab() -> None:
+    st.subheader("🔎 곡 역설계 (메타데이터 → Suno picks)")
+    st.caption(
+        "유튜브 곡의 제목·태그·설명·댓글을 Gemini 가 분석해 통제 어휘(vocab) 안에서 스타일을 "
+        "추출합니다. 오디오 다운로드 없이(ToS 안전) picks 로 변환 → 레시피로 저장하면 자산이 됩니다. "
+        "사전에 없던 표현은 '새 어휘 후보'로 모아 vocab 보완에 씁니다."
+    )
+
+    vocab = _load_vocab()
+    presets = suno_studio.list_presets(vocab)
+
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        preset_key = st.selectbox(
+            "나라/장르 프리셋", options=[k for k, _ in presets],
+            format_func=lambda k: dict(presets)[k], key="rev_preset",
+        )
+    with c2:
+        source_id = st.text_input("영상 URL 또는 ID (자산 연결용, 선택)", key="rev_src")
+
+    title = st.text_input("제목", key="rev_title")
+    cc = st.columns([1, 1])
+    with cc[0]:
+        channel = st.text_input("채널명 (선택)", key="rev_channel")
+    with cc[1]:
+        tags = st.text_input("태그 (쉼표로 구분, 선택)", key="rev_tags")
+    description = st.text_area("설명 (선택)", key="rev_desc", height=80)
+    comments = st.text_area("상위 댓글 (한 줄에 하나, 선택)", key="rev_comments", height=100)
+
+    key = st.text_input(
+        "Gemini API 키", type="password",
+        value=os.getenv("GEMINI_API_KEY", ""), key="rev_key",
+        help=".env 의 GEMINI_API_KEY 를 기본값으로 불러옵니다. 키는 저장/커밋되지 않습니다.",
+    )
+    model = st.text_input("모델 ID", value=analyzer.DEFAULT_MODEL, key="rev_model")
+
+    if st.button("🔎 분석하기", key="rev_run"):
+        if not title.strip():
+            st.warning("최소한 제목은 입력해주세요.")
+        elif not key.strip():
+            st.warning("Gemini API 키가 필요합니다. (.env 의 GEMINI_API_KEY 또는 위 입력)")
+        else:
+            meta = {
+                "title": title.strip(),
+                "channel": channel.strip(),
+                "tags": [t.strip() for t in tags.split(",") if t.strip()],
+                "description": description.strip(),
+                "comments": [c.strip() for c in comments.splitlines() if c.strip()],
+            }
+            try:
+                with st.spinner("Gemini 분석 중..."):
+                    result = analyzer.analyze_metadata(
+                        meta, vocab, preset_hint=preset_key,
+                        api_key=key.strip(), model=model.strip() or analyzer.DEFAULT_MODEL,
+                    )
+                st.session_state["rev_result"] = result
+            except Exception as e:
+                st.error(f"분석 실패: {type(e).__name__}: {e}")
+
+    result = st.session_state.get("rev_result")
+    if result:
+        st.markdown("**📋 추출된 Suno 프롬프트**")
+        prompt = suno_studio.picks_to_prompt(vocab, result["preset"], result["picks"])
+        st.code(prompt, language=None)
+        meta_cols = st.columns(3)
+        meta_cols[0].metric("무드", result.get("mood") or "-")
+        meta_cols[1].metric("BPM", result.get("bpm") or "-")
+        meta_cols[2].metric("프리셋", result["preset"])
+        if result.get("rationale"):
+            st.caption(f"근거: {result['rationale']}")
+
+        new_terms = result.get("new_terms") or {}
+        if new_terms:
+            st.markdown("**🧩 새 어휘 후보 (vocab 보완용)**")
+            st.caption("아래 표현들은 사전에 없어 picks 에 미반영되었습니다. 검토 후 vocab.json 에 추가하세요.")
+            st.json(new_terms)
+
+        rname = st.text_input("레시피 이름", key="rev_rcp_name",
+                              placeholder="예: 비오는밤 색소폰 트로트")
+        if st.button("💾 이 결과를 레시피로 저장", key="rev_rcp_save"):
+            rec = recipes.save_recipe(
+                rname or (title.strip() or "역설계 레시피"),
+                result["preset"], result["picks"],
+                bpm=result.get("bpm"),
+                source_video_id=source_id.strip() or None,
+                notes=result.get("rationale", ""),
+            )
+            st.success(f"저장됨: {rec['name']}  (스튜디오 탭에서 변주·블렌딩 가능)")
+
+
+def render_review_tab() -> None:
+    st.subheader("🙋 검수 큐 (합산 상위 후보)")
+    st.caption(
+        "오케스트레이터(orchestrator.py)가 매일 쌓은 정량+정성 합산 상위 후보입니다. "
+        "승인하면 역설계 분석 → 레시피로 보내 생성 자산에 편입합니다."
+    )
+
+    db_path = st.text_input("데이터 토대 DB 경로", value=str(store.DB_PATH), key="rv_db")
+    if not os.path.exists(db_path):
+        st.info("DB 가 아직 없습니다. 먼저 `python orchestrator.py --once --keywords ...` 로 "
+                "수집·채점하세요.")
+        return
+
+    try:
+        cands = scorer.ranked_candidates(limit=30, db_path=db_path)
+    except Exception as e:
+        st.error(f"랭킹 조회 실패: {e}")
+        return
+    if not cands:
+        st.info("합산 후보가 없습니다 (정량+정성이 모두 매겨진 영상 필요). "
+                "orchestrator 로 collect→score 를 먼저 돌리세요.")
+        return
+
+    key = st.text_input(
+        "Gemini API 키 (역설계용)", type="password",
+        value=os.getenv("GEMINI_API_KEY", ""), key="rv_key",
+        help=".env 의 GEMINI_API_KEY 기본값. 키는 저장/커밋되지 않습니다.",
+    )
+    vocab = _load_vocab()
+    decisions = store.latest_reviews("video", path=db_path)
+    badge = {"approved": "✅ 승인됨", "rejected": "❌ 반려됨"}
+
+    st.divider()
+    for c in cands:
+        vid = c["video_id"]
+        status = decisions.get(vid, "")
+        with st.container(border=True):
+            head = f"**[{(c.get('total_score') or 0):.1f}]** {c.get('title','')}"
+            if status:
+                head += f"  ·  {badge.get(status, status)}"
+            st.markdown(head)
+            st.caption(
+                f"{c.get('channel_title','')}  ·  정량 {c.get('quant_score')} · "
+                f"정성 {c.get('qual_score')} · {c.get('mood')} · {c.get('emotion_summary','')}"
+            )
+            cols = st.columns([1, 1, 2])
+            if cols[0].button("✅ 승인", key=f"rv_appr_{vid}"):
+                store.add_review(item_type="video", item_id=vid, decision="approved",
+                                 path=db_path)
+                st.rerun()
+            if cols[1].button("❌ 반려", key=f"rv_rej_{vid}"):
+                store.add_review(item_type="video", item_id=vid, decision="rejected",
+                                 path=db_path)
+                st.rerun()
+            if cols[2].button("🔎 역설계 → 레시피 저장", key=f"rv_rev_{vid}"):
+                if not key.strip():
+                    st.warning("역설계에는 Gemini API 키가 필요합니다.")
+                else:
+                    video = store.get_video(vid, path=db_path) or {}
+                    comments = [cc["text"] for cc in store.get_comments(vid, path=db_path)
+                                if cc.get("text")]
+                    meta = {
+                        "title": video.get("title", ""),
+                        "channel": video.get("channel_title", ""),
+                        "description": video.get("description", ""),
+                        "comments": comments,
+                    }
+                    try:
+                        with st.spinner("Gemini 역설계 분석 중..."):
+                            result = analyzer.analyze_metadata(
+                                meta, vocab, api_key=key.strip())
+                        rec = recipes.save_recipe(
+                            video.get("title", "") or vid, result["preset"],
+                            result["picks"], bpm=result.get("bpm"),
+                            source_video_id=vid, notes=result.get("rationale", ""),
+                        )
+                        store.add_review(item_type="video", item_id=vid,
+                                         decision="approved",
+                                         note=f"recipe:{rec['id']}", path=db_path)
+                        st.success(f"레시피 저장됨: {rec['name']} — 스튜디오 탭에서 변주·블렌딩 가능")
+                        if result.get("new_terms"):
+                            st.caption(f"새 어휘 후보(보완): {result['new_terms']}")
+                    except Exception as e:
+                        st.error(f"역설계 실패: {type(e).__name__}: {e}")
+
+
 def main() -> None:
     st.set_page_config(
         page_title="유튜브 음악 채널 자동화",
@@ -3330,12 +3550,16 @@ def main() -> None:
 
     st.title("🎵 유튜브 음악 채널 자동화 대시보드")
 
-    tab_discovery, tab_story, tab_compose, tab_sync = st.tabs(
+    (tab_discovery, tab_story, tab_compose, tab_sync,
+     tab_studio, tab_reverse, tab_review) = st.tabs(
         [
             "🔍 레퍼런스 발굴",
             "✍️ AI 스토리텔링 & 가사 생성",
             "🎬 영상 합성 (인코딩)",
             "🎤 가사 자동 동기화 (SRT)",
+            "🎚️ Suno 프롬프트 스튜디오",
+            "🔎 곡 역설계",
+            "🙋 검수 큐",
         ]
     )
     with tab_discovery:
@@ -3346,6 +3570,12 @@ def main() -> None:
         render_compose_tab()
     with tab_sync:
         render_sync_tab()
+    with tab_studio:
+        render_suno_studio_tab()
+    with tab_reverse:
+        render_reverse_tab()
+    with tab_review:
+        render_review_tab()
 
 
 if __name__ == "__main__":

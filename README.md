@@ -144,6 +144,172 @@ winget install --id=Gyan.FFmpeg -e
 - Negative prompt 동봉, Markdown 으로 일괄 다운로드
 - **🔄 다시 생성** + 비주얼 컨셉 시드 입력 가능
 
+### 🎚️ Suno 프롬프트 스튜디오 (탭 5)
+나라·무드·보컬·악기·솔로·리듬·빠르기를 **빌딩블록처럼 골라 Suno 스타일 프롬프트를 즉시
+조립**하고, 마음에 든 조합과 **'비슷한 유형'의 변주를 여러 개 자동 생성(벤치마킹)**합니다.
+
+어휘는 코드가 아닌 **`vocab.json`(통제 어휘 사전)**에 데이터로 보관 — 항목마다 `country`/`mood`
+태그가 붙어 프리셋(나라)·무드를 고르면 후보가 자동 필터링됩니다. 조립 로직은 Streamlit 의존이
+없는 **`suno_studio.py`** 엔진에 있어 대시보드와 향후 n8n/Gemini 자동화가 동일 엔진을 씁니다.
+
+- **차원**: 장르/나라 앵커 · 무드 · 리듬 패턴 · 악기 · 솔로/간주 · 보컬(편성/성별/음색·음역/기교) · 프로덕션 · BPM
+- **음색/음역**: 중저음(굵은) · 중음 · 고음(남/여 미성) · 허스키 · 맑은
+- **보컬 기교**: 비브라토 · 꺾기(KR) · 코부시(JP) · 벨팅 · 크루닝
+- **자동 추천**: 무드만 고르면 차원별로 무작위 조합 1건 제안 (시드 고정 시 재현 가능)
+- **벤치마킹 변주**: 현재 조합을 기준으로, 고정할 차원(예: 무드·성별)만 잠그고 나머지를 다시
+  샘플링해 서로 다른 N개 변주를 생성. 마음에 든 곡 스타일로 양산할 때 사용
+- **확장**: `vocab.json` 에 프리셋(`jp_enka`, `global_senior`)과 어휘만 추가하면 나라 확장 완료
+- **📒 나만의 레시피**: 마음에 든 조합을 이름 붙여 `recipes.json`(내 자산)에 저장 → 불러와 변주 생성,
+  여러 레시피를 **블렌딩**(단일 차원은 하나 선택, 다중 차원은 합집합, BPM 평균)해 새 조합 합성.
+  엔진은 `recipes.py`. 향후 역설계 분석기가 추출한 picks 도 같은 형식으로 적재 → 스타일 지문 자산화
+
+```bash
+python suno_studio.py   # 헤드리스 데모: 자동 추천 1건 + 벤치마킹 변주 4건 출력
+```
+
+### 🔎 곡 역설계 (탭 6 — 메타데이터 → Suno picks)
+수집한 유튜브 곡의 **제목·태그·설명·댓글을 Gemini 가 분석**해, 통제 어휘(`vocab.json`) 안에서
+무드·악기·솔로·보컬·리듬·BPM 을 골라 **스튜디오 picks 형식으로 추출**합니다. 오디오 다운로드가
+없어 ToS 안전하고, 비싼 정밀 분석 없이 무료 한도로 돌릴 수 있습니다.
+
+- **자산화**: 추출 결과를 `source_video_id` 와 함께 레시피로 저장 → 스타일 지문이 쌓임
+- **보완(데이터 풍부화)**: 사전에 없던 표현은 `new_terms`(새 어휘 후보)로 모아 `vocab.json` 보강에 사용
+- 엔진은 `analyzer.py`(Streamlit 무관, LLM 호출 주입형 → 헤드리스 테스트 가능)
+- 추출 → 레시피 저장 → 스튜디오에서 변주·블렌딩으로 자연스럽게 이어짐
+
+> 다음 단계(하이브리드 2단계): 점수 상위 곡만 골라 오디오 정밀 분석(BPM·보컬 성별 DSP 보강).
+
+### 🙋 검수 큐 (탭 7 — 사람 게이트)
+오케스트레이터가 매일 쌓은 **정량+정성 합산 상위 후보**를 띄워, 사람이 ✅승인/❌반려합니다.
+승인 시 그 영상의 메타데이터를 **역설계 분석 → 레시피로 저장**(`source_video_id` 연결)해 생성
+자산에 편입합니다. 검수 결정은 `store.review_log` 에 라벨로 쌓여 향후 학습 데이터가 됩니다.
+
+- 무인 자동(수집·채점)과 생성(스튜디오·파이프라인)을 잇는 **유일한 사람 개입 지점**
+- 승인된 후보 → 역설계 → 레시피 → 스튜디오에서 변주·블렌딩 → mp3→MP4 파이프라인
+
+## 🗄️ 데이터 토대 (`store.py` — SQLite 자산 조인 체인)
+
+수집→분석→프롬프트→곡→게시→성과를 `video_id`/`prompt_id`/`song_id` 로 꿰어 **하나의
+질의 가능한 자산**으로 쌓습니다. 핫패스를 **로컬 SQLite**로 둬 네트워크 홉 없이 빠르게(버퍼링
+최소) 읽고 씁니다. Google Sheets 는 사람이 볼 요약만 별도 동기화하면 됩니다.
+
+- **테이블**: `videos`, `video_stats`(시계열·바이럴 속도용), `comments`(작성자 해시),
+  `video_features`(무드/정성점수), `prompts`(source_video_id 연결, picks JSON),
+  `songs`, `publications`, `performance`(성과 시계열), `review_log`(검수 라벨)
+- **append-only 우선** + **멱등성**(video_id·comment_id 중복 차단) → 매일 재수집해도 낭비 없음
+- **개인정보**: 댓글 작성자는 해시로만 저장(원문은 감성분석 후 폐기 권장)
+- stdlib `sqlite3` 만 사용 — 의존성 0, n8n/스케줄러/대시보드 공용
+
+```bash
+python store.py   # 헤드리스 데모: 수집→분석→체인 적재 후 테이블별 행 수 출력
+```
+
+> 성능 피드백 루프의 토대: 게시한 곡의 `performance` 를 `prompts.picks` 와 조인하면
+> "어떤 스타일 조합이 실제로 먹혔는지"를 데이터로 역산할 수 있습니다.
+
+## 📥 수집기 (`collect.py` — YouTube → 데이터 토대)
+
+파이썬-우선 자동화의 1단계. 공식 YouTube Data API v3 로 키워드 검색 → 영상 통계·채널
+구독자 → (선택) 상위 영상 댓글을 수집해 `store` 에 적재합니다. 매일 돌려도 멱등성 덕에
+중복이 없고, 수집마다 `video_stats` 시계열이 쌓여 바이럴 속도를 잡습니다.
+
+- **정량 점수(0~55, 0원·결정론적)**: `view/subscriber 비율`(≤30) + `시간당 조회수`(≤25).
+  소형이지만 폭발하는 채널이 높게 나옴 (급상승 탐지). 임계는 `RATIO_FULL`/`SPEED_FULL` 로 튜닝.
+- **댓글은 정량 상위 N개만**(쿼터 절약), 작성자는 store 에서 해시로 저장
+- 정성 점수(Gemini)는 다음 단계 `score.py` 가 채움
+
+```bash
+python collect.py --keywords "트로트 발라드,효도 트로트" --days 14 --max 50 --comments
+# YOUTUBE_API_KEY 는 .env 또는 --api-key
+```
+
+## 🧠 스코어러 (`score.py` — 댓글 정성 분석)
+
+수집기가 모은 댓글을 **영상 단위로 묶어 Gemini 1회 호출**(레이트리밋·비용 절감)로 시니어
+감성을 채점해 `store.video_features` 에 적재합니다. **콘텐츠 해시 캐시**로 같은 입력은
+재호출하지 않아 비용과 점수 일관성을 동시에 잡습니다.
+
+- **정성 점수(0~45)** = `comment_reaction`(≤20) + `senior_emotion`(≤15) + `performance_energy`(≤10)
+- 무드는 `vocab.json` 통제 어휘에서 선택 → 스튜디오/분석기와 정렬
+- `ranked_candidates()` 가 **정량(55)+정성(45)=100** 합산으로 상위 후보 랭킹 → 검수/생성 큐
+
+```bash
+python score.py --show-ranking          # 미채점 영상 정성 분석 후 합산 랭킹 출력
+# GEMINI_API_KEY 는 .env 또는 --api-key
+```
+
+## 🗓️ 오케스트레이터 (`orchestrator.py` — 매일 자동)
+
+`collect → score → 합산 랭킹`을 순서대로 한 번에 실행합니다. **스테이지별 실패를 격리**하고
+(한 단계가 죽어도 나머지 진행), 키가 없으면 해당 스테이지만 건너뛰며, 실행 이력을
+`orchestrator_log.jsonl` 에 남깁니다. n8n 없이 파이썬만으로 "매일 알아서 도는" 부분.
+
+```bash
+# cron 으로 매일 호출 (권장) — 새벽 5시 예시
+0 5 * * * cd /path/to/repo && python orchestrator.py --once \
+          --keywords "트로트 발라드,효도 트로트" --comments >> cron.log 2>&1
+
+# 또는 자체 폴링 데몬 (1일 간격)
+python orchestrator.py --watch --interval 86400 --keywords "트로트 발라드"
+```
+
+- `--stage collect|score|all` 로 단계 분리 실행(디버깅·독립 스케줄)
+- 키는 `.env`(YOUTUBE_API_KEY/GEMINI_API_KEY) 또는 `--youtube-key`/`--gemini-key`
+- 끝에 정량+정성 합산 상위 후보(검수/생성 큐)를 출력
+
+## 🤖 무인 자동화 파이프라인 (`pipeline.py` — mp3 → MP4)
+
+대시보드(`app.py`)가 사람이 보고 조작하는 도구라면, `pipeline.py` 는 **사람 없이 매일
+도는 헤드리스 엔진**입니다. **폴더를 통합 지점**으로 삼아, 사람이 직접 Suno 결과 mp3 를
+떨구든 / 비공식 Suno API 가 자동으로 떨구든 **동일하게 동작**합니다 (느슨한 결합).
+
+인코딩·자막·합성 로직은 대시보드 합성 탭과 **`media_core.py` 를 공유**합니다 (단일 소스).
+
+### 폴더 구조 (`--root`, 기본 `./pipeline_data`)
+
+```
+pipeline_data/
+├── inbox/<job_id>/      # 작업 투입: job.json + 오디오(.mp3 …) + (선택) 배경
+├── output/<job_id>/     # 결과물: <job_id>.mp4, <job_id>.srt, meta.json
+├── processed/<job_id>/  # 성공한 입력 보관 (재처리 방지 = 멱등성)
+├── failed/<job_id>/     # 실패한 입력 + error.log
+└── pipeline_log.jsonl   # 처리 이력 (한 줄 = 한 건)
+```
+
+### job.json (모두 선택 · 합리적 기본값)
+
+```json
+{
+  "title": "달려보자 인생길",
+  "audio": ["track1.mp3", "track2.mp3"],
+  "background": "bg.jpg",
+  "background_color": "0x101418",
+  "lyrics": "얼씨구 좋다\n달려보자 인생길",
+  "resolution": "1920x1080",
+  "audio_bitrate": "192k",
+  "crf": 22,
+  "fade_seconds": 2.0,
+  "burn_subtitles": false
+}
+```
+
+- `audio` 생략 → 폴더 내 오디오 파일을 이름순으로 전부 이어붙임
+- `background` 생략 → 폴더 내 이미지/영상 자동 탐색, 그래도 없으면 `background_color` 단색 배경 자동 생성
+- `lyrics` 입력 → 길이에 맞춰 균등 분배한 SRT 자동 생성 (`tracks` 로 곡별 가사도 가능)
+- `burn_subtitles: true` → 영상에 자막 굽기, `false` → SRT 파일만 별도 출력
+- 부분 업로드 방지: 폴더가 `--min-age` 초(기본 10) 동안 변경 없으면 "준비됨" 으로 판단. `.ready` 빈 파일을 넣으면 즉시 처리
+
+### 실행
+
+```bash
+python pipeline.py init                      # 폴더 구조 + 샘플 job 생성
+python pipeline.py --once                    # inbox 1회 스캔 후 종료 (cron / n8n Execute Command 용)
+python pipeline.py --watch --interval 30     # 데몬 모드 (폴더 상시 감시)
+```
+
+`--once` 는 외부 스케줄러(cron, n8n)가 주기적으로 호출하는 용도, `--watch` 는 자체 폴링
+데몬으로 상주시키는 용도입니다. ffmpeg(+ffprobe) 설치가 필요합니다.
+
 ## 로드맵
 
 - [x] Phase 1: 급상승 레퍼런스 채널 발굴 대시보드
@@ -153,8 +319,18 @@ winget install --id=Gyan.FFmpeg -e
 - [x] Phase 1.8: AI 스토리텔링 — SEO · 오프닝 대본 · 구조화된 가사
 - [x] Phase 1.9: 영상 합성 — 다중 트랙 concat + 가사 SRT (선택 burn-in) + MP4 인코딩
 - [x] Phase 2.0: 가사 자동 동기화 — Whisper API 기반 SRT 생성 (CapCut/Premiere 임포트용)
+- [x] Phase 2.1: 무인 mp3 → MP4 합성 파이프라인 (`pipeline.py`, 폴더 감시 · 멱등 · cron/n8n 연동)
+- [x] Phase 2.2: Suno 프롬프트 스튜디오 (`vocab.json` + `suno_studio.py`, 조합·자동추천·벤치마킹 변주)
+- [x] Phase 2.3: 나만의 레시피 저장·블렌딩 (`recipes.py` + `recipes.json`)
+- [x] Phase 2.4: 역설계 분석기 — 메타데이터 → Gemini → picks (`analyzer.py` + 🔎 곡 역설계 탭)
+- [ ] Phase 2.5: 역설계 하이브리드 2단계 — 선별 곡만 오디오 정밀 분석(BPM/성별 DSP 보강)
+- [x] Phase 3.0: 데이터 토대 — SQLite 자산 조인 체인 (`store.py`)
+- [x] Phase 3.1: 수집기 `collect.py` — YouTube→통계/댓글→store 적재 + 정량점수(≤55)
+- [x] Phase 3.2: 스코어러 `score.py` — Gemini 정성점수(배치·해시캐시) + 정량+정성 합산 랭킹
+- [x] Phase 3.3: 오케스트레이터 `orchestrator.py` — collect→score→랭킹 매일 자동(cron/데몬)
+- [x] Phase 3.4: 검수 큐 탭 — 합산 상위 후보 사람 승인 → 역설계→레시피 (루프 완성)
 - [ ] Phase 2: 자동 발굴 스케줄러 (cron + Slack/Sheets 동기화)
-- [ ] Phase 3: 오프닝 TTS 자동 더빙 + 영상 자동 합성 파이프라인
+- [ ] Phase 3: 오프닝 TTS 자동 더빙 + Suno 연동 (수동 B / 비공식 API A)
 
 ### 🎤 가사 자동 동기화 (탭 4 — SRT 생성)
 직접 만든 곡의 가사를 **실제로 불리는 시점에 정확히** 맞춘 SRT 자막을 만들어 CapCut/Premiere/Davinci 에 그대로 임포트하기 위한 도구.
