@@ -8,13 +8,17 @@ YouTube Data API v3 를 사용해 특정 키워드(상황/감정 기반)로 최�
 
 from __future__ import annotations
 
+import base64
 import io
+import json
 import os
 import random
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
+import uuid
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -30,16 +34,7 @@ from dotenv import load_dotenv
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-from media_core import (
-    concat_audio_files,
-    encode_music_video,
-    generate_srt,
-)
-from media_core import ffprobe_duration as _ffprobe_duration
-from media_core import find_ffmpeg as _find_ffmpeg
-from media_core import fmt_duration as _fmt_duration
-from media_core import format_srt_time as _format_srt_time
-
+# 자동화 모듈 (Suno 스튜디오 · 곡 역설계 · 검수 큐 탭에서 사용)
 import suno_studio
 import recipes
 import analyzer
@@ -48,7 +43,42 @@ import score as scorer
 
 load_dotenv()
 
-DEFAULT_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
+# ---------------------------------------------------------------------------
+# Persistent local key store — .streamlit/keys.json (gitignored).
+# UI 에서 한 번 저장하면 해지 버튼을 누르기 전까지 모든 세션에서 자동으로 불러온다.
+# ---------------------------------------------------------------------------
+
+KEY_STORE_PATH = os.path.join(".streamlit", "keys.json")
+
+
+def load_saved_keys() -> dict:
+    try:
+        with open(KEY_STORE_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+
+
+def save_key(name: str, value: str) -> None:
+    os.makedirs(os.path.dirname(KEY_STORE_PATH) or ".", exist_ok=True)
+    data = load_saved_keys()
+    data[name] = value
+    with open(KEY_STORE_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def clear_key(name: str) -> None:
+    data = load_saved_keys()
+    if name in data:
+        data.pop(name)
+        with open(KEY_STORE_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+SAVED_KEYS = load_saved_keys()
+# .env 의 YOUTUBE_API_KEY 가 있으면 우선, 없으면 저장된 키, 둘 다 없으면 빈 값.
+DEFAULT_API_KEY = os.getenv("YOUTUBE_API_KEY") or SAVED_KEYS.get("youtube", "")
 
 # OpenCV 는 얼굴 검출 전용. 미설치 시 얼굴 분석만 비활성화하고 나머지는 계속 동작.
 try:
@@ -224,7 +254,19 @@ def build_dataframe(videos: list[dict], channels: dict[str, dict]) -> pd.DataFra
 
     df = pd.DataFrame(rows)
     if not df.empty:
-        df["published_at"] = pd.to_datetime(df["published_at"], errors="coerce")
+        df["published_at"] = pd.to_datetime(
+            df["published_at"], errors="coerce", utc=True
+        )
+        # 시간당 조회수 = 조회수 / 업로드 후 경과 시간(시간). 최소 1시간으로 클립.
+        now = pd.Timestamp.now(tz="UTC")
+        age_h = (now - df["published_at"]).dt.total_seconds() / 3600.0
+        df["views_per_hour"] = (
+            df["view_count"] / age_h.clip(lower=1)
+        ).round(0).astype("Int64")
+        # 좋아요(비) = 좋아요/조회수 (%).
+        df["like_view_ratio"] = (
+            df["like_count"] / df["view_count"].clip(lower=1) * 100
+        ).round(1)
         df = df.sort_values("view_sub_ratio", ascending=False).reset_index(drop=True)
     return df
 
@@ -1383,6 +1425,71 @@ def run_pipeline(cfg: SearchConfig) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 
+LANG_NAMES: dict[str, str] = {
+    "ko": "Korean", "en": "English", "ja": "Japanese", "zh": "Chinese",
+    "es": "Spanish", "hi": "Hindi", "fr": "French", "de": "German",
+    "pt": "Portuguese", "id": "Indonesian", "vi": "Vietnamese", "th": "Thai",
+    "ar": "Arabic", "ru": "Russian", "it": "Italian",
+}
+
+# (라벨, 지역코드, 언어코드). 마지막 항목은 직접 입력용.
+COUNTRY_PRESETS: list[tuple[str, str, str]] = [
+    ("🇰🇷 한국 (한국어)", "KR", "ko"),
+    ("🇺🇸 미국 (English)", "US", "en"),
+    ("🇬🇧 영국 (English)", "GB", "en"),
+    ("🇯🇵 일본 (日本語)", "JP", "ja"),
+    ("🇹🇼 대만 (中文)", "TW", "zh"),
+    ("🇪🇸 스페인 (Español)", "ES", "es"),
+    ("🇲🇽 멕시코 (Español)", "MX", "es"),
+    ("🇮🇳 인도 (हिन्दी)", "IN", "hi"),
+    ("🇫🇷 프랑스 (Français)", "FR", "fr"),
+    ("🇩🇪 독일 (Deutsch)", "DE", "de"),
+    ("🇧🇷 브라질 (Português)", "BR", "pt"),
+    ("🇮🇩 인도네시아", "ID", "id"),
+    ("🇻🇳 베트남", "VN", "vi"),
+    ("🇹🇭 태국", "TH", "th"),
+    ("🇸🇦 사우디 (العربية)", "SA", "ar"),
+    ("🌐 직접 입력", "", ""),
+]
+
+
+def translate_keywords(
+    keywords: tuple[str, ...], target_lang_name: str
+) -> tuple[list[str] | None, str]:
+    """키워드를 대상 언어로 번역. (translated_list|None, info). 키 없으면 'no_key'."""
+    gem = os.getenv("GEMINI_API_KEY") or SAVED_KEYS.get("gemini", "")
+    oai = os.getenv("OPENAI_API_KEY") or SAVED_KEYS.get("openai", "")
+    if gem:
+        provider, key, model = "gemini", gem, DEFAULT_MODELS["gemini"]
+    elif oai:
+        provider, key, model = "openai", oai, DEFAULT_MODELS["openai"]
+    else:
+        return None, "no_key"
+    prompt = (
+        "You are a YouTube SEO translator. Translate each search keyword into natural "
+        f"{target_lang_name} phrases that native creators and viewers would actually type "
+        "to find that kind of music/mood. Preserve the mood/situation nuance. "
+        'Return ONLY JSON in this shape: {"translated": ["...", "..."]} — same count and order.\n\n'
+        + json.dumps(list(keywords), ensure_ascii=False)
+    )
+    try:
+        raw = call_llm(provider, key, prompt, model=model, response_json=True)
+    except Exception as e:
+        return None, f"error: {e}"
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            arr = data.get("translated") or data.get("keywords") or []
+        elif isinstance(data, list):
+            arr = data
+        else:
+            arr = []
+        out = [str(x).strip() for x in arr if str(x).strip()]
+        return (out or None), provider
+    except Exception as e:
+        return None, f"parse_error: {e}"
+
+
 def render_sidebar() -> SearchConfig | None:
     st.sidebar.header("🔍 검색 설정")
 
@@ -1390,8 +1497,33 @@ def render_sidebar() -> SearchConfig | None:
         "YouTube Data API v3 키",
         value=DEFAULT_API_KEY,
         type="password",
-        help="https://console.cloud.google.com/ 에서 발급. .env 에 YOUTUBE_API_KEY 로 저장 가능.",
+        key="yt_api_key_input",
+        help=(
+            "https://console.cloud.google.com/ 에서 발급. "
+            "아래 💾 저장 버튼을 누르면 .streamlit/keys.json 에 보관되어 "
+            "해지 전까지 모든 세션에서 자동으로 불러옵니다."
+        ),
     )
+
+    saved_yt = SAVED_KEYS.get("youtube", "")
+    if saved_yt:
+        st.sidebar.caption("🔒 저장된 키가 자동으로 불러와졌습니다.")
+    save_col, clear_col = st.sidebar.columns(2)
+    if save_col.button("💾 저장", use_container_width=True, key="yt_key_save"):
+        if api_key.strip():
+            save_key("youtube", api_key.strip())
+            SAVED_KEYS["youtube"] = api_key.strip()
+            st.sidebar.success("저장됨. 다음부터 자동으로 불러옵니다.")
+        else:
+            st.sidebar.warning("키 값이 비어 있어 저장하지 않았습니다.")
+    if clear_col.button(
+        "🗑️ 해지", use_container_width=True, key="yt_key_clear", disabled=not saved_yt
+    ):
+        clear_key("youtube")
+        SAVED_KEYS.pop("youtube", None)
+        st.session_state.pop("yt_api_key_input", None)
+        st.sidebar.info("저장된 키를 삭제했습니다.")
+        st.rerun()
 
     keywords_raw = st.sidebar.text_area(
         "키워드 (상황/감정 기반, 줄바꿈 또는 쉼표로 구분)",
@@ -1415,9 +1547,37 @@ def render_sidebar() -> SearchConfig | None:
     )
 
     st.sidebar.markdown("---")
+    st.sidebar.subheader("🌍 검색 대상 국가·언어")
+    preset_labels = [p[0] for p in COUNTRY_PRESETS]
+    pick = st.sidebar.selectbox(
+        "국가 / 언어 선택",
+        options=preset_labels,
+        index=0,
+        key="country_preset",
+        help="선택한 국가·언어권의 채널을 검색합니다. (지역코드 + 언어 우선순위 적용)",
+    )
+    sel = COUNTRY_PRESETS[preset_labels.index(pick)]
+    if sel[1] == "":  # 직접 입력
+        region = st.sidebar.text_input("지역 코드 (ISO 3166-1)", value="KR")
+        language = st.sidebar.text_input("언어 코드 (예: ko, en, ja)", value="ko")
+    else:
+        region, language = sel[1], sel[2]
+        st.sidebar.caption(f"→ 지역 `{region}` · 언어 `{language}` 로 검색")
+    target_lang_name = LANG_NAMES.get(language, language)
+
+    translate_kw = st.sidebar.checkbox(
+        "🌐 키워드를 대상 언어로 자동 번역",
+        value=(language != "ko"),
+        key="translate_kw",
+        help=(
+            "켜면 한국어로 키워드를 써도 대상 국가 언어로 자동 번역해 그 언어권 채널을 "
+            "찾아줍니다. (예: '비 오는 날 카페' → 미국 선택 시 'rainy day cafe' 로 검색) "
+            "Gemini 또는 OpenAI 키가 필요합니다 (AI 스토리텔링 탭에서 저장)."
+        ),
+    )
+
+    st.sidebar.markdown("---")
     st.sidebar.subheader("⚙️ 고급")
-    region = st.sidebar.text_input("지역 코드 (ISO 3166-1)", value="KR")
-    language = st.sidebar.text_input("언어 코드 (예: ko, en, ja)", value="ko")
     order = st.sidebar.selectbox(
         "정렬 기준",
         options=["date", "viewCount", "relevance"],
@@ -1440,6 +1600,26 @@ def render_sidebar() -> SearchConfig | None:
     if not keywords:
         st.sidebar.error("키워드를 1개 이상 입력하세요.")
         return None
+
+    # 대상 언어로 키워드 자동 번역 (한국어 외 대상 + 토글 ON).
+    if translate_kw and language and language != "ko":
+        with st.spinner(f"키워드를 {target_lang_name} 로 번역 중..."):
+            translated, info = translate_keywords(keywords, target_lang_name)
+        if translated:
+            keywords = tuple(translated)
+            st.sidebar.success(
+                "번역된 키워드로 검색합니다:\n\n"
+                + "\n".join(f"• {k}" for k in translated)
+            )
+        elif info == "no_key":
+            st.sidebar.warning(
+                "번역하려면 'AI 스토리텔링 & 가사 생성' 탭에서 Gemini 또는 OpenAI 키를 "
+                "저장하세요. 이번에는 원본 키워드로 검색합니다."
+            )
+        else:
+            st.sidebar.warning(
+                f"키워드 번역에 실패해 원본으로 검색합니다. ({info})"
+            )
 
     return SearchConfig(
         api_key=api_key,
@@ -1470,47 +1650,119 @@ def render_results(df: pd.DataFrame, filtered: pd.DataFrame, cfg: SearchConfig) 
             "(예: 최대 구독자 수↑, 최소 조회수↓, 최소 비율↓)."
         )
     else:
-        display_cols = [
-            "video_title",
-            "channel_title",
-            "subscriber_count",
-            "view_count",
-            "view_sub_ratio",
-            "like_count",
-            "comment_count",
-            "published_at",
-            "duration_sec",
-            "video_url",
-            "channel_url",
-        ]
-        st.dataframe(
-            filtered[display_cols],
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "video_url": st.column_config.LinkColumn("영상", display_text="열기"),
-                "channel_url": st.column_config.LinkColumn("채널", display_text="열기"),
-                "subscriber_count": st.column_config.NumberColumn(format="%d"),
-                "view_count": st.column_config.NumberColumn(format="%d"),
-                "view_sub_ratio": st.column_config.NumberColumn(format="%.2f"),
-                "published_at": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm"),
-            },
+        sort_opts = {
+            "조회수 ÷ 구독자 (급상승)": "view_sub_ratio",
+            "시간당 조회수": "views_per_hour",
+            "조회수": "view_count",
+            "구독자수": "subscriber_count",
+            "좋아요(비)": "like_view_ratio",
+            "최신 업로드": "published_at",
+        }
+        sc1, sc2 = st.columns([3, 2])
+        sort_label = sc1.selectbox(
+            "정렬 기준", list(sort_opts.keys()), index=0, key="disc_sort"
         )
+        order_desc = sc2.radio(
+            "순서", ["높은 순", "낮은 순"], index=0, key="disc_sort_order",
+            horizontal=True,
+        ) == "높은 순"
+        filtered = filtered.sort_values(
+            sort_opts[sort_label], ascending=not order_desc, na_position="last"
+        ).reset_index(drop=True)
+
+        st.caption(
+            f"총 {len(filtered):,}개 결과 · {sort_label} {'높은' if order_desc else '낮은'} 순  ·  "
+            "마음에 드는 영상의 **‘✓ 제목 담기’** 를 체크하면 아래에서 한꺼번에 복사·다운로드할 수 있어요."
+        )
+        MAX_CARDS = 60
+        selected_titles: list[str] = []
+        for idx, (_, r) in enumerate(filtered.head(MAX_CARDS).iterrows()):
+            vid = f"{idx}_{r.get('video_id') or ''}"
+            with st.container(border=True):
+                ci, ct = st.columns([1, 3])
+                with ci:
+                    thumb = r.get("thumbnail_url")
+                    if isinstance(thumb, str) and thumb:
+                        st.image(thumb, width="stretch")
+                with ct:
+                    st.markdown(f"**{r['video_title']}**")
+                    vph = int(r["views_per_hour"]) if pd.notna(r.get("views_per_hour")) else 0
+                    st.markdown(
+                        f"조회수 **{int(r['view_count']):,}** · 시간당 **{vph:,}** · "
+                        f"구독자 **{int(r['subscriber_count']):,}**"
+                    )
+                    st.markdown(
+                        f"댓글 {int(r['comment_count']):,} · 좋아요(비) {r['like_view_ratio']}% · "
+                        f"조회/구독 {r['view_sub_ratio']:.1f}배"
+                    )
+                    pub = r["published_at"]
+                    pub_s = pub.strftime("%Y-%m-%d") if pd.notna(pub) else ""
+                    st.caption(f"채널: {r['channel_title']}  ·  업로드: {pub_s}")
+                    lc, rc = st.columns([1, 2])
+                    if lc.checkbox("✓ 제목 담기", key=f"pick_{vid}"):
+                        selected_titles.append(str(r["video_title"]))
+                    rc.markdown(f"[▶ 영상 열기]({r['video_url']})")
+        if len(filtered) > MAX_CARDS:
+            st.caption(f"… 외 {len(filtered) - MAX_CARDS:,}개는 아래 CSV로 확인하세요.")
+
+        # 담은 제목 모음 — 복사 / 다운로드 / 제목 공식 Lab 으로 보내기
+        if selected_titles:
+            st.markdown(f"#### 📋 담은 제목 {len(selected_titles)}개")
+            joined = "\n".join(selected_titles)
+            st.text_area(
+                "복사용 (칸 안 클릭 → Ctrl+A → Ctrl+C)",
+                value=joined, height=160, key="picked_titles_area",
+            )
+            bc1, bc2 = st.columns(2)
+            bc1.download_button(
+                "📥 담은 제목 다운로드 (.txt)",
+                data=joined.encode("utf-8-sig"),
+                file_name=f"picked_titles_{datetime.now():%Y%m%d_%H%M%S}.txt",
+                mime="text/plain",
+                use_container_width=True,
+            )
+            if bc2.button(
+                "➡️ '제목 공식 Lab' 입력칸에 넣기", use_container_width=True
+            ):
+                st.session_state["title_lab_input"] = joined
+                st.success("✅ '제목 공식 Lab' 탭의 입력칸에 넣었습니다. 그 탭으로 이동해 분석하세요.")
 
         st.download_button(
-            "📥 CSV 다운로드",
+            "📥 CSV 다운로드 (전체)",
             data=filtered.to_csv(index=False).encode("utf-8-sig"),
             file_name=f"breakout_channels_{datetime.now():%Y%m%d_%H%M%S}.csv",
             mime="text/csv",
         )
 
-    render_title_patterns(filtered, df)
-    render_narrative(filtered, df)
     render_recommendations(filtered, df, cfg)
-    render_thumbnails(filtered, df, cfg)
 
     with st.expander("🔬 전체 검색 결과 보기 (필터 적용 전)"):
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        full_cols = [
+            c for c in [
+                "thumbnail_url", "video_title", "channel_title",
+                "subscriber_count", "view_count", "views_per_hour",
+                "comment_count", "like_view_ratio", "view_sub_ratio",
+                "published_at", "video_url",
+            ] if c in df.columns
+        ]
+        st.dataframe(
+            df[full_cols],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "thumbnail_url": st.column_config.ImageColumn("썸네일"),
+                "video_title": st.column_config.TextColumn("제목", width="large"),
+                "channel_title": st.column_config.TextColumn("채널명"),
+                "subscriber_count": st.column_config.NumberColumn("구독자수", format="%d"),
+                "view_count": st.column_config.NumberColumn("조회수", format="%d"),
+                "views_per_hour": st.column_config.NumberColumn("시간당조회수", format="%d"),
+                "comment_count": st.column_config.NumberColumn("댓글수", format="%d"),
+                "like_view_ratio": st.column_config.NumberColumn("좋아요(비)", format="%.1f%%"),
+                "view_sub_ratio": st.column_config.NumberColumn("조회/구독", format="%.1f"),
+                "published_at": st.column_config.DatetimeColumn("업로드일", format="YYYY-MM-DD HH:mm"),
+                "video_url": st.column_config.LinkColumn("유튜브", display_text="▶ 열기"),
+            },
+        )
 
 
 def render_narrative(filtered: pd.DataFrame, full: pd.DataFrame) -> None:
@@ -1668,9 +1920,6 @@ def render_recommendations(
     else:
         for i, rec in enumerate(recommendations, 1):
             st.markdown(f"**{i}.** {rec['title']}")
-            with st.expander("이 제목이 만들어진 근거", expanded=False):
-                st.code(rec["template"], language=None)
-                st.json(rec["values"])
 
         st.download_button(
             "📥 제목 5개 텍스트 다운로드",
@@ -1937,20 +2186,22 @@ def render_discovery_tab() -> None:
 
     new_cfg = render_sidebar()
     if new_cfg is not None:
+        # '발굴 시작'을 눌렀을 때만 API 를 호출하고 결과를 캐시한다.
         st.session_state.active_cfg = new_cfg
-    cfg = st.session_state.get("active_cfg")
-    if cfg is None:
-        st.info("👈 사이드바에서 키워드와 필터를 설정한 뒤 **발굴 시작**을 눌러주세요.")
-        return
+        try:
+            with st.spinner("YouTube API 호출 및 분석 중..."):
+                st.session_state["disc_df"] = run_pipeline(new_cfg)
+        except HttpError as e:
+            st.error(f"YouTube API 오류: {e}")
+            return
+        except Exception as e:
+            st.error(f"실행 중 오류: {e}")
+            return
 
-    try:
-        with st.spinner("YouTube API 호출 및 분석 중..."):
-            df = run_pipeline(cfg)
-    except HttpError as e:
-        st.error(f"YouTube API 오류: {e}")
-        return
-    except Exception as e:
-        st.error(f"실행 중 오류: {e}")
+    cfg = st.session_state.get("active_cfg")
+    df = st.session_state.get("disc_df")
+    if cfg is None or df is None:
+        st.info("👈 사이드바에서 키워드와 필터를 설정한 뒤 **발굴 시작**을 눌러주세요.")
         return
 
     if df.empty:
@@ -2180,11 +2431,1156 @@ VIDEO_IMAGE_EXTS: tuple[str, ...] = (
 )
 
 
+def _find_ffmpeg() -> str | None:
+    return shutil.which("ffmpeg")
+
+
+# ---------------------------------------------------------------------------
+# Background job runner — Streamlit 스크립트와 무관하게 ffmpeg 를 백그라운드로 실행.
+# 잡 메타는 .streamlit/jobs/*.json 으로 영구화돼 브라우저를 닫아도 살아 남는다.
+# ---------------------------------------------------------------------------
+
+JOBS_DIR = os.path.join(".streamlit", "jobs")
+
+
+def _ensure_jobs_dir() -> None:
+    os.makedirs(JOBS_DIR, exist_ok=True)
+
+
+def _job_meta_path(job_id: str) -> str:
+    return os.path.join(JOBS_DIR, f"{job_id}.json")
+
+
+def _job_log_path(job_id: str) -> str:
+    return os.path.join(JOBS_DIR, f"{job_id}.log")
+
+
+def _job_progress_path(job_id: str) -> str:
+    return os.path.join(JOBS_DIR, f"{job_id}.progress")
+
+
+def _job_workdir(job_id: str) -> str:
+    return os.path.join(JOBS_DIR, f"{job_id}_work")
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            STILL_ACTIVE = 259
+            handle = ctypes.windll.kernel32.OpenProcess(
+                PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+            )
+            if not handle:
+                return False
+            exit_code = ctypes.c_ulong()
+            ok = ctypes.windll.kernel32.GetExitCodeProcess(
+                handle, ctypes.byref(exit_code)
+            )
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return bool(ok) and exit_code.value == STILL_ACTIVE
+        except Exception:
+            return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
+
+
+def _terminate_pid(pid: int) -> None:
+    if pid <= 0:
+        return
+    try:
+        if sys.platform == "win32":
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
+                capture_output=True, timeout=10,
+            )
+        else:
+            os.kill(pid, 15)  # SIGTERM
+    except Exception:
+        pass
+
+
+def submit_ffmpeg_job(
+    cmd: list[str],
+    *,
+    kind: str,
+    title: str,
+    output_path: str,
+    workdir: str,
+    extra: dict | None = None,
+) -> str:
+    """ffmpeg 명령을 detached 백그라운드 프로세스로 실행하고 job_id 를 반환.
+
+    cmd 에 -progress 옵션이 자동으로 붙어 진행률을 progress 파일로 저장한다.
+    """
+    _ensure_jobs_dir()
+    job_id = uuid.uuid4().hex[:8]
+    log_path = _job_log_path(job_id)
+    progress_path = _job_progress_path(job_id)
+
+    # ffmpeg 진행률 파이프를 파일로 — Streamlit 이 파싱해서 % 표시.
+    final_cmd = list(cmd)
+    # 첫 인자가 ffmpeg 면 그 뒤에 -progress 끼워넣기 (없으면 그냥 cmd 그대로).
+    if final_cmd and os.path.basename(final_cmd[0]).lower().startswith("ffmpeg"):
+        # -progress 와 -nostats 를 -y 다음에 삽입.
+        insert_at = 1
+        if len(final_cmd) > 1 and final_cmd[1] == "-y":
+            insert_at = 2
+        final_cmd[insert_at:insert_at] = ["-progress", progress_path, "-nostats"]
+
+    log_f = open(log_path, "w", encoding="utf-8", buffering=1)
+    try:
+        creationflags = 0
+        start_new_session = False
+        if sys.platform == "win32":
+            creationflags = (
+                subprocess.CREATE_NEW_PROCESS_GROUP
+                | getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+            )
+        else:
+            start_new_session = True
+        proc = subprocess.Popen(
+            final_cmd,
+            stdout=log_f,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            creationflags=creationflags,
+            start_new_session=start_new_session,
+            close_fds=True,
+        )
+    except Exception as e:
+        log_f.close()
+        raise RuntimeError(f"백그라운드 잡 실행 실패: {e}") from e
+
+    meta = {
+        "id": job_id,
+        "kind": kind,
+        "title": title,
+        "pid": proc.pid,
+        "cmd": final_cmd,
+        "log_path": log_path,
+        "progress_path": progress_path,
+        "output_path": output_path,
+        "workdir": workdir,
+        "started_at": datetime.now().isoformat(),
+        "status": "running",
+        "extra": extra or {},
+    }
+    with open(_job_meta_path(job_id), "w", encoding="utf-8") as fp:
+        json.dump(meta, fp, ensure_ascii=False, indent=2)
+    return job_id
+
+
+def list_jobs() -> list[dict]:
+    if not os.path.isdir(JOBS_DIR):
+        return []
+    jobs = []
+    for f in os.listdir(JOBS_DIR):
+        if not f.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(JOBS_DIR, f), encoding="utf-8") as fp:
+                jobs.append(json.load(fp))
+        except Exception:
+            continue
+    return sorted(jobs, key=lambda j: j.get("started_at", ""), reverse=True)
+
+
+def refresh_job_status(job: dict) -> dict:
+    """PID 와 출력 파일을 보고 running/done/failed 상태를 갱신·저장."""
+    status = job.get("status", "running")
+    if status in ("done", "failed", "cancelled"):
+        return job
+    pid = int(job.get("pid", 0))
+    alive = _pid_alive(pid)
+    if alive:
+        return job
+    output_path = job.get("output_path", "")
+    job["finished_at"] = datetime.now().isoformat()
+    if output_path and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+        job["status"] = "done"
+    else:
+        job["status"] = "failed"
+    try:
+        with open(_job_meta_path(job["id"]), "w", encoding="utf-8") as fp:
+            json.dump(job, fp, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+    return job
+
+
+def parse_job_progress(progress_path: str) -> dict | None:
+    """ffmpeg -progress 출력에서 현재 시간을 파싱.
+
+    파일 형식 예:
+        out_time_us=12345678
+        out_time=00:00:12.345678
+        progress=continue
+    """
+    if not os.path.exists(progress_path):
+        return None
+    try:
+        with open(progress_path, "rb") as fp:
+            fp.seek(0, 2)
+            size = fp.tell()
+            fp.seek(max(0, size - 4096))
+            tail = fp.read().decode("utf-8", errors="replace")
+    except Exception:
+        return None
+    info: dict = {}
+    for line in tail.splitlines():
+        if "=" not in line:
+            continue
+        k, _, v = line.partition("=")
+        info[k.strip()] = v.strip()
+    if "out_time" in info:
+        # H:MM:SS.micro → seconds
+        try:
+            t = info["out_time"]
+            h, m, s = t.split(":")
+            info["current_seconds"] = int(h) * 3600 + int(m) * 60 + float(s)
+        except (ValueError, AttributeError):
+            pass
+    return info or None
+
+
+def cancel_job(job_id: str) -> None:
+    job = None
+    try:
+        with open(_job_meta_path(job_id), encoding="utf-8") as fp:
+            job = json.load(fp)
+    except Exception:
+        return
+    if not job:
+        return
+    _terminate_pid(int(job.get("pid", 0)))
+    job["status"] = "cancelled"
+    job["finished_at"] = datetime.now().isoformat()
+    try:
+        with open(_job_meta_path(job_id), "w", encoding="utf-8") as fp:
+            json.dump(job, fp, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def delete_job(job_id: str, *, remove_files: bool = True) -> None:
+    job = None
+    try:
+        with open(_job_meta_path(job_id), encoding="utf-8") as fp:
+            job = json.load(fp)
+    except Exception:
+        pass
+    if job and job.get("status") == "running":
+        _terminate_pid(int(job.get("pid", 0)))
+    for p in [
+        _job_meta_path(job_id),
+        _job_log_path(job_id),
+        _job_progress_path(job_id),
+    ]:
+        try:
+            if os.path.exists(p):
+                os.remove(p)
+        except OSError:
+            pass
+    if remove_files and job:
+        workdir = job.get("workdir", "")
+        if workdir and os.path.isdir(workdir):
+            shutil.rmtree(workdir, ignore_errors=True)
+
+
+def _ffprobe_duration(path: str) -> float | None:
+    """초 단위 길이. ffprobe 없으면 None 반환."""
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return None
+    try:
+        out = subprocess.run(
+            [
+                ffprobe, "-v", "error", "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1", path,
+            ],
+            capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=30,
+        )
+        return float(out.stdout.strip()) if out.returncode == 0 else None
+    except Exception:
+        return None
+
+
+def concat_audio_files(
+    audio_paths: list[str], output_path: str, *, bitrate: str = "320k"
+) -> tuple[bool, str]:
+    """여러 오디오를 하나로 이어붙임. concat 필터로 재인코딩(샘플레이트 통일)."""
+    ffmpeg = _find_ffmpeg()
+    if not ffmpeg:
+        return False, "ffmpeg 가 PATH 에 없습니다."
+    if not audio_paths:
+        return False, "이어붙일 오디오가 없습니다."
+    if len(audio_paths) == 1:
+        try:
+            shutil.copyfile(audio_paths[0], output_path)
+            return True, "단일 파일 복사 완료."
+        except Exception as e:
+            return False, f"단일 파일 복사 실패: {e}"
+
+    cmd: list[str] = [ffmpeg, "-y", "-hide_banner"]
+    for p in audio_paths:
+        cmd += ["-i", p]
+    n = len(audio_paths)
+    filter_str = "".join(f"[{i}:a]" for i in range(n)) + f"concat=n={n}:v=0:a=1[out]"
+    cmd += [
+        "-filter_complex", filter_str,
+        "-map", "[out]",
+        "-c:a", "aac",
+        "-b:a", bitrate,
+        output_path,
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60 * 60 * 2)
+    except subprocess.TimeoutExpired:
+        return False, "오디오 이어붙이기가 2시간 안에 끝나지 않았습니다."
+    except FileNotFoundError as e:
+        return False, f"ffmpeg 실행 실패 (FileNotFoundError): {e}"
+    except Exception as e:
+        return False, f"오디오 concat 중 예외: {type(e).__name__}: {e}"
+    return proc.returncode == 0, _format_ffmpeg_log(cmd, proc)
+
+
+def _format_ffmpeg_log(cmd: list[str], proc: subprocess.CompletedProcess) -> str:
+    """ffmpeg 결과를 사람이 읽을 수 있는 로그 블록으로 정리한다.
+
+    returncode + 실행한 커맨드 + stdout/stderr 꼬리를 함께 묶어, '(로그 없음)' 처럼
+    아무 단서도 없는 실패가 나오지 않도록 한다.
+    """
+    parts = [f"returncode = {proc.returncode}"]
+    parts.append("cmd:\n  " + " ".join(cmd))
+    out = (proc.stdout or "").strip()
+    err = (proc.stderr or "").strip()
+    if out:
+        parts.append("--- stdout (tail) ---\n" + out[-1500:])
+    if err:
+        parts.append("--- stderr (tail) ---\n" + err[-2500:])
+    if not out and not err:
+        parts.append("(ffmpeg 가 stdout/stderr 를 출력하지 않았습니다 — 인자 누락/조기 종료 가능성)")
+    return "\n\n".join(parts)
+
+
+def _format_srt_time(seconds: float) -> str:
+    seconds = max(0.0, seconds)
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    ms = int(round((seconds - int(seconds)) * 1000))
+    if ms == 1000:
+        ms = 0
+        s += 1
+    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+
+def generate_srt(tracks: list[dict]) -> str:
+    """
+    tracks: [{"title": str, "duration": float, "lyrics_lines": list[str]}]
+    각 트랙 안에서는 가사 라인을 트랙 길이에 따라 균등 분배,
+    트랙 간에는 누적 타임스탬프로 SRT 한 파일을 만든다.
+    """
+    out: list[str] = []
+    cumulative = 0.0
+    counter = 1
+    for tr in tracks:
+        duration = max(float(tr.get("duration", 0) or 0), 0.0)
+        lines = [ln.strip() for ln in tr.get("lyrics_lines", []) if ln.strip()]
+        if not lines or duration <= 0:
+            cumulative += duration
+            continue
+        per_line = duration / len(lines)
+        for i, line in enumerate(lines):
+            start = cumulative + i * per_line
+            end = cumulative + (i + 1) * per_line
+            out.append(str(counter))
+            out.append(f"{_format_srt_time(start)} --> {_format_srt_time(end)}")
+            out.append(line)
+            out.append("")
+            counter += 1
+        cumulative += duration
+    return "\n".join(out).strip() + "\n"
+
+
+SPEED_PRESETS: dict[str, dict] = {
+    "fast": {
+        "label": "⚡ 빠른 (8h 영상 ~5분)",
+        "preset": "ultrafast",
+        "fps_video": 24,
+        "fps_static": 1,
+        "crf_offset": 0,
+    },
+    "balanced": {
+        "label": "⚖️ 균형 (8h 영상 ~30분)",
+        "preset": "veryfast",
+        "fps_video": 24,
+        "fps_static": 6,
+        "crf_offset": 0,
+    },
+    "quality": {
+        "label": "💎 고화질 (8h 영상 ~수시간)",
+        "preset": "medium",
+        "fps_video": 24,
+        "fps_static": 24,
+        "crf_offset": 0,
+    },
+}
+
+
+def _build_slideshow_cmd(
+    image_paths: list[str],
+    output_path: str,
+    list_path: str,
+    *,
+    seconds_per_image: float | list[float],
+    resolution: str,
+    fps: int,
+    preset: str,
+) -> tuple[list[str], str]:
+    """슬라이드쇼 ffmpeg 명령 + concat list 파일 작성. (cmd, list_path) 반환.
+
+    seconds_per_image 는 단일 float 이면 모든 이미지 동일 시간,
+    list[float] 이면 이미지별 개별 시간으로 적용.
+    """
+    ffmpeg = _find_ffmpeg() or "ffmpeg"
+    try:
+        rw, rh = resolution.lower().split("x")
+        rw, rh = int(rw), int(rh)
+    except ValueError as e:
+        raise ValueError(f"해상도 형식 오류: {resolution!r}") from e
+
+    def _quote(p: str) -> str:
+        return p.replace("\\", "/").replace("'", "'\\''")
+
+    if isinstance(seconds_per_image, list):
+        if len(seconds_per_image) != len(image_paths):
+            raise ValueError(
+                f"이미지 수({len(image_paths)})와 개별 시간 리스트 길이"
+                f"({len(seconds_per_image)})가 일치하지 않습니다."
+            )
+        durations = [float(max(0.1, s)) for s in seconds_per_image]
+    else:
+        durations = [float(seconds_per_image)] * len(image_paths)
+
+    with open(list_path, "w", encoding="utf-8") as fp:
+        for p, d in zip(image_paths, durations):
+            fp.write(f"file '{_quote(p)}'\n")
+            fp.write(f"duration {d}\n")
+        fp.write(f"file '{_quote(image_paths[-1])}'\n")
+
+    vf = (
+        f"scale={rw}:{rh}:force_original_aspect_ratio=decrease,"
+        f"pad={rw}:{rh}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,format=yuv420p"
+    )
+    cmd = [
+        ffmpeg, "-y", "-hide_banner",
+        "-f", "concat", "-safe", "0", "-i", list_path,
+        "-vf", vf,
+        "-c:v", "libx264", "-preset", preset, "-crf", "22",
+        "-r", str(fps),
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+        output_path,
+    ]
+    return cmd, list_path
+
+
+def build_slideshow_from_images(
+    image_paths: list[str],
+    output_path: str,
+    *,
+    seconds_per_image: float = 5.0,
+    resolution: str = "1920x1080",
+    fps: int = 30,
+    preset: str = "medium",
+) -> tuple[bool, str]:
+    """동기 실행 (백그라운드 잡에서는 _build_slideshow_cmd 만 따로 호출)."""
+    ffmpeg = _find_ffmpeg()
+    if not ffmpeg:
+        return False, "ffmpeg 가 PATH 에 없습니다."
+    if not image_paths:
+        return False, "슬라이드쇼에 사용할 이미지가 없습니다."
+
+    workdir = os.path.dirname(output_path) or "."
+    list_path = os.path.join(workdir, "slideshow_list.txt")
+    try:
+        cmd, _ = _build_slideshow_cmd(
+            image_paths, output_path, list_path,
+            seconds_per_image=seconds_per_image,
+            resolution=resolution, fps=fps, preset=preset,
+        )
+    except ValueError as e:
+        return False, str(e)
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=60 * 60,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "슬라이드쇼 생성이 1시간 안에 끝나지 않았습니다."
+    except FileNotFoundError as e:
+        return False, f"ffmpeg 실행 실패: {e}"
+    except Exception as e:
+        return False, f"슬라이드쇼 생성 중 예외: {type(e).__name__}: {e}"
+    return proc.returncode == 0, _format_ffmpeg_log(cmd, proc)
+
+
+def _build_audio_only_cmd(
+    cycle_audio: str,
+    output_path: str,
+    *,
+    target_duration: float,
+    bitrate: str,
+) -> list[str]:
+    """오디오만 N시간으로 늘려 만드는 ffmpeg 명령. 확장자가 .mp3 면 mp3, 아니면 aac."""
+    ffmpeg = _find_ffmpeg() or "ffmpeg"
+    cmd = [ffmpeg, "-y", "-hide_banner",
+           "-stream_loop", "-1", "-i", cycle_audio,
+           "-t", f"{max(0.5, target_duration):.3f}"]
+    ext = os.path.splitext(output_path)[1].lower()
+    if ext == ".mp3":
+        cmd += ["-c:a", "libmp3lame", "-b:a", bitrate]
+    else:
+        cmd += ["-c:a", "aac", "-b:a", bitrate]
+    cmd += ["-movflags", "+faststart"] if ext in (".m4a", ".mp4") else []
+    cmd.append(output_path)
+    return cmd
+
+
+def _build_visual_only_cmd(
+    cycle_visual: str,
+    output_path: str,
+    *,
+    target_duration: float,
+    is_image: bool,
+    resolution: str,
+    preset: str,
+    framerate: int,
+    crf: int,
+) -> list[str]:
+    """무음 슬라이드/이미지 영상을 target_duration 길이로 만드는 ffmpeg 명령."""
+    ffmpeg = _find_ffmpeg() or "ffmpeg"
+    try:
+        rw, rh = resolution.lower().split("x")
+        rw, rh = int(rw), int(rh)
+    except ValueError as e:
+        raise ValueError(f"해상도 형식 오류: {resolution!r}") from e
+
+    cmd = [ffmpeg, "-y", "-hide_banner"]
+    if is_image:
+        cmd += ["-loop", "1"]
+    else:
+        cmd += ["-stream_loop", "-1"]
+    cmd += ["-i", cycle_visual]
+
+    vf = (
+        f"scale={rw}:{rh}:force_original_aspect_ratio=decrease,"
+        f"pad={rw}:{rh}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,format=yuv420p"
+    )
+    cmd += [
+        "-t", f"{max(0.5, target_duration):.3f}",
+        "-vf", vf,
+        "-c:v", "libx264", "-preset", preset, "-crf", str(crf),
+        "-r", str(framerate),
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+        "-an",  # 무음
+    ]
+    if is_image:
+        cmd += ["-tune", "stillimage", "-g", str(max(framerate * 10, 50))]
+    cmd.append(output_path)
+    return cmd
+
+
+def _build_encode_cmd(
+    audio_path: str,
+    visual_path: str,
+    output_path: str,
+    *,
+    is_image: bool,
+    resolution: str,
+    audio_bitrate: str,
+    crf: int,
+    fade_seconds: float,
+    audio_duration: float | None,
+    subtitles_path: str | None,
+    audio_loop_count: int,
+    preset: str,
+    framerate: int,
+) -> list[str]:
+    """encode_music_video 용 ffmpeg 인자 리스트만 생성.
+
+    백그라운드 잡 제출 시에도 동일 명령을 재사용한다.
+    """
+    ffmpeg = _find_ffmpeg() or "ffmpeg"
+    try:
+        rw, rh = resolution.lower().split("x")
+        rw, rh = int(rw), int(rh)
+    except ValueError as e:
+        raise ValueError(f"해상도 형식 오류: {resolution!r} (예: 1920x1080)") from e
+
+    cmd: list[str] = [ffmpeg, "-y", "-hide_banner"]
+    if is_image:
+        cmd += ["-loop", "1"]
+    else:
+        cmd += ["-stream_loop", "-1"]
+    cmd += ["-i", visual_path]
+
+    if audio_loop_count > 1:
+        cmd += ["-stream_loop", str(audio_loop_count - 1)]
+    cmd += ["-i", audio_path]
+
+    vf_parts = [
+        f"scale={rw}:{rh}:force_original_aspect_ratio=decrease",
+        f"pad={rw}:{rh}:(ow-iw)/2:(oh-ih)/2:color=black",
+        "setsar=1",
+    ]
+    if subtitles_path:
+        esc = (
+            subtitles_path
+            .replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
+        )
+        vf_parts.append(
+            f"subtitles='{esc}':force_style='FontSize=24,PrimaryColour=&H00FFFFFF&,"
+            "OutlineColour=&H80000000&,BorderStyle=3,Outline=2,Shadow=0,MarginV=60'"
+        )
+    vf = ",".join(vf_parts)
+
+    cmd += [
+        "-map", "0:v:0",
+        "-map", "1:a:0",
+        "-c:v", "libx264",
+        "-preset", preset,
+        "-crf", str(crf),
+        "-pix_fmt", "yuv420p",
+        "-vf", vf,
+        "-r", str(framerate),
+        "-c:a", "aac",
+        "-b:a", audio_bitrate,
+        "-movflags", "+faststart",
+        "-shortest",
+    ]
+    if is_image:
+        # 정지 이미지에서 키프레임 간격을 늘려 파일 크기를 줄인다.
+        cmd += ["-tune", "stillimage", "-g", str(max(framerate * 10, 50))]
+
+    if fade_seconds > 0 and audio_duration and audio_duration > fade_seconds * 2:
+        fade_out_start = max(audio_duration - fade_seconds, 0)
+        cmd += [
+            "-af",
+            f"afade=t=in:st=0:d={fade_seconds},"
+            f"afade=t=out:st={fade_out_start}:d={fade_seconds}",
+        ]
+    cmd.append(output_path)
+    return cmd
+
+
+def encode_music_video(
+    audio_path: str,
+    visual_path: str,
+    output_path: str,
+    *,
+    is_image: bool,
+    resolution: str = "1920x1080",
+    audio_bitrate: str = "192k",
+    crf: int = 22,
+    fade_seconds: float = 0.0,
+    audio_duration: float | None = None,
+    subtitles_path: str | None = None,
+    audio_loop_count: int = 1,
+    preset: str = "medium",
+    framerate: int = 24,
+) -> tuple[bool, str]:
+    """ffmpeg 동기 실행. (성공여부, 로그) 반환."""
+    ffmpeg = _find_ffmpeg()
+    if not ffmpeg:
+        return False, "ffmpeg 가 PATH 에 없습니다. 시스템에 ffmpeg 를 설치해주세요."
+    try:
+        cmd = _build_encode_cmd(
+            audio_path, visual_path, output_path,
+            is_image=is_image, resolution=resolution,
+            audio_bitrate=audio_bitrate, crf=crf,
+            fade_seconds=fade_seconds, audio_duration=audio_duration,
+            subtitles_path=subtitles_path, audio_loop_count=audio_loop_count,
+            preset=preset, framerate=framerate,
+        )
+    except ValueError as e:
+        return False, str(e)
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=60 * 60 * 8,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "인코딩이 8시간 안에 끝나지 않았습니다."
+    except FileNotFoundError as e:
+        return False, f"ffmpeg 실행 실패 (FileNotFoundError): {e}"
+    except Exception as e:
+        return False, f"인코딩 중 예외: {type(e).__name__}: {e}"
+    return proc.returncode == 0, _format_ffmpeg_log(cmd, proc)
+
+
+def _fmt_duration(seconds: float | None) -> str:
+    if not seconds or seconds <= 0:
+        return "??"
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    return f"{h:d}:{m:02d}:{s:02d}" if h else f"{m:d}:{s:02d}"
+
+
+def _fmt_chapter_time(seconds: float) -> str:
+    """유튜브 챕터 마커 표기 — H:MM:SS / M:SS."""
+    s = int(round(max(0.0, seconds)))
+    h, rem = divmod(s, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h:d}:{m:02d}:{s:02d}" if h else f"{m:d}:{s:02d}"
+
+
+def _clean_track_label(filename: str) -> str:
+    name = os.path.splitext(os.path.basename(filename))[0]
+    return name.replace("_", " ").replace("-", " ").strip()
+
+
+def build_tracklist_text(
+    track_metas: list[dict],
+    *,
+    loop_count: int = 1,
+    mode: str = "sequential",
+    full_expand: bool = False,
+    header: str = "🎵 트랙리스트",
+) -> str:
+    """유튜브 설명란용 트랙리스트 텍스트.
+
+    - single_loop : 1트랙 + 반복 안내
+    - sequential  : 누적 시간으로 N곡 나열
+    - bundle_loop : 첫 사이클만(기본) 또는 모든 사이클 확장
+    """
+    if not track_metas:
+        return ""
+    lines: list[str] = [header]
+    if mode == "single_loop":
+        m = track_metas[0]
+        lines.append(f"{_fmt_chapter_time(0)} - {_clean_track_label(m['name'])}")
+        if loop_count > 1:
+            lines.append("")
+            lines.append(f"(총 {loop_count}회 반복 · 한 곡 {_fmt_duration(m['duration'])})")
+        return "\n".join(lines)
+
+    cycle_duration = sum(m["duration"] for m in track_metas)
+    cycles = loop_count if (mode == "bundle_loop" and full_expand) else 1
+    for c in range(cycles):
+        if cycles > 1:
+            lines.append("")
+            lines.append(f"── 사이클 {c + 1} ──")
+        t = c * cycle_duration
+        for m in track_metas:
+            lines.append(f"{_fmt_chapter_time(t)} - {_clean_track_label(m['name'])}")
+            t += m["duration"]
+    if mode == "bundle_loop" and not full_expand and loop_count > 1:
+        lines.append("")
+        lines.append(
+            f"(위 {len(track_metas)}곡 묶음을 총 {loop_count}회 반복 · "
+            f"한 사이클 {_fmt_duration(cycle_duration)})"
+        )
+    return "\n".join(lines)
+
+
+def _pick_target_duration_ui(key_prefix: str, *, cycle_seconds: float | None = None) -> int:
+    """공통 '목표 길이' 위젯. (목표 시간(초)) 을 반환.
+
+    빠른 프리셋 칩 + 시간/분 입력 두 칸. cycle_seconds 가 주어지면 반복 회수 미리보기.
+    """
+    preset_minutes = {
+        "15분": 15, "30분": 30, "1시간": 60, "2시간": 120,
+        "3시간": 180, "4시간": 240, "8시간": 480, "10시간": 600,
+    }
+    st.caption("⚡ 빠른 선택")
+    cols = st.columns(len(preset_minutes))
+    for (label, mins), col in zip(preset_minutes.items(), cols):
+        if col.button(label, key=f"{key_prefix}_chip_{label}", use_container_width=True):
+            st.session_state[f"{key_prefix}_hours"] = mins // 60
+            st.session_state[f"{key_prefix}_minutes"] = mins % 60
+            st.rerun()
+
+    t1, t2, t3 = st.columns([1, 1, 2])
+    hours_part = t1.number_input(
+        "시간", min_value=0, max_value=24, value=1, step=1, key=f"{key_prefix}_hours"
+    )
+    minutes_part = t2.number_input(
+        "분", min_value=0, max_value=59, value=0, step=1, key=f"{key_prefix}_minutes"
+    )
+    target_seconds = int(hours_part) * 3600 + int(minutes_part) * 60
+    if target_seconds <= 0:
+        t3.warning("시간 또는 분 중 하나는 0보다 커야 합니다.")
+    else:
+        info = f"목표 = **{_fmt_duration(target_seconds)}** ({hours_part}시간 {minutes_part}분)"
+        if cycle_seconds and cycle_seconds > 0:
+            loops = max(1, int(round(target_seconds / cycle_seconds)))
+            info += f" · 한 사이클 {_fmt_duration(cycle_seconds)} × **{loops}회 반복**"
+        t3.caption(info)
+    return target_seconds
+
+
+def _render_compose_audio_only() -> None:
+    """🎵 음악만 — 곡들 이어붙여 목표 시간으로 만드는 워크플로."""
+    st.markdown("### 🎵 음악만 — 목표 시간으로 길게 만들기")
+
+    audio_files = st.file_uploader(
+        "🎵 음악 파일 (여러 개 — 업로드 순서대로 이어붙임)",
+        type=list(AUDIO_EXTS),
+        accept_multiple_files=True,
+        key="compose_audio_only_files",
+    )
+    audio_files = audio_files or []
+
+    track_metas: list[dict] = []
+    cycle_duration = 0.0
+    if audio_files:
+        st.markdown("##### 📋 업로드된 트랙")
+        probe_dir = tempfile.mkdtemp(prefix="ytmusic_aoprobe_")
+        try:
+            for idx, f in enumerate(audio_files, 1):
+                pth = os.path.join(probe_dir, f.name)
+                with open(pth, "wb") as fp:
+                    fp.write(f.getbuffer())
+                dur = _ffprobe_duration(pth) or 0.0
+                cycle_duration += dur
+                track_metas.append({"name": f.name, "duration": dur, "index": idx})
+            st.dataframe(
+                pd.DataFrame(
+                    [{"#": m["index"], "파일": m["name"], "길이": _fmt_duration(m["duration"])}
+                     for m in track_metas]
+                ),
+                hide_index=True, use_container_width=True,
+            )
+            st.caption(
+                f"한 사이클 길이: **{_fmt_duration(cycle_duration)}**  ·  {len(audio_files)}곡"
+            )
+        finally:
+            shutil.rmtree(probe_dir, ignore_errors=True)
+
+    st.markdown("##### ⏱️ 목표 길이")
+    target_seconds = _pick_target_duration_ui(
+        "compose_audio_only", cycle_seconds=cycle_duration if cycle_duration > 0 else None,
+    )
+
+    st.markdown("##### ⚙️ 인코딩 옵션")
+    o1, o2 = st.columns(2)
+    with o1:
+        out_format = st.selectbox(
+            "출력 포맷",
+            options=["mp3", "m4a"],
+            index=0,
+            key="compose_audio_only_format",
+            help="유튜브 업로드 용도라면 m4a(aac) 가 약간 효율적, 범용성은 mp3.",
+        )
+    with o2:
+        bitrate = st.selectbox(
+            "비트레이트",
+            options=["128k", "192k", "256k", "320k"],
+            index=2,
+            key="compose_audio_only_bitrate",
+        )
+
+    if not audio_files:
+        st.info("음악 파일을 1개 이상 업로드해주세요.")
+        return
+    if target_seconds <= 0:
+        return
+
+    if st.button(
+        "🚀 음악 잡 제출 (백그라운드)",
+        type="primary",
+        use_container_width=True,
+        key="compose_audio_only_run",
+    ):
+        _ensure_jobs_dir()
+        pre_job_id = uuid.uuid4().hex[:8]
+        workdir = _job_workdir(pre_job_id)
+        os.makedirs(workdir, exist_ok=True)
+
+        audio_paths: list[str] = []
+        for f in audio_files:
+            p = os.path.join(workdir, f.name)
+            with open(p, "wb") as fp:
+                fp.write(f.getbuffer())
+            audio_paths.append(p)
+
+        cycle_audio = os.path.join(workdir, "cycle.m4a")
+        if len(audio_paths) > 1:
+            with st.spinner(f"🎚️ 오디오 {len(audio_paths)}곡 이어붙이는 중..."):
+                ok, log = concat_audio_files(audio_paths, cycle_audio, bitrate=bitrate)
+            if not ok:
+                st.error("오디오 이어붙이기 실패")
+                with st.expander("ffmpeg 로그", expanded=True):
+                    st.code(log or "(없음)", language=None)
+                shutil.rmtree(workdir, ignore_errors=True)
+                return
+        else:
+            cycle_audio = audio_paths[0]
+
+        measured = _ffprobe_duration(cycle_audio) or cycle_duration or 0.0
+        loops_estimate = max(1, int(round(target_seconds / measured))) if measured else 1
+        output_path = os.path.join(workdir, f"music.{out_format}")
+        cmd = _build_audio_only_cmd(
+            cycle_audio, output_path,
+            target_duration=float(target_seconds),
+            bitrate=bitrate,
+        )
+
+        tracklist_text = build_tracklist_text(
+            track_metas, loop_count=1, mode="sequential",
+        )
+        job_title = (
+            f"🎵 음악만 · {len(audio_files)}곡 · 목표 {_fmt_duration(target_seconds)} "
+            f"· {out_format.upper()} {bitrate}"
+        )
+        try:
+            job_id = submit_ffmpeg_job(
+                cmd,
+                kind="compose_audio",
+                title=job_title,
+                output_path=output_path,
+                workdir=workdir,
+                extra={
+                    "duration": target_seconds,
+                    "resolution": f"{out_format.upper()} {bitrate}",
+                    "loop_count": loops_estimate,
+                    "track_count": len(audio_files),
+                    "mode": "audio_only",
+                    "tracklist": tracklist_text,
+                },
+            )
+        except RuntimeError as e:
+            st.error(str(e))
+            shutil.rmtree(workdir, ignore_errors=True)
+            return
+
+        st.session_state["compose_last_job_id"] = job_id
+        st.success(
+            f"✅ 잡 `{job_id}` 제출됨 — 예상 길이 {_fmt_duration(target_seconds)}.  \n"
+            f"📦 **인코딩 잡** 탭에서 진행 상황을 확인하세요."
+        )
+
+
+def _render_compose_visual_only() -> None:
+    """🖼️ 영상만 (무음) — 이미지/영상으로 슬라이드쇼 만들기."""
+    st.markdown("### 🖼️ 영상만 (무음) — 슬라이드쇼/영상 길게 만들기")
+
+    visual_uploaded = st.file_uploader(
+        "🖼️ 배경 — 영상 1개 / 이미지 1장 / 이미지 여러 장(슬라이드쇼)",
+        type=list(VIDEO_IMAGE_EXTS),
+        accept_multiple_files=True,
+        key="compose_visual_only_files",
+        help="이미지를 여러 장 드래그하면 슬라이드쇼로 합성합니다.",
+    )
+    visual_files: list = list(visual_uploaded or [])
+
+    def _is_image_name(n: str) -> bool:
+        return n.lower().endswith(IMAGE_EXTS)
+
+    is_slideshow = len(visual_files) > 1 and all(_is_image_name(f.name) for f in visual_files)
+    if len(visual_files) > 1 and not is_slideshow:
+        st.warning(
+            f"⚠️ 영상과 이미지가 섞여 있어 첫 파일(`{visual_files[0].name}`)만 사용합니다."
+        )
+        visual_files = visual_files[:1]
+        is_slideshow = False
+
+    # 슬라이드 시간 설정
+    per_image_durations: list[float] = []
+    seconds_per_image = 5.0
+    if is_slideshow:
+        st.markdown(f"##### 🖼️ 슬라이드쇼 — 이미지 {len(visual_files)}장")
+        per_image_mode = st.radio(
+            "이미지별 표시 시간",
+            options=["uniform", "individual"],
+            format_func=lambda k: {
+                "uniform": "🟰 모두 같은 시간 (한 값으로 적용)",
+                "individual": "🎚️ 이미지별로 다른 시간 (개별 지정)",
+            }[k],
+            horizontal=True,
+            key="compose_vo_per_image_mode",
+        )
+        if per_image_mode == "uniform":
+            seconds_per_image = st.number_input(
+                "각 이미지당 표시 시간 (초)",
+                min_value=0.5, max_value=600.0, value=5.0, step=0.5,
+                key="compose_vo_seconds",
+            )
+            per_image_durations = [seconds_per_image] * len(visual_files)
+        else:
+            st.caption("각 이미지마다 표시 시간을 따로 지정하세요 (초).")
+            ind_cols = st.columns(min(4, len(visual_files)))
+            for i, vf in enumerate(visual_files):
+                with ind_cols[i % len(ind_cols)]:
+                    d = st.number_input(
+                        f"{i + 1}. {vf.name[:18]}",
+                        min_value=0.5, max_value=3600.0, value=5.0, step=0.5,
+                        key=f"compose_vo_dur_{i}",
+                    )
+                    per_image_durations.append(float(d))
+        cycle_visual = sum(per_image_durations) if per_image_durations else 0
+        st.caption(
+            f"슬라이드쇼 한 사이클: ≈ **{_fmt_duration(cycle_visual)}** "
+            f"({len(visual_files)}장)"
+        )
+    elif visual_files:
+        # 단일 영상 또는 단일 이미지
+        f = visual_files[0]
+        if _is_image_name(f.name):
+            st.caption(f"📷 정지 이미지: `{f.name}` — 목표 시간만큼 그대로 유지합니다.")
+        else:
+            st.caption(f"🎬 영상: `{f.name}` — 목표 시간만큼 자동 루프합니다.")
+
+    st.markdown("##### ⏱️ 목표 길이")
+    target_seconds = _pick_target_duration_ui("compose_visual_only")
+
+    st.markdown("##### ⚙️ 인코딩 옵션")
+    speed_label_to_key = {v["label"]: k for k, v in SPEED_PRESETS.items()}
+    sp_col, _ = st.columns([2, 3])
+    with sp_col:
+        speed_label = st.radio(
+            "인코딩 속도 ↔ 화질",
+            options=list(speed_label_to_key.keys()),
+            index=0,
+            key="compose_vo_speed",
+        )
+    speed_key = speed_label_to_key[speed_label]
+    speed_cfg = SPEED_PRESETS[speed_key]
+
+    o1, o2 = st.columns(2)
+    with o1:
+        resolution = st.selectbox(
+            "해상도",
+            options=["1920x1080", "1280x720", "3840x2160", "2560x1440"],
+            index=0,
+            key="compose_vo_resolution",
+        )
+    with o2:
+        crf = st.slider(
+            "비디오 품질 (CRF)",
+            min_value=18, max_value=30, value=22, step=1,
+            key="compose_vo_crf",
+        )
+
+    if not visual_files:
+        st.info("영상 또는 이미지를 업로드해주세요.")
+        return
+    if target_seconds <= 0:
+        return
+
+    if st.button(
+        "🚀 무음 영상 잡 제출 (백그라운드)",
+        type="primary",
+        use_container_width=True,
+        key="compose_visual_only_run",
+    ):
+        _ensure_jobs_dir()
+        pre_job_id = uuid.uuid4().hex[:8]
+        workdir = _job_workdir(pre_job_id)
+        os.makedirs(workdir, exist_ok=True)
+
+        if is_slideshow:
+            image_paths: list[str] = []
+            for vf in visual_files:
+                p = os.path.join(workdir, vf.name)
+                with open(p, "wb") as fp:
+                    fp.write(vf.getbuffer())
+                image_paths.append(p)
+            slideshow_path = os.path.join(workdir, "slideshow.mp4")
+            with st.spinner(
+                f"🖼️ 슬라이드쇼 합성 중 — {len(image_paths)}장 (개별 시간 적용)"
+            ):
+                ok_s, log_s = build_slideshow_from_images(
+                    image_paths, slideshow_path,
+                    seconds_per_image=(
+                        per_image_durations if per_image_durations
+                        else seconds_per_image
+                    ),
+                    resolution=resolution,
+                    preset=speed_cfg["preset"],
+                )
+            if not ok_s or not os.path.exists(slideshow_path):
+                st.error("슬라이드쇼 합성 실패")
+                with st.expander("ffmpeg 로그", expanded=True):
+                    st.code(log_s or "(로그 없음)", language=None)
+                shutil.rmtree(workdir, ignore_errors=True)
+                return
+            cycle_visual = slideshow_path
+            is_image = False
+        else:
+            f = visual_files[0]
+            cycle_visual = os.path.join(workdir, f.name)
+            with open(cycle_visual, "wb") as fp:
+                fp.write(f.getbuffer())
+            is_image = _is_image_name(f.name)
+
+        framerate = speed_cfg["fps_static"] if is_image else speed_cfg["fps_video"]
+        output_path = os.path.join(workdir, "visual.mp4")
+        try:
+            cmd = _build_visual_only_cmd(
+                cycle_visual, output_path,
+                target_duration=float(target_seconds),
+                is_image=is_image,
+                resolution=resolution,
+                preset=speed_cfg["preset"],
+                framerate=framerate,
+                crf=int(crf),
+            )
+        except ValueError as e:
+            st.error(str(e))
+            shutil.rmtree(workdir, ignore_errors=True)
+            return
+
+        job_title = (
+            f"🖼️ 영상만 · {len(visual_files)}개 입력 · 목표 {_fmt_duration(target_seconds)} "
+            f"· {resolution} · {speed_cfg['label']}"
+        )
+        try:
+            job_id = submit_ffmpeg_job(
+                cmd,
+                kind="compose_visual",
+                title=job_title,
+                output_path=output_path,
+                workdir=workdir,
+                extra={
+                    "duration": target_seconds,
+                    "resolution": resolution,
+                    "loop_count": 1,
+                    "track_count": len(visual_files),
+                    "mode": "visual_only",
+                    "tracklist": "",
+                    "speed_preset": speed_key,
+                },
+            )
+        except RuntimeError as e:
+            st.error(str(e))
+            shutil.rmtree(workdir, ignore_errors=True)
+            return
+
+        st.session_state["compose_last_job_id"] = job_id
+        st.success(
+            f"✅ 잡 `{job_id}` 제출됨 — 예상 길이 {_fmt_duration(target_seconds)}.  \n"
+            f"📦 **인코딩 잡** 탭에서 진행 상황을 확인하세요."
+        )
+
+
 def render_compose_tab() -> None:
-    st.subheader("🎬 영상 합성 (MP3 + 배경 → MP4 인코딩)")
+    st.subheader("🎬 영상 합성 (인코딩)")
     st.caption(
-        "직접 만든 곡들을 이어붙여 1시간/3시간/4시간 영상으로 합성하고, "
-        "원하면 곡별 가사를 타임라인에 정렬한 SRT 자막까지 함께 만들 수 있습니다."
+        "음악·영상·이미지를 자유롭게 조합해 원하는 길이로 인코딩합니다. "
+        "모든 인코딩은 백그라운드 잡으로 실행되어 다른 탭에서 작업해도 끊기지 않습니다."
     )
 
     ffmpeg = _find_ffmpeg()
@@ -2204,79 +3600,249 @@ def render_compose_tab() -> None:
         return
     st.caption(f"✓ ffmpeg 감지됨: `{ffmpeg}`")
 
-    audio_files = st.file_uploader(
-        "🎵 음악 파일 (여러 개 가능 — 업로드한 순서대로 이어붙여집니다)",
-        type=list(AUDIO_EXTS),
-        accept_multiple_files=True,
-        key="compose_audio_multi",
-        help="여러 곡을 올리면 ffmpeg concat 으로 한 트랙으로 결합한 뒤 영상에 입힙니다.",
-    )
-    visual_file = st.file_uploader(
-        "🖼️ 배경 영상 또는 이미지 (필수, 1개)",
-        type=list(VIDEO_IMAGE_EXTS),
-        key="compose_visual",
-        help="MP4/MOV 등 영상, 또는 PNG/JPG 같은 정지 이미지 한 장. "
-             "영상이 오디오보다 짧으면 자동으로 루프됩니다.",
+    # ---- 출력 종류 (최상단) ----
+    output_type = st.radio(
+        "📦 출력 종류",
+        options=["av", "audio", "visual"],
+        format_func=lambda k: {
+            "av":     "🎬 음악 + 영상 (MP4) — 곡들 + 배경을 합쳐 긴 뮤직비디오",
+            "audio":  "🎵 음악만 (MP3/M4A) — 곡들 이어붙이고 N시간 길이로",
+            "visual": "🖼️ 영상만 (MP4, 무음) — 이미지/영상으로 슬라이드쇼 N시간",
+        }[k],
+        index=0,
+        key="compose_output_type",
+        help="음악만 / 영상만 출력도 가능합니다.",
     )
 
-    # ---- 곡 리스트 + 길이 미리보기 ----
+    if output_type == "audio":
+        _render_compose_audio_only()
+        return
+    if output_type == "visual":
+        _render_compose_visual_only()
+        return
+
+    # ---- 합성 모드 ----
+    mode_labels = {
+        "single_loop": "🎵 단일 곡 반복 — 한 곡을 N번 반복해 긴 영상으로",
+        "sequential":  "🔗 여러 곡 순차 이어붙이기 — 각 곡을 한 번씩",
+        "bundle_loop": "🔁 묶음 반복 — 여러 곡을 한 사이클로 묶어 N번 반복",
+    }
+    mode = st.radio(
+        "합성 모드",
+        options=list(mode_labels.keys()),
+        format_func=lambda k: mode_labels[k],
+        index=1,
+        key="compose_mode",
+    )
+
+    multi_allowed = mode in ("sequential", "bundle_loop")
+    uploaded = st.file_uploader(
+        ("🎵 음악 파일 (여러 개 — 업로드 순서대로 이어붙임)"
+         if multi_allowed else "🎵 음악 파일 (1개)"),
+        type=list(AUDIO_EXTS),
+        accept_multiple_files=multi_allowed,
+        key=f"compose_audio_{mode}",
+    )
+    if uploaded is None:
+        audio_files: list = []
+    elif isinstance(uploaded, list):
+        audio_files = uploaded
+    else:
+        audio_files = [uploaded]
+
+    visual_uploaded = st.file_uploader(
+        "🖼️ 배경 — 영상 1개 / 이미지 1장 / 이미지 여러 장(슬라이드쇼)",
+        type=list(VIDEO_IMAGE_EXTS),
+        accept_multiple_files=True,
+        key="compose_visuals_multi",
+        help="이미지를 여러 장 드래그하면 슬라이드쇼 영상으로 자동 합성합니다. "
+             "영상이 오디오보다 짧으면 자동 루프됩니다.",
+    )
+    visual_files: list = list(visual_uploaded or [])
+
+    def _is_image_name(n: str) -> bool:
+        return n.lower().endswith(IMAGE_EXTS)
+
+    is_slideshow = len(visual_files) > 1 and all(_is_image_name(f.name) for f in visual_files)
+    has_mixed = (
+        len(visual_files) > 1
+        and not is_slideshow
+    )
+    if has_mixed:
+        st.warning(
+            f"⚠️ 영상과 이미지가 섞여 있어 첫 번째 파일(`{visual_files[0].name}`)만 사용합니다. "
+            "슬라이드쇼는 **이미지만 여러 장** 업로드했을 때 자동으로 만들어집니다."
+        )
+        visual_files = visual_files[:1]
+        is_slideshow = False
+
+    seconds_per_image = 5.0
+    slide_auto = False
+    if is_slideshow:
+        st.markdown(f"##### 🖼️ 슬라이드쇼 — 이미지 {len(visual_files)}장 감지")
+        slide_c1, slide_c2 = st.columns([1, 2])
+        with slide_c1:
+            slide_auto = st.checkbox(
+                "오디오 길이에 맞춰 자동 분배",
+                value=False,
+                key="compose_slide_auto",
+                help="체크 시 (최종 영상 길이 ÷ 이미지 수) 로 각 이미지 표시 시간을 계산.",
+            )
+        with slide_c2:
+            if slide_auto:
+                st.caption(
+                    "자동 분배 모드 — 인코딩 시점에 (최종 영상 길이 ÷ 이미지 수) 로 결정됩니다."
+                )
+            else:
+                seconds_per_image = st.number_input(
+                    "각 이미지당 표시 시간 (초)",
+                    min_value=0.5, max_value=600.0, value=5.0, step=0.5,
+                    key="compose_slide_seconds",
+                    help="총 슬라이드쇼 길이가 오디오보다 짧으면 자동으로 반복됩니다.",
+                )
+        total_slide = seconds_per_image * len(visual_files) if not slide_auto else None
+        if total_slide:
+            st.caption(
+                f"슬라이드쇼 한 사이클: ≈ **{_fmt_duration(total_slide)}** "
+                f"({len(visual_files)}장 × {seconds_per_image:.1f}초)"
+            )
+
+    visual_file = visual_files[0] if visual_files else None
+
+    # ---- 곡 메타 (길이) 미리보기 ----
     track_metas: list[dict] = []
+    cycle_duration = 0.0
     if audio_files:
         st.markdown("##### 📋 업로드된 트랙")
-        # 임시 디렉토리 하나를 세션 동안 재사용하지 않고, 길이 확인을 위해
-        # 매 렌더마다 짧게 떴다 사라지는 임시 파일로 ffprobe 만 돌린다.
         probe_dir = tempfile.mkdtemp(prefix="ytmusic_probe_")
         try:
-            total = 0.0
             for idx, f in enumerate(audio_files, 1):
                 pth = os.path.join(probe_dir, f.name)
                 with open(pth, "wb") as fp:
                     fp.write(f.getbuffer())
                 dur = _ffprobe_duration(pth) or 0.0
-                total += dur
+                cycle_duration += dur
                 track_metas.append({"name": f.name, "duration": dur, "index": idx})
             st.dataframe(
                 pd.DataFrame(
                     [
-                        {
-                            "#": m["index"],
-                            "파일": m["name"],
-                            "길이": _fmt_duration(m["duration"]),
-                        }
+                        {"#": m["index"], "파일": m["name"], "길이": _fmt_duration(m["duration"])}
                         for m in track_metas
                     ]
                 ),
                 hide_index=True,
                 use_container_width=True,
             )
-            st.caption(f"합산 길이: **{_fmt_duration(total)}**  ·  {len(audio_files)}곡")
+            st.caption(
+                f"한 사이클 길이: **{_fmt_duration(cycle_duration)}**  ·  {len(audio_files)}곡"
+            )
         finally:
             shutil.rmtree(probe_dir, ignore_errors=True)
 
-    # ---- 곡별 가사 (SRT 생성용) ----
-    st.markdown("##### 📝 곡별 가사 (선택 — 입력 시 SRT 자막을 함께 생성)")
-    st.caption(
-        "한 줄에 한 자막 라인. 각 트랙 안에서는 라인을 균등 분배하고, "
-        "트랙 간에는 누적 타임스탬프로 이어 붙입니다. "
-        "필요하면 생성된 SRT 를 텍스트 에디터에서 수동 미세조정하세요."
-    )
-    lyrics_by_track: dict[int, str] = {}
-    if audio_files:
-        for m in track_metas:
-            with st.expander(
-                f"#{m['index']} {m['name']}  ·  {_fmt_duration(m['duration'])}",
-                expanded=False,
-            ):
-                lyrics_by_track[m["index"]] = st.text_area(
-                    "가사 (한 줄 = 한 자막 라인)",
-                    value="",
-                    height=180,
-                    key=f"compose_lyrics_{m['index']}",
-                    label_visibility="collapsed",
+    # ---- 반복 / 목표 시간 ----
+    loop_count = 1
+    if mode in ("single_loop", "bundle_loop") and cycle_duration > 0:
+        st.markdown("##### 🔁 반복 / 목표 길이")
+        method = st.radio(
+            "지정 방식",
+            options=["target", "count"],
+            format_func=lambda k: {
+                "target": "🎯 목표 영상 시간으로 지정 (반복 회수 자동 계산)",
+                "count":  "🔢 반복 회수로 직접 지정",
+            }[k],
+            horizontal=True,
+            key="compose_loop_method",
+        )
+        if method == "target":
+            # 빠른 프리셋 버튼 — 한 번에 흔히 쓰는 길이 선택.
+            preset_minutes = {
+                "15분": 15, "30분": 30, "1시간": 60, "2시간": 120,
+                "3시간": 180, "4시간": 240, "8시간": 480, "10시간": 600,
+            }
+            st.caption("⚡ 빠른 선택")
+            preset_cols = st.columns(len(preset_minutes))
+            for (label, mins), col in zip(preset_minutes.items(), preset_cols):
+                if col.button(label, key=f"compose_target_preset_{label}", use_container_width=True):
+                    st.session_state["compose_target_hours_int"] = mins // 60
+                    st.session_state["compose_target_minutes_int"] = mins % 60
+                    st.rerun()
+
+            time_c1, time_c2, time_c3 = st.columns([1, 1, 2])
+            with time_c1:
+                hours_part = st.number_input(
+                    "시간",
+                    min_value=0, max_value=24, value=1, step=1,
+                    key="compose_target_hours_int",
                 )
+            with time_c2:
+                minutes_part = st.number_input(
+                    "분",
+                    min_value=0, max_value=59, value=0, step=1,
+                    key="compose_target_minutes_int",
+                )
+            target_seconds = hours_part * 3600 + minutes_part * 60
+            if target_seconds <= 0:
+                st.warning("목표 시간이 0 입니다. 시간 또는 분 중 하나는 0보다 커야 합니다.")
+                target_seconds = max(int(cycle_duration), 60)
+            loop_count = max(1, int(round(target_seconds / cycle_duration)))
+            with time_c3:
+                st.caption(
+                    f"목표 = **{_fmt_duration(target_seconds)}** "
+                    f"({hours_part}시간 {minutes_part}분)"
+                )
+        else:
+            loop_count = st.slider(
+                "반복 회수",
+                min_value=1, max_value=500, value=4,
+                key="compose_loop_count",
+            )
+        actual = loop_count * cycle_duration
+        st.info(
+            f"→ 반복 **{loop_count}회**  ·  최종 영상 길이 ≈ **{_fmt_duration(actual)}**  ·  "
+            f"한 사이클 {_fmt_duration(cycle_duration)}"
+        )
+    elif mode == "sequential":
+        st.caption("📝 순차 모드 — 반복 없이 곡들이 한 번씩 재생됩니다.")
+
+    # ---- 트랙리스트 미리보기 (설명란 복사용) ----
+    if track_metas:
+        full_expand = False
+        if mode == "bundle_loop" and loop_count > 1:
+            full_expand = st.checkbox(
+                "모든 사이클의 타임스탬프 펼치기",
+                value=False,
+                key="compose_full_expand",
+                help="체크 시 모든 N×M 타임스탬프 나열. 기본은 첫 사이클만 + 반복 안내.",
+            )
+        tracklist = build_tracklist_text(
+            track_metas, loop_count=loop_count, mode=mode, full_expand=full_expand
+        )
+        st.markdown("##### 📜 트랙리스트 (유튜브 설명란 복사용)")
+        st.code(tracklist, language="text")
+        st.caption(
+            "위 박스 오른쪽 위 📋 아이콘으로 클립보드 복사. "
+            "유튜브 설명란에 그대로 붙여넣으면 첫 사이클 타임스탬프가 챕터 마커로 인식됩니다."
+        )
 
     # ---- 인코딩 옵션 ----
     st.markdown("##### ⚙️ 인코딩 옵션")
+    speed_label_to_key = {v["label"]: k for k, v in SPEED_PRESETS.items()}
+    sp_col, _ = st.columns([2, 3])
+    with sp_col:
+        speed_label = st.radio(
+            "인코딩 속도 ↔ 화질",
+            options=list(speed_label_to_key.keys()),
+            index=0,
+            key="compose_speed_preset",
+            horizontal=False,
+            help=(
+                "정지 이미지나 슬라이드쇼는 화면이 거의 안 바뀌니 '빠른' 모드여도 "
+                "유튜브 시청 화질에는 영향이 거의 없습니다. 영상 배경(움직임 있음)일 땐 '균형' 권장."
+            ),
+        )
+    speed_key = speed_label_to_key[speed_label]
+    speed_cfg = SPEED_PRESETS[speed_key]
+
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         resolution = st.selectbox(
@@ -2306,41 +3872,33 @@ def render_compose_tab() -> None:
             key="compose_fade",
         )
 
-    col_a, col_b = st.columns(2)
-    with col_a:
-        burn_subs = st.checkbox(
-            "자막을 영상에 굽기 (Burn-in)",
-            value=False,
-            key="compose_burn_subs",
-            help="체크하면 영상 픽셀에 가사가 직접 새겨집니다. 끄면 SRT 가 별도 파일로만 나와, "
-                 "유튜브 업로드 시 자막 트랙으로 따로 첨부하거나 시청자가 토글 가능.",
-        )
-    with col_b:
-        make_srt = st.checkbox(
-            "SRT 자막 파일 생성",
-            value=True,
-            key="compose_make_srt",
-            help="가사가 비어 있는 트랙은 자동으로 스킵됩니다.",
-        )
-
     run = st.button(
-        "🚀 인코딩 시작",
+        "🚀 인코딩 잡 제출 (백그라운드 실행)",
         type="primary",
         use_container_width=True,
         key="compose_run",
+        help="제출 후에는 📦 인코딩 잡 탭에서 진행 상황을 확인할 수 있습니다. "
+             "브라우저를 닫거나 다른 탭에서 작업해도 인코딩은 계속됩니다.",
     )
 
     if not run:
-        if st.session_state.get("compose_output"):
-            st.info("이전 인코딩 결과가 아래에 남아 있습니다.")
-            _render_compose_result()
+        if st.session_state.get("compose_last_job_id"):
+            jid = st.session_state["compose_last_job_id"]
+            st.info(
+                f"🔄 마지막으로 제출한 잡 `{jid}` 은(는) **📦 인코딩 잡** 탭에서 확인하세요."
+            )
         return
 
-    if not audio_files or not visual_file:
-        st.error("음악(1개 이상)과 배경 파일을 모두 업로드해주세요.")
+    if not audio_files or not visual_files:
+        st.error("음악(1개 이상)과 배경 파일(영상 1개 또는 이미지 1~여러 장)을 모두 업로드해주세요.")
         return
 
-    workdir = tempfile.mkdtemp(prefix="ytmusic_compose_")
+    # 잡 전용 영구 워크디렉터리 — 임시폴더 자동 정리에 안 영향받게.
+    _ensure_jobs_dir()
+    pre_job_id = uuid.uuid4().hex[:8]  # 잡 id 미리 잡아 워크디렉터리 명명에 사용
+    workdir = _job_workdir(pre_job_id)
+    os.makedirs(workdir, exist_ok=True)
+
     audio_paths: list[str] = []
     for f in audio_files:
         p = os.path.join(workdir, f.name)
@@ -2348,15 +3906,26 @@ def render_compose_tab() -> None:
             fp.write(f.getbuffer())
         audio_paths.append(p)
 
-    visual_path = os.path.join(workdir, visual_file.name)
-    with open(visual_path, "wb") as fp:
-        fp.write(visual_file.getbuffer())
+    is_image = False
+    if is_slideshow:
+        slide_image_paths: list[str] = []
+        for vf in visual_files:
+            p = os.path.join(workdir, vf.name)
+            with open(p, "wb") as fp:
+                fp.write(vf.getbuffer())
+            slide_image_paths.append(p)
+        visual_path = ""
+    else:
+        visual_path = os.path.join(workdir, visual_file.name)
+        with open(visual_path, "wb") as fp:
+            fp.write(visual_file.getbuffer())
+        is_image = visual_file.name.lower().endswith(IMAGE_EXTS)
 
-    # 1) 다중 트랙이면 먼저 오디오 concat.
-    combined_audio = os.path.join(workdir, "combined.m4a")
+    # 1) 한 사이클 합본 — sync (보통 분 단위 이내).
+    cycle_audio = os.path.join(workdir, "cycle.m4a")
     if len(audio_paths) > 1:
         with st.spinner(f"🎚️ 오디오 {len(audio_paths)}곡 이어붙이는 중..."):
-            ok, log = concat_audio_files(audio_paths, combined_audio, bitrate=audio_bitrate)
+            ok, log = concat_audio_files(audio_paths, cycle_audio, bitrate=audio_bitrate)
         if not ok:
             st.error("오디오 이어붙이기 실패")
             with st.expander("ffmpeg 로그", expanded=True):
@@ -2364,74 +3933,97 @@ def render_compose_tab() -> None:
             shutil.rmtree(workdir, ignore_errors=True)
             return
     else:
-        combined_audio = audio_paths[0]
+        cycle_audio = audio_paths[0]
 
-    # 2) 길이 측정 + SRT 생성.
-    per_track_durations = [_ffprobe_duration(p) or 0.0 for p in audio_paths]
-    total_duration = sum(per_track_durations) or _ffprobe_duration(combined_audio)
+    measured_cycle = _ffprobe_duration(cycle_audio) or cycle_duration or 0.0
+    total_duration = measured_cycle * loop_count
 
-    srt_path: str | None = None
-    srt_content = ""
-    if make_srt and any(lyrics_by_track.values()):
-        tracks_for_srt = [
-            {
-                "title": audio_files[i].name,
-                "duration": per_track_durations[i],
-                "lyrics_lines": (lyrics_by_track.get(i + 1, "") or "").splitlines(),
-            }
-            for i in range(len(audio_files))
-        ]
-        srt_content = generate_srt(tracks_for_srt)
-        if srt_content.strip():
-            srt_path = os.path.join(workdir, "lyrics.srt")
-            with open(srt_path, "w", encoding="utf-8") as fp:
-                fp.write(srt_content)
+    # 1.5) 슬라이드쇼 — sync (이미지 수가 적으면 빠름).
+    if is_slideshow:
+        if slide_auto and total_duration > 0:
+            spi = max(0.5, total_duration / len(slide_image_paths))
+        else:
+            spi = float(seconds_per_image)
+        slideshow_path = os.path.join(workdir, "slideshow.mp4")
+        with st.spinner(
+            f"🖼️ 슬라이드쇼 합성 중 — {len(slide_image_paths)}장 × {spi:.1f}초"
+        ):
+            ok_s, log_s = build_slideshow_from_images(
+                slide_image_paths, slideshow_path,
+                seconds_per_image=spi,
+                resolution=resolution,
+                preset=speed_cfg["preset"],
+            )
+        if not ok_s or not os.path.exists(slideshow_path):
+            st.error("슬라이드쇼 영상 합성에 실패했습니다.")
+            with st.expander("ffmpeg 로그", expanded=True):
+                st.code(log_s or "(로그 없음)", language=None)
+            shutil.rmtree(workdir, ignore_errors=True)
+            return
+        visual_path = slideshow_path
+        is_image = False
 
-    # 3) 영상 인코딩.
-    is_image = visual_file.name.lower().endswith(IMAGE_EXTS)
+    # 2) 메인 인코딩 — 백그라운드 잡 제출.
     output_path = os.path.join(workdir, "output.mp4")
-    spinner_msg = (
-        f"🎬 ffmpeg 인코딩 중... (오디오 {_fmt_duration(total_duration)}). "
-        "3~4시간 영상은 1080p 기준 10~30분 이상 걸릴 수 있습니다."
-    )
-    with st.spinner(spinner_msg):
-        ok, log = encode_music_video(
-            combined_audio, visual_path, output_path,
+    framerate = speed_cfg["fps_static"] if is_image else speed_cfg["fps_video"]
+    try:
+        encode_cmd = _build_encode_cmd(
+            cycle_audio, visual_path, output_path,
             is_image=is_image,
             resolution=resolution,
             audio_bitrate=audio_bitrate,
             crf=int(crf),
             fade_seconds=float(fade),
             audio_duration=total_duration,
-            subtitles_path=srt_path if burn_subs else None,
+            subtitles_path=None,
+            audio_loop_count=loop_count,
+            preset=speed_cfg["preset"],
+            framerate=framerate,
         )
-
-    if not ok or not os.path.exists(output_path):
-        st.error("인코딩에 실패했습니다. 아래 ffmpeg 로그를 확인해주세요.")
-        with st.expander("ffmpeg stderr 로그", expanded=True):
-            st.code(log or "(로그 없음)", language=None)
+    except ValueError as e:
+        st.error(f"인코딩 명령 생성 실패: {e}")
         shutil.rmtree(workdir, ignore_errors=True)
         return
 
-    file_size_mb = os.path.getsize(output_path) / 1024 / 1024
-    st.session_state["compose_output"] = {
-        "path": output_path,
-        "srt_path": srt_path,
-        "srt_content": srt_content,
-        "workdir": workdir,
-        "size_mb": round(file_size_mb, 1),
-        "duration": total_duration,
-        "is_image": is_image,
-        "resolution": resolution,
-        "track_count": len(audio_files),
-        "burned": bool(burn_subs and srt_path),
-    }
-    st.success(
-        f"✅ 인코딩 완료 — {file_size_mb:.1f} MB · "
-        f"{resolution} · 길이 {_fmt_duration(total_duration)} · {len(audio_files)}곡"
-        + ("  · 자막 burn-in" if burn_subs and srt_path else "")
+    tracklist_text = build_tracklist_text(
+        track_metas,
+        loop_count=loop_count,
+        mode=mode,
+        full_expand=st.session_state.get("compose_full_expand", False),
     )
-    _render_compose_result()
+
+    job_title = (
+        f"{len(audio_files)}곡 × {loop_count}회 · "
+        f"{_fmt_duration(total_duration)} · {resolution} · {speed_cfg['label']}"
+    )
+    try:
+        job_id = submit_ffmpeg_job(
+            encode_cmd,
+            kind="compose",
+            title=job_title,
+            output_path=output_path,
+            workdir=workdir,
+            extra={
+                "duration": total_duration,
+                "resolution": resolution,
+                "loop_count": loop_count,
+                "track_count": len(audio_files),
+                "mode": mode,
+                "tracklist": tracklist_text,
+                "speed_preset": speed_key,
+            },
+        )
+    except RuntimeError as e:
+        st.error(str(e))
+        shutil.rmtree(workdir, ignore_errors=True)
+        return
+
+    st.session_state["compose_last_job_id"] = job_id
+    st.success(
+        f"✅ 잡 `{job_id}` 제출됨 — 예상 길이 {_fmt_duration(total_duration)}.  \n"
+        f"📦 **인코딩 잡** 탭에서 진행 상황을 확인하세요. "
+        f"브라우저를 닫거나 다른 탭에서 작업해도 인코딩은 계속됩니다."
+    )
 
 
 def _render_compose_result() -> None:
@@ -2444,16 +4036,12 @@ def _render_compose_result() -> None:
         st.session_state.pop("compose_output", None)
         return
 
-    meta_cols = st.columns(3)
+    meta_cols = st.columns(4)
     meta_cols[0].metric("파일 크기", f"{info['size_mb']} MB")
     meta_cols[1].metric("해상도", info["resolution"])
-    if info["duration"]:
-        meta_cols[2].metric(
-            "오디오 길이",
-            f"{int(info['duration'] // 60)}:{int(info['duration'] % 60):02d}",
-        )
+    meta_cols[2].metric("최종 길이", _fmt_duration(info.get("duration") or 0))
+    meta_cols[3].metric("반복 회수", f"{info.get('loop_count', 1)}회")
 
-    # 결과 영상이 너무 크면 브라우저 미리보기가 무거워질 수 있어 500MB 이상은 스킵.
     if info["size_mb"] <= 500:
         try:
             st.video(path)
@@ -2462,45 +4050,226 @@ def _render_compose_result() -> None:
     else:
         st.caption("📦 파일이 커서 인라인 미리보기는 생략합니다. 다운로드해서 확인해주세요.")
 
-    dl_cols = st.columns(2)
-    with dl_cols[0]:
-        with open(path, "rb") as fp:
-            st.download_button(
-                "📥 MP4 다운로드",
-                data=fp.read(),
-                file_name=f"music_video_{datetime.now():%Y%m%d_%H%M%S}.mp4",
-                mime="video/mp4",
-                type="primary",
-                use_container_width=True,
-                key="compose_download_mp4",
-            )
-    with dl_cols[1]:
-        srt_content = info.get("srt_content") or ""
-        if srt_content.strip():
-            st.download_button(
-                "📥 SRT 자막 다운로드",
-                data=srt_content.encode("utf-8"),
-                file_name=f"lyrics_{datetime.now():%Y%m%d_%H%M%S}.srt",
-                mime="application/x-subrip",
-                use_container_width=True,
-                key="compose_download_srt",
-                help="유튜브 업로드 시 자막 트랙으로 첨부하거나, "
-                     "burn-in 옵션 없이 시청자가 토글 가능한 CC 로 사용하세요.",
-            )
-        else:
-            st.caption("자막을 생성하지 않았거나 가사가 비어 있습니다.")
+    with open(path, "rb") as fp:
+        st.download_button(
+            "📥 MP4 다운로드",
+            data=fp.read(),
+            file_name=f"music_video_{datetime.now():%Y%m%d_%H%M%S}.mp4",
+            mime="video/mp4",
+            type="primary",
+            use_container_width=True,
+            key="compose_download_mp4",
+        )
 
-    if info.get("srt_content"):
-        with st.expander("생성된 SRT 미리보기", expanded=False):
-            preview = info["srt_content"]
-            if len(preview) > 4000:
-                preview = preview[:4000] + "\n\n...(이하 생략)"
-            st.code(preview, language=None)
+    if info.get("tracklist"):
+        st.markdown("##### 📜 트랙리스트 (유튜브 설명란 복사용)")
+        st.code(info["tracklist"], language="text")
+        st.caption("📋 우측 상단 복사 아이콘으로 클립보드에 복사됩니다.")
 
     if st.button("🗑️ 결과 비우기 (임시 파일 삭제)", key="compose_cleanup"):
         shutil.rmtree(info["workdir"], ignore_errors=True)
         st.session_state.pop("compose_output", None)
         st.rerun()
+
+
+# ---------------------------------------------------------------------------
+# Jobs tab — 백그라운드 인코딩 잡 대시보드
+# ---------------------------------------------------------------------------
+
+
+def _fmt_eta(current_s: float, total_s: float, elapsed_s: float) -> str:
+    if current_s <= 0 or total_s <= 0:
+        return "??"
+    rate = current_s / elapsed_s if elapsed_s > 0 else 0
+    if rate <= 0:
+        return "??"
+    remaining = (total_s - current_s) / rate
+    if remaining < 0:
+        remaining = 0
+    return _fmt_duration(remaining)
+
+
+def render_jobs_tab() -> None:
+    st.subheader("📦 인코딩 잡 대시보드")
+    st.caption(
+        "여기서 모든 백그라운드 인코딩 작업을 관리합니다. "
+        "브라우저를 닫거나 다른 탭에서 작업해도 진행 중인 잡은 그대로 계속 돌아갑니다."
+    )
+
+    top_c1, top_c2, top_c3 = st.columns([1, 1, 4])
+    if top_c1.button("🔄 새로 고침", key="jobs_refresh", use_container_width=True):
+        st.rerun()
+    auto_refresh = top_c2.checkbox(
+        "자동 새로고침 (5초)",
+        value=False,
+        key="jobs_auto_refresh",
+        help="진행 중인 잡이 있을 때 5초마다 페이지를 다시 그립니다.",
+    )
+
+    jobs = [refresh_job_status(j) for j in list_jobs()]
+    running = [j for j in jobs if j.get("status") == "running"]
+    finished = [j for j in jobs if j.get("status") != "running"]
+
+    top_c3.markdown(
+        f"**진행 중**: {len(running)}개  ·  **완료/실패**: {len(finished)}개"
+    )
+
+    if not jobs:
+        st.info(
+            "아직 제출된 잡이 없습니다. **🎬 영상 합성** 탭에서 인코딩을 시작하면 여기에 표시돼요."
+        )
+        return
+
+    # 일괄 정리
+    with st.expander("🧹 일괄 정리"):
+        cc1, cc2 = st.columns(2)
+        if cc1.button("✅ 완료된 잡만 삭제 (입력 파일은 보존)", key="jobs_clean_done"):
+            for j in finished:
+                if j.get("status") == "done":
+                    delete_job(j["id"], remove_files=False)
+            st.rerun()
+        if cc2.button("🗑️ 실패/취소된 잡 + 임시파일 삭제", key="jobs_clean_failed"):
+            for j in finished:
+                if j.get("status") in ("failed", "cancelled"):
+                    delete_job(j["id"], remove_files=True)
+            st.rerun()
+
+    for job in jobs:
+        _render_job_card(job)
+
+    if auto_refresh and running:
+        # Streamlit autorefresh — 5초 후 rerun.
+        import time as _time
+        _time.sleep(5)
+        st.rerun()
+
+
+def _render_job_card(job: dict) -> None:
+    status = job.get("status", "running")
+    status_icon = {
+        "running": "🔄",
+        "done": "✅",
+        "failed": "❌",
+        "cancelled": "⏹️",
+    }.get(status, "•")
+    job_id = job.get("id", "????")
+    title = job.get("title", "")
+    started_at = job.get("started_at", "")
+
+    with st.container(border=True):
+        st.markdown(
+            f"### {status_icon} `{job_id}` · {status.upper()}"
+        )
+        st.caption(f"{title}  ·  시작: {started_at}")
+
+        extra = job.get("extra") or {}
+        expected_total = float(extra.get("duration") or 0)
+
+        if status == "running":
+            # 진행률 표시
+            progress_info = parse_job_progress(job.get("progress_path", "")) or {}
+            current = float(progress_info.get("current_seconds") or 0)
+            try:
+                from datetime import datetime as _dt
+                started_dt = _dt.fromisoformat(started_at)
+                elapsed = (_dt.now() - started_dt).total_seconds()
+            except Exception:
+                elapsed = 0
+            if expected_total > 0 and current > 0:
+                pct = min(1.0, current / expected_total)
+                st.progress(
+                    pct,
+                    text=(
+                        f"{int(pct * 100)}%  ·  "
+                        f"인코딩 {_fmt_duration(current)} / {_fmt_duration(expected_total)}  ·  "
+                        f"경과 {_fmt_duration(elapsed)}  ·  남은 시간 ≈ {_fmt_eta(current, expected_total, elapsed)}"
+                    ),
+                )
+            else:
+                st.progress(
+                    0.0,
+                    text=(
+                        f"준비 중... (경과 {_fmt_duration(elapsed)})  ·  "
+                        f"PID {job.get('pid')}"
+                    ),
+                )
+
+            cc1, cc2 = st.columns(2)
+            if cc1.button("⏹️ 잡 취소", key=f"job_cancel_{job_id}"):
+                cancel_job(job_id)
+                st.rerun()
+            with cc2.expander("최근 로그 보기"):
+                log_path = job.get("log_path", "")
+                if os.path.exists(log_path):
+                    try:
+                        with open(log_path, "rb") as fp:
+                            fp.seek(0, 2)
+                            size = fp.tell()
+                            fp.seek(max(0, size - 4000))
+                            tail = fp.read().decode("utf-8", errors="replace")
+                        st.code(tail or "(아직 출력 없음)", language=None)
+                    except OSError:
+                        st.caption("로그 파일을 읽을 수 없습니다.")
+                else:
+                    st.caption("(로그 파일 없음)")
+
+        elif status == "done":
+            output_path = job.get("output_path", "")
+            if os.path.exists(output_path):
+                size_mb = os.path.getsize(output_path) / 1024 / 1024
+                m1, m2, m3 = st.columns(3)
+                m1.metric("파일 크기", f"{size_mb:.1f} MB")
+                m2.metric("최종 길이", _fmt_duration(expected_total))
+                m3.metric("해상도", extra.get("resolution", "?"))
+                if size_mb <= 500:
+                    try:
+                        st.video(output_path)
+                    except Exception:
+                        st.caption("미리보기를 표시할 수 없습니다.")
+                else:
+                    st.caption("📦 파일이 커서 인라인 미리보기는 생략합니다.")
+                with open(output_path, "rb") as fp:
+                    st.download_button(
+                        "📥 MP4 다운로드",
+                        data=fp.read(),
+                        file_name=f"music_video_{job_id}.mp4",
+                        mime="video/mp4",
+                        type="primary",
+                        use_container_width=True,
+                        key=f"job_download_{job_id}",
+                    )
+                tracklist = extra.get("tracklist") or ""
+                if tracklist:
+                    st.markdown("**📜 트랙리스트 (설명란 복사용)**")
+                    st.code(tracklist, language="text")
+            else:
+                st.warning(
+                    "결과 파일이 더 이상 존재하지 않습니다 — 임시 폴더가 정리되었을 수 있습니다."
+                )
+
+        else:  # failed / cancelled
+            log_path = job.get("log_path", "")
+            if os.path.exists(log_path):
+                with st.expander("ffmpeg 로그 (끝 4KB)", expanded=True):
+                    try:
+                        with open(log_path, "rb") as fp:
+                            fp.seek(0, 2)
+                            size = fp.tell()
+                            fp.seek(max(0, size - 4000))
+                            tail = fp.read().decode("utf-8", errors="replace")
+                        st.code(tail or "(로그 없음)", language=None)
+                    except OSError:
+                        st.caption("로그 파일을 읽을 수 없습니다.")
+
+        # 삭제 (모든 상태에 대해)
+        if status != "running":
+            del_c1, del_c2 = st.columns([1, 1])
+            if del_c1.button("🗑️ 이 잡 + 결과 파일 삭제", key=f"job_del_full_{job_id}"):
+                delete_job(job_id, remove_files=True)
+                st.rerun()
+            if del_c2.button("📋 잡 기록만 삭제 (파일 보존)", key=f"job_del_meta_{job_id}"):
+                delete_job(job_id, remove_files=False)
+                st.rerun()
 
 
 # ---------------------------------------------------------------------------
@@ -2521,7 +4290,7 @@ def extract_audio_track(input_path: str, output_path: str) -> tuple[bool, str]:
         output_path,
     ]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+        proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900)
     except subprocess.TimeoutExpired:
         return False, "오디오 추출이 15분 안에 끝나지 않았습니다."
     return proc.returncode == 0, (proc.stderr or "")[-2000:]
@@ -2539,10 +4308,99 @@ def compress_audio_for_whisper(input_path: str, output_path: str) -> tuple[bool,
         output_path,
     ]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+        proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900)
     except subprocess.TimeoutExpired:
         return False, "오디오 압축이 15분 안에 끝나지 않았습니다."
     return proc.returncode == 0, (proc.stderr or "")[-2000:]
+
+
+def _clean_proc_log(text: str, keep: int = 800) -> str:
+    """subprocess 로그에서 tqdm 진행바 조각을 제거하고 의미있는 끝부분만 남긴다."""
+    if not text:
+        return ""
+    # 진행바는 \r 로 갱신되므로 \r 기준으로도 쪼갠다.
+    parts = re.split(r"[\r\n]+", text)
+    meaningful = [
+        p.strip() for p in parts
+        if p.strip()
+        and "%|" not in p
+        and "it/s" not in p
+        and "seconds/s" not in p
+        and not re.match(r"^\d+%", p.strip())
+    ]
+    out = "\n".join(meaningful).strip()
+    return out[-keep:] if out else text[-keep:]
+
+
+def _find_vocals_stem(outdir: str) -> str | None:
+    """demucs 출력 폴더에서 vocals 스템 파일을 찾는다."""
+    for root, _dirs, files in os.walk(outdir):
+        for name in ("vocals.wav", "vocals.mp3", "vocals.flac"):
+            if name in files:
+                return os.path.join(root, name)
+    return None
+
+
+def demucs_available() -> bool:
+    """Demucs(보컬 분리) 패키지 설치 여부."""
+    import importlib.util
+    return importlib.util.find_spec("demucs") is not None
+
+
+def separate_vocals(audio_path: str, outdir: str) -> tuple[str | None, str]:
+    """Demucs 로 반주를 제거하고 보컬 스템만 추출한다. (vocals_path|None, log).
+
+    `python -m demucs --two-stems=vocals` 를 호출해 보컬/반주 2-stem 으로 분리하고
+    생성된 vocals 파일 경로를 돌려준다. 미설치/실패 시 (None, 정리된 로그).
+    """
+    if not demucs_available():
+        return None, "demucs 미설치"
+
+    # 한글/공백 경로와 torchaudio 의존을 피하려고 ASCII 이름으로 복사 후 처리한다.
+    in_ext = os.path.splitext(audio_path)[1].lower() or ".mp3"
+    safe_in = os.path.join(
+        os.path.dirname(outdir) or tempfile.gettempdir(),
+        "demucs_input" + in_ext,
+    )
+    try:
+        shutil.copyfile(audio_path, safe_in)
+    except OSError:
+        safe_in = audio_path
+
+    # --mp3: wav 저장(torchaudio→torchcodec 의존) 대신 lameenc 로 mp3 저장 → 호환성 ↑
+    cmd = [
+        sys.executable, "-m", "demucs",
+        "--two-stems=vocals",
+        "--mp3", "--mp3-bitrate", "128",
+        "-o", outdir,
+        safe_in,
+    ]
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=1800,
+        )
+    except subprocess.TimeoutExpired:
+        return None, "보컬 분리가 30분 안에 끝나지 않았습니다."
+
+    # returncode 와 무관하게 결과 파일이 생겼으면 그대로 사용한다.
+    found = _find_vocals_stem(outdir)
+    if found:
+        return found, "ok"
+
+    log = _clean_proc_log((proc.stderr or "") + "\n" + (proc.stdout or ""))
+    if "torchcodec" in log.lower():
+        log += (
+            "\n\n💡 torchaudio 저장 백엔드 문제입니다. "
+            "최신 코드는 mp3 로 저장하도록 우회했으니, 대시보드 실행 .bat 을 다시 "
+            "더블클릭해 최신 코드를 받은 뒤 재시도하세요."
+        )
+    elif "lameenc" in log.lower():
+        log += (
+            "\n\n💡 mp3 인코더(lameenc)가 없습니다. "
+            "'보컬분리_설치.bat' 을 다시 더블클릭하면 함께 설치됩니다."
+        )
+    return None, log or "분리 결과(vocals)를 찾지 못했습니다."
 
 
 def whisper_transcribe(
@@ -2573,6 +4431,94 @@ def whisper_transcribe(
     return dict(result)
 
 
+def whisper_transcribe_local(
+    audio_path: str,
+    *,
+    model_size: str = "small",
+    language: str | None = None,
+    device: str = "auto",
+    progress_cb=None,
+) -> dict:
+    """faster-whisper 로 로컬에서 추론. OpenAI API 와 동일한 dict 형식 반환.
+
+    첫 호출 시 모델을 자동 다운로드(small 462MB, medium 1.5GB, large-v3 3GB).
+    같은 모델은 ~/.cache/huggingface 에 캐시돼 이후엔 즉시 로드.
+    """
+    try:
+        from faster_whisper import WhisperModel
+    except ImportError as e:
+        raise RuntimeError(
+            "`faster-whisper` 패키지가 설치되어 있지 않습니다.\n"
+            "터미널에서 다음 명령으로 설치 후 다시 시도하세요:\n\n"
+            "    pip install faster-whisper\n\n"
+            "설치 후 앱을 재시작해주세요."
+        ) from e
+
+    # 디바이스/연산 정밀도 자동 선택.
+    if device == "auto":
+        try:
+            import torch  # type: ignore
+            if torch.cuda.is_available():
+                device, compute_type = "cuda", "float16"
+            else:
+                device, compute_type = "cpu", "int8"
+        except ImportError:
+            device, compute_type = "cpu", "int8"
+    else:
+        compute_type = "float16" if device == "cuda" else "int8"
+
+    if progress_cb:
+        progress_cb(f"모델 로드 중 ({model_size}, {device}/{compute_type})...")
+    model = WhisperModel(model_size, device=device, compute_type=compute_type)
+
+    if progress_cb:
+        progress_cb("오디오 분석 중 (Whisper 추론)...")
+    segments, info = model.transcribe(
+        audio_path,
+        word_timestamps=True,
+        language=language,
+        # 음악에서 보컬 구간을 '무음'으로 오판해 잘리지 않도록 VAD 를 완화.
+        vad_filter=True,
+        vad_parameters=dict(threshold=0.2, min_silence_duration_ms=700),
+        beam_size=5,
+        # 노래에서 한 번 헷갈리면 반복/붕괴되며 이후 가사를 아예 못 적는 현상을 방지.
+        condition_on_previous_text=False,
+        # 음악 구간을 무음으로 잘못 버리지 않게 임계값 완화 (곡 끝까지 인식).
+        no_speech_threshold=0.85,
+        # 반복되는 후렴구 가사도 '환각'으로 오판해 버리지 않게 완화.
+        compression_ratio_threshold=2.8,
+        log_prob_threshold=-2.0,
+    )
+
+    seg_list: list[dict] = []
+    word_list: list[dict] = []
+    # 제너레이터를 소진하면서 progress 업데이트.
+    for seg in segments:
+        seg_list.append({
+            "id": int(getattr(seg, "id", len(seg_list))),
+            "start": float(seg.start),
+            "end": float(seg.end),
+            "text": (seg.text or "").strip(),
+        })
+        if seg.words:
+            for w in seg.words:
+                # 안전 가드 — None 인 경우 스킵.
+                if w.start is None or w.end is None:
+                    continue
+                word_list.append({
+                    "word": (w.word or "").strip(),
+                    "start": float(w.start),
+                    "end": float(w.end),
+                })
+
+    return {
+        "segments": seg_list,
+        "words": word_list,
+        "language": getattr(info, "language", language),
+        "duration": float(getattr(info, "duration", 0) or 0),
+    }
+
+
 def whisper_segments_to_srt(segments: list[dict]) -> str:
     """Whisper segments → SRT 그대로 변환 (가사 미입력 모드)."""
     out: list[str] = []
@@ -2594,7 +4540,9 @@ def whisper_segments_to_srt(segments: list[dict]) -> str:
 
 
 def align_lyrics_to_segments(
-    lyrics_lines: list[str], segments: list[dict]
+    lyrics_lines: list[str],
+    segments: list[dict],
+    total_duration: float | None = None,
 ) -> str:
     """
     사용자가 직접 쓴 가사 라인들을 Whisper 가 잡은 구간 타임스탬프에 정렬한다.
@@ -2663,11 +4611,19 @@ def align_lyrics_to_segments(
                 out.append(line)
                 out.append("")
                 counter += 1
-        # 만약 남은 라인이 있으면 마지막 구간 뒤에 짧게 이어붙임.
+        # 남은 라인이 있으면 마지막 구간 끝 ~ 곡 끝까지 고르게 분배 (끝부분 가사 누락 방지).
         if line_cursor < L:
-            tail_start = float(segments[-1].get("end", 0) or 0)
-            for line in lines[line_cursor:]:
-                tail_end = tail_start + 3.0
+            tail_lines = lines[line_cursor:]
+            seg_end = float(segments[-1].get("end", 0) or 0)
+            span_end = (
+                float(total_duration)
+                if total_duration and float(total_duration) > seg_end
+                else seg_end + 3.0 * len(tail_lines)
+            )
+            per = max(0.8, (span_end - seg_end) / len(tail_lines))
+            tail_start = seg_end
+            for line in tail_lines:
+                tail_end = tail_start + per
                 out.append(str(counter))
                 out.append(
                     f"{_format_srt_time(tail_start)} --> {_format_srt_time(tail_end)}"
@@ -2678,6 +4634,159 @@ def align_lyrics_to_segments(
                 tail_start = tail_end
 
     return "\n".join(out).strip() + "\n"
+
+
+def detect_vocal_phrases(
+    envelope, duration: float, *,
+    thresh_ratio: float = 0.12, min_phrase: float = 0.6, min_gap: float = 0.30,
+) -> list[tuple[float, float]]:
+    """진폭 envelope 에서 '노래하는 구간'(보컬 에너지가 있는 구간)을 찾는다.
+
+    무슨 단어인지 인식하지 않고 소리가 있는 구간만 검출하므로, Whisper 가
+    가사를 못 알아듣는 곡에서도 동작한다. (보컬 분리된 트랙이면 더 정확)
+    """
+    if envelope is None or duration <= 0:
+        return []
+    env = np.asarray(envelope, dtype=np.float32)
+    n = len(env)
+    if n == 0:
+        return []
+    # 약 0.1초 창으로 평활화해 잡음으로 인한 잘게 쪼개짐 방지.
+    w = max(1, int(n / duration * 0.1))
+    if w > 1:
+        env = np.convolve(env, np.ones(w, dtype=np.float32) / w, mode="same")
+    ref = float(np.percentile(env, 95)) or float(env.max()) or 1.0
+    if ref <= 0:
+        return []
+    active = (env / ref) > thresh_ratio
+    dt = duration / n
+
+    phrases: list[list[float]] = []
+    cur: list[float] | None = None
+    for idx, a in enumerate(active):
+        if a:
+            t = idx * dt
+            if cur is None:
+                cur = [t, t + dt]
+            else:
+                cur[1] = t + dt
+        elif cur is not None:
+            phrases.append(cur)
+            cur = None
+    if cur is not None:
+        phrases.append(cur)
+
+    # 짧은 무음 간격(min_gap 미만)은 한 구간으로 병합.
+    merged: list[list[float]] = []
+    for p in phrases:
+        if merged and p[0] - merged[-1][1] < min_gap:
+            merged[-1][1] = p[1]
+        else:
+            merged.append(p[:])
+    # 너무 짧은 구간은 제거.
+    merged = [p for p in merged if (p[1] - p[0]) >= min_phrase]
+    return [(round(s, 3), round(e, 3)) for s, e in merged]
+
+
+def align_lyrics_to_phrases(
+    lyrics_lines: list[str],
+    phrases: list[tuple[float, float]],
+    duration: float | None,
+) -> str:
+    """감지된 보컬 구간에 내 가사를 순서대로 배치한 SRT."""
+    lines = [ln.strip() for ln in lyrics_lines if ln.strip()]
+    if not lines:
+        return ""
+    if not phrases:
+        D = float(duration or 0) or len(lines) * 3.0
+        return _even_distribute_lyrics(lines, 0.0, 0.97 * D)
+
+    L, P = len(lines), len(phrases)
+    rows: list[dict] = []
+    if L == P:
+        for line, (s, e) in zip(lines, phrases):
+            rows.append({"start": s, "end": e, "text": line})
+    elif L < P:
+        # 가사보다 보컬 구간이 많으면 구간을 묶어 한 줄에 매핑.
+        for i, line in enumerate(lines):
+            s_idx = int(round(i * P / L))
+            e_idx = min(max(int(round((i + 1) * P / L)) - 1, s_idx), P - 1)
+            rows.append({
+                "start": phrases[s_idx][0], "end": phrases[e_idx][1], "text": line,
+            })
+    else:
+        # 가사가 더 많으면 한 구간을 여러 줄로 분할.
+        cursor = 0
+        for j, (s, e) in enumerate(phrases):
+            target = max(1, int(round((j + 1) * L / P)) - int(round(j * L / P)))
+            sub = lines[cursor:cursor + target]
+            cursor += target
+            if not sub:
+                continue
+            d = (e - s) / len(sub)
+            for k, line in enumerate(sub):
+                rows.append({
+                    "start": s + k * d, "end": s + (k + 1) * d, "text": line,
+                })
+        if cursor < L:  # 남은 줄은 마지막 구간 끝 ~ 곡 끝에 분배.
+            tail = lines[cursor:]
+            last_e = phrases[-1][1]
+            D = float(duration or 0)
+            span_end = 0.97 * D if D > last_e else last_e + 2.0 * len(tail)
+            per = max(0.8, (span_end - last_e) / len(tail))
+            ts = last_e
+            for line in tail:
+                rows.append({"start": ts, "end": ts + per, "text": line})
+                ts += per
+    return _rows_to_srt(rows)
+
+
+def _norm_text(s: str) -> str:
+    """매칭용 정규화: 소문자 + 구두점 제거 + 공백 정리."""
+    s = (s or "").lower()
+    s = re.sub(r"[^\w\s]", " ", s, flags=re.UNICODE)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def align_lyrics_by_similarity(
+    lyrics_lines: list[str], segments: list[dict]
+) -> str:
+    """Whisper 가 곡 전체에서 들은 구간마다, 내 가사 중 가장 비슷한 줄을 매칭한다.
+
+    Whisper 가 후렴 반복까지 음향으로 감지하므로, 반복되는 구간에는 같은 가사 줄이
+    자동으로 다시 채워진다. 텍스트는 내 가사 원본을 그대로 사용 → 정확.
+    """
+    import difflib
+
+    lines = [ln.strip() for ln in lyrics_lines if ln.strip()]
+    if not lines or not segments:
+        return ""
+    norm_lines = [_norm_text(l) for l in lines]
+
+    cues: list[dict] = []
+    for seg in segments:
+        s = float(seg.get("start", 0) or 0)
+        e = float(seg.get("end", s) or s)
+        if e <= s:
+            e = s + 0.5
+        seg_norm = _norm_text(seg.get("text", ""))
+        best_i, best_r = 0, -1.0
+        for i, nl in enumerate(norm_lines):
+            if not nl:
+                continue
+            r = difflib.SequenceMatcher(None, seg_norm, nl).ratio()
+            if r > best_r:
+                best_r, best_i = r, i
+        cues.append({"start": s, "end": e, "text": lines[best_i]})
+
+    # 연속으로 같은 가사 줄이 매칭되면 하나로 합친다.
+    merged: list[dict] = []
+    for c in cues:
+        if merged and merged[-1]["text"] == c["text"]:
+            merged[-1]["end"] = c["end"]
+        else:
+            merged.append(dict(c))
+    return _rows_to_srt(merged)
 
 
 def _parse_srt_time(ts: str) -> float:
@@ -2693,6 +4802,131 @@ def _parse_srt_starts(srt_text: str) -> list[float]:
         _parse_srt_time(m.group(1))
         for m in re.finditer(r"(\d+:\d+:\d+,\d+)\s+-->", srt_text)
     ]
+
+
+def _rows_to_srt(rows: list[dict]) -> str:
+    """[{start, end, text}] → SRT 문자열."""
+    out: list[str] = []
+    for i, r in enumerate(rows, 1):
+        out.append(str(i))
+        out.append(
+            f"{_format_srt_time(r['start'])} --> {_format_srt_time(r['end'])}"
+        )
+        out.append(r["text"])
+        out.append("")
+    return "\n".join(out).strip() + "\n"
+
+
+def _parse_srt_cues(srt_text: str) -> list[dict]:
+    """SRT 텍스트 → [{start, end, text}] (재생 동기화 플레이어용)."""
+    cues: list[dict] = []
+    for raw in re.split(r"\n\n+", srt_text.strip()):
+        lines = raw.strip().splitlines()
+        if len(lines) < 2:
+            continue
+        idx = 1 if re.match(r"^\d+$", lines[0].strip()) else 0
+        if idx >= len(lines):
+            continue
+        m = re.match(
+            r"(\d+:\d+:\d+,\d+)\s+-->\s+(\d+:\d+:\d+,\d+)", lines[idx].strip()
+        )
+        if not m:
+            continue
+        text = " ".join(ln.strip() for ln in lines[idx + 1:] if ln.strip())
+        cues.append({
+            "start": _parse_srt_time(m.group(1)),
+            "end": _parse_srt_time(m.group(2)),
+            "text": text,
+        })
+    return cues
+
+
+def _even_distribute_lyrics(
+    lyrics_lines: list[str], start: float, end: float
+) -> str:
+    """가사 라인들을 [start, end] 구간에 시간 기준으로 고르게 배치한 SRT."""
+    lines = [ln.strip() for ln in lyrics_lines if ln.strip()]
+    if not lines:
+        return ""
+    if end <= start:
+        end = start + len(lines) * 2.0
+    per = (end - start) / len(lines)
+    rows = []
+    for i, line in enumerate(lines):
+        rows.append({
+            "start": start + i * per,
+            "end": start + (i + 1) * per,
+            "text": line,
+        })
+    return _rows_to_srt(rows)
+
+
+def _ensure_lyrics_cover_song(
+    srt_text: str,
+    lyrics_lines: list[str],
+    total_duration: float | None,
+) -> tuple[str, bool]:
+    """Whisper 가 곡 앞부분만 인식해 가사가 앞에 몰린 경우,
+    가사를 곡 전체(보컬 시작 ~ 곡 끝 부근)에 고르게 다시 펼친다.
+
+    반환: (보정된 SRT, 보정여부)
+    """
+    D = float(total_duration or 0)
+    if D <= 0:
+        return srt_text, False
+    cues = _parse_srt_cues(srt_text)
+    if not cues:
+        return srt_text, False
+    onset = float(cues[0]["start"])
+    last_end = float(cues[-1]["end"])
+    # 자막이 곡의 70% 지점 이전에서 끝나면 = 뒷부분을 못 잡은 것으로 보고 곡 끝까지 펼친다.
+    if last_end >= 0.7 * D:
+        return srt_text, False
+    new_srt = _even_distribute_lyrics(lyrics_lines, onset, 0.97 * D)
+    if not new_srt:
+        return srt_text, False
+    return new_srt, True
+
+
+def _encode_player_audio(audio_path: str) -> tuple[bytes | None, str]:
+    """재생 플레이어 내장용 오디오를 만든다.
+
+    브라우저 호환을 위해 가능하면 mono 96kbps mp3 로 재인코딩하고,
+    실패하면 원본 바이트를 그대로 사용한다. (bytes, mime) 반환.
+    """
+    ffmpeg = _find_ffmpeg()
+    if ffmpeg:
+        out = audio_path + "_player.mp3"
+        try:
+            cmd = [
+                ffmpeg, "-y", "-hide_banner", "-i", audio_path,
+                "-vn", "-ac", "1", "-b:a", "96k", out,
+            ]
+            proc = subprocess.run(cmd, capture_output=True, timeout=180)
+            if proc.returncode == 0 and os.path.exists(out):
+                with open(out, "rb") as fp:
+                    data = fp.read()
+                return data, "audio/mpeg"
+        except Exception:
+            pass
+        finally:
+            try:
+                if os.path.exists(out):
+                    os.unlink(out)
+            except OSError:
+                pass
+    # Fallback: 원본 바이트.
+    try:
+        with open(audio_path, "rb") as fp:
+            data = fp.read()
+        ext = os.path.splitext(audio_path)[1].lower().lstrip(".")
+        mime = {
+            "mp3": "audio/mpeg", "wav": "audio/wav", "m4a": "audio/mp4",
+            "aac": "audio/aac", "ogg": "audio/ogg", "flac": "audio/flac",
+        }.get(ext, "audio/mpeg")
+        return data, mime
+    except OSError:
+        return None, "audio/mpeg"
 
 
 def _word_level_align(lyrics_lines: list[str], words: list[dict]) -> str:
@@ -2823,52 +5057,285 @@ def extract_waveform_data(
             pass
 
 
-def _render_waveform(waveform: dict) -> None:
-    """파형 + SRT 자막 시작 마커 시각화 (matplotlib)."""
-    raw_env = waveform.get("envelope")
-    duration = float(waveform.get("duration", 0))
-    srt_starts: list[float] = waveform.get("srt_starts", [])
+_SYNC_PLAYER_TEMPLATE = """
+<div id="lp-root" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',
+     'Malgun Gothic',sans-serif;color:#e6e6e6;">
+  <audio id="lp-aud" controls preload="auto" style="width:100%;outline:none;"
+         src="__AUDIO_SRC__"></audio>
+  <div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;">
+    <button id="lp-play" style="background:#1f6feb;color:#fff;border:none;
+      border-radius:6px;padding:6px 14px;cursor:pointer;font-size:14px;font-weight:700;">
+      ▶ 재생 / ⏸</button>
+    <button id="lp-add" style="background:#238636;color:#fff;border:none;
+      border-radius:6px;padding:6px 14px;cursor:pointer;font-size:14px;font-weight:700;">
+      ➕ 지금 줄 추가</button>
+    <button id="lp-zout" style="background:#21262d;color:#ddd;border:1px solid #333;
+      border-radius:6px;padding:6px 10px;cursor:pointer;font-size:14px;">🔍−</button>
+    <button id="lp-zin" style="background:#21262d;color:#ddd;border:1px solid #333;
+      border-radius:6px;padding:6px 10px;cursor:pointer;font-size:14px;">🔍＋</button>
+    <button id="lp-zfit" style="background:#21262d;color:#ddd;border:1px solid #333;
+      border-radius:6px;padding:6px 10px;cursor:pointer;font-size:13px;">전체</button>
+    <span id="lp-time" style="margin-left:auto;color:#7fd4ff;font-size:14px;
+      font-variant-numeric:tabular-nums;">0:00.0 / 0:00</span>
+  </div>
+  <div id="lp-wrap" style="overflow-x:auto;overflow-y:hidden;margin-top:6px;
+       border-radius:8px;background:#161b22;">
+    <canvas id="lp-wave" style="height:140px;display:block;cursor:pointer;"></canvas>
+  </div>
+  <div id="lp-now" style="text-align:center;font-size:20px;font-weight:700;
+       min-height:30px;margin:10px 4px 6px;line-height:1.4;color:#fff;">
+  </div>
+  <div id="lp-list" style="max-height:240px;overflow-y:auto;padding:4px;
+       background:#0e1117;border-radius:8px;border:1px solid #222;">
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;">
+    <button id="lp-dl" style="background:#fa5252;color:#fff;border:none;
+      border-radius:6px;padding:8px 16px;cursor:pointer;font-size:14px;font-weight:700;">
+      📥 SRT 다운로드</button>
+    <button id="lp-copy" style="background:#21262d;color:#ddd;border:1px solid #333;
+      border-radius:6px;padding:8px 14px;cursor:pointer;font-size:14px;">📋 복사</button>
+    <span id="lp-msg" style="color:#7ee787;font-size:13px;"></span>
+  </div>
+  <textarea id="lp-srt" readonly style="display:none;width:100%;height:120px;
+    margin-top:8px;background:#0e1117;color:#ddd;border:1px solid #333;border-radius:6px;
+    font-size:12px;"></textarea>
+</div>
+<script>
+(function(){
+  const D = __PAYLOAD__;
+  const aud = document.getElementById('lp-aud');
+  const cv  = document.getElementById('lp-wave');
+  const wrap= document.getElementById('lp-wrap');
+  const now = document.getElementById('lp-now');
+  const list= document.getElementById('lp-list');
+  const timeEl = document.getElementById('lp-time');
+  const msg = document.getElementById('lp-msg');
+  const srtArea = document.getElementById('lp-srt');
+  const ctx = cv.getContext('2d');
+  const env = D.envelope || [];
+  const dur = D.duration || (aud.duration || 0);
 
-    if raw_env is None or duration <= 0:
-        st.info("파형 데이터를 사용할 수 없습니다.")
+  // 편집 가능한 자막 항목 (시작시간 + 텍스트). 시작시간 순으로 유지.
+  let items = (D.cues || []).map(c => ({start: +c.start || 0, text: c.text || ''}));
+  items.sort((a,b)=>a.start-b.start);
+
+  function fmt(t){
+    if(!isFinite(t)) t=0;
+    const m=Math.floor(t/60), s=t-m*60;
+    return m+':'+(s<10?'0':'')+s.toFixed(1);
+  }
+  function fmtShort(t){
+    if(!isFinite(t)) t=0;
+    const m=Math.floor(t/60), s=Math.floor(t%60);
+    return m+':'+(s<10?'0':'')+s;
+  }
+  function pad(n,l){ n=String(Math.floor(n)); while(n.length<l) n='0'+n; return n; }
+  function srtTime(t){
+    if(!isFinite(t)||t<0) t=0;
+    const h=Math.floor(t/3600), m=Math.floor((t%3600)/60), s=Math.floor(t%60);
+    const ms=Math.round((t-Math.floor(t))*1000);
+    return pad(h,2)+':'+pad(m,2)+':'+pad(s,2)+','+pad(ms,3);
+  }
+
+  // ----- 리스트(편집 행) 렌더 -----
+  let rowsUI = [];
+  function render(){
+    list.innerHTML=''; rowsUI=[];
+    items.forEach((it, idx) => {
+      const row=document.createElement('div');
+      row.style.cssText='display:flex;gap:6px;align-items:center;margin:2px 0;';
+      const tb=document.createElement('button');
+      tb.textContent='▶ '+fmt(it.start);
+      tb.style.cssText='background:#21262d;color:#9cf;border:1px solid #333;'+
+        'border-radius:5px;padding:4px 6px;cursor:pointer;font-size:12px;'+
+        'min-width:64px;font-variant-numeric:tabular-nums;';
+      tb.onclick=()=>{ aud.currentTime=it.start; aud.play(); };
+      const inp=document.createElement('input');
+      inp.type='text'; inp.value=it.text; inp.placeholder='여기에 가사 입력';
+      inp.style.cssText='flex:1;background:#161b22;color:#fff;border:1px solid #2a3340;'+
+        'border-radius:5px;padding:6px 8px;font-size:15px;';
+      inp.oninput=()=>{ it.text=inp.value; };
+      const del=document.createElement('button');
+      del.textContent='✕';
+      del.style.cssText='background:#2d2230;color:#f88;border:1px solid #533;'+
+        'border-radius:5px;padding:4px 8px;cursor:pointer;font-size:12px;';
+      del.onclick=()=>{ items.splice(idx,1); render(); };
+      row.appendChild(tb); row.appendChild(inp); row.appendChild(del);
+      list.appendChild(row);
+      rowsUI.push({row, inp, start: it.start});
+    });
+    active = -1;
+  }
+  let active=-1;
+  render();
+
+  function setActive(i){
+    if(i===active) return;
+    if(active>=0 && rowsUI[active]) rowsUI[active].row.style.background='transparent';
+    active=i;
+    if(i>=0 && rowsUI[i]){
+      rowsUI[i].row.style.background='#1f6feb33';
+      now.textContent = items[i].text || '(가사 입력)';
+    } else { now.textContent=''; }
+  }
+  function curIndex(t){
+    let last=-1;
+    for(let i=0;i<items.length;i++){ if(t>=items[i].start-0.01) last=i; else break; }
+    return last;
+  }
+
+  // ----- 줄 추가 -----
+  document.getElementById('lp-add').onclick=()=>{
+    const t=aud.currentTime||0;
+    items.push({start:t, text:''});
+    items.sort((a,b)=>a.start-b.start);
+    render();
+    const i=items.findIndex(it=>Math.abs(it.start-t)<0.0001 && it.text==='');
+    if(rowsUI[i]){ rowsUI[i].row.scrollIntoView({block:'nearest'}); rowsUI[i].inp.focus(); }
+    msg.textContent='줄 추가됨 ('+fmt(t)+')'; setTimeout(()=>msg.textContent='',1500);
+  };
+
+  // ----- 재생/일시정지 -----
+  document.getElementById('lp-play').onclick=()=>{ if(aud.paused) aud.play(); else aud.pause(); };
+  document.addEventListener('keydown',(e)=>{
+    if(e.code==='Space' && e.target.tagName!=='INPUT' && e.target.tagName!=='TEXTAREA'){
+      e.preventDefault(); if(aud.paused) aud.play(); else aud.pause();
+    }
+  });
+
+  // ----- SRT 만들기/내보내기 -----
+  function buildSRT(){
+    const arr=items.filter(it=>(it.text||'').trim()!=='').slice().sort((a,b)=>a.start-b.start);
+    let out='';
+    for(let i=0;i<arr.length;i++){
+      const s=arr[i].start;
+      let e=(i+1<arr.length)? arr[i+1].start-0.05 : ((dur||s+3));
+      if(e<=s) e=s+1.5;
+      out += (i+1)+'\\n'+srtTime(s)+' --> '+srtTime(e)+'\\n'+arr[i].text.trim()+'\\n\\n';
+    }
+    return out.trim()+'\\n';
+  }
+  document.getElementById('lp-dl').onclick=()=>{
+    const txt=buildSRT();
+    if(txt.trim()===''){ msg.style.color='#f88'; msg.textContent='가사를 먼저 입력하세요'; return; }
+    try{
+      const blob=new Blob([txt],{type:'application/x-subrip;charset=utf-8'});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url; a.download='lyrics.srt'; document.body.appendChild(a); a.click();
+      setTimeout(()=>{URL.revokeObjectURL(url); a.remove();},1000);
+      msg.style.color='#7ee787'; msg.textContent='다운로드 시작!';
+    }catch(err){
+      // 다운로드가 막히면 텍스트로 보여줌.
+      srtArea.style.display='block'; srtArea.value=txt; srtArea.select();
+      msg.style.color='#7ee787'; msg.textContent='아래 칸의 내용을 복사해 .srt 로 저장하세요';
+    }
+  };
+  document.getElementById('lp-copy').onclick=()=>{
+    const txt=buildSRT();
+    if(txt.trim()===''){ msg.style.color='#f88'; msg.textContent='가사를 먼저 입력하세요'; return; }
+    const done=()=>{ msg.style.color='#7ee787'; msg.textContent='복사됨!'; };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(txt).then(done, ()=>{
+        srtArea.style.display='block'; srtArea.value=txt; srtArea.select(); done();
+      });
+    } else {
+      srtArea.style.display='block'; srtArea.value=txt; srtArea.select();
+      try{ document.execCommand('copy'); }catch(e){}
+      done();
+    }
+  };
+
+  // ----- 파형 + 줌 -----
+  let W=0, H=0, W0=0, zoom=1, dpr=window.devicePixelRatio||1;
+  function resize(){
+    W0=wrap.clientWidth||600; W=Math.max(W0, Math.floor(W0*zoom)); H=140;
+    cv.style.width=W+'px'; cv.width=Math.max(1,Math.floor(W*dpr));
+    cv.height=Math.max(1,Math.floor(H*dpr)); ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  function setZoom(z){
+    const dd=dur||aud.duration||1; const center=(aud.currentTime||0)/dd;
+    zoom=Math.min(60,Math.max(1,z)); resize();
+    wrap.scrollLeft=Math.max(0, center*W - W0/2);
+  }
+  document.getElementById('lp-zin').onclick =()=>setZoom(zoom*1.7);
+  document.getElementById('lp-zout').onclick=()=>setZoom(zoom/1.7);
+  document.getElementById('lp-zfit').onclick=()=>setZoom(1);
+  window.addEventListener('resize', resize);
+  resize();
+
+  function draw(){
+    const t=aud.currentTime||0; const dd=dur||aud.duration||1;
+    ctx.clearRect(0,0,W,H);
+    const n=env.length||1, bw=W/n;
+    for(let i=0;i<n;i++){
+      const a=env[i]||0, bh=Math.max(1,a*(H*0.9));
+      ctx.fillStyle=((i/n)*dd<=t)?'#4CAF50':'#2e7d4f';
+      ctx.fillRect(i*bw,(H-bh)/2,Math.max(1,bw*0.9),bh);
+    }
+    ctx.fillStyle='rgba(255,112,67,0.6)';
+    items.forEach(it=>{ if(it.start>=0&&it.start<=dd) ctx.fillRect((it.start/dd)*W,0,1,H); });
+    const px=(t/dd)*W;
+    ctx.fillStyle='#fff'; ctx.fillRect(px-1,0,2,H);
+    ctx.fillStyle='#ff5252'; ctx.beginPath(); ctx.arc(px,6,4,0,Math.PI*2); ctx.fill();
+    if(!aud.paused && zoom>1){
+      const vw=wrap.clientWidth, p=vw*0.15;
+      if(px<wrap.scrollLeft+p || px>wrap.scrollLeft+vw-p) wrap.scrollLeft=Math.max(0,px-vw*0.3);
+    }
+    timeEl.textContent=fmt(t)+' / '+fmtShort(dd);
+    setActive(curIndex(t));
+    requestAnimationFrame(draw);
+  }
+  cv.addEventListener('click',(e)=>{
+    const r=cv.getBoundingClientRect();
+    const frac=Math.min(1,Math.max(0,(e.clientX-r.left)/r.width));
+    const dd=dur||aud.duration||0; if(dd>0){ aud.currentTime=frac*dd; aud.play(); }
+  });
+  requestAnimationFrame(draw);
+})();
+</script>
+"""
+
+
+def _render_sync_player(info: dict) -> None:
+    """오디오 재생 + 파형 재생헤드 + 실시간 가사 하이라이트 + 클릭 탐색."""
+    import streamlit.components.v1 as components
+
+    audio_b64 = info.get("audio_b64")
+    cues = info.get("cues") or []
+    waveform = info.get("waveform") or {}
+    if not audio_b64:
+        st.info("재생용 오디오를 준비하지 못했습니다. 아래 정적 파형으로 확인하세요.")
         return
 
-    try:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-    except ImportError:
-        st.info("파형 시각화: `pip install matplotlib` 후 재시도하세요.")
-        return
-
-    envelope = np.array(raw_env, dtype=np.float32)
-    times = np.linspace(0, duration, len(envelope))
-
-    fig, ax = plt.subplots(figsize=(12, 2.5))
-    fig.patch.set_facecolor("#0e1117")
-    ax.set_facecolor("#161b22")
-    ax.fill_between(times, envelope, alpha=0.75, color="#4CAF50")
-    ax.plot(times, envelope, lw=0.5, color="#81C784", alpha=0.85)
-    for t in srt_starts[:60]:
-        if 0 <= t <= duration:
-            ax.axvline(x=t, color="#FF7043", alpha=0.55, lw=0.9)
-    ax.set_xlim(0, duration)
-    ax.set_ylim(0, 1.05)
-    ax.set_xlabel("시간 (초)", color="#aaa", fontsize=8)
-    ax.tick_params(colors="#aaa", labelsize=7)
-    for sp in ax.spines.values():
-        sp.set_edgecolor("#333")
-    ax.set_title("🎵 파형  ·  🔴 자막 시작 지점", color="#ddd", fontsize=9, pad=6)
-    st.pyplot(fig, use_container_width=True)
-    plt.close(fig)
+    payload = {
+        "envelope": waveform.get("envelope") or [],
+        "duration": float(
+            waveform.get("duration") or info.get("duration") or 0
+        ),
+        "cues": cues,
+    }
+    src = f"data:{info.get('audio_mime', 'audio/mpeg')};base64,{audio_b64}"
+    html = (
+        _SYNC_PLAYER_TEMPLATE
+        .replace("__AUDIO_SRC__", src)
+        .replace("__PAYLOAD__", json.dumps(payload, ensure_ascii=False))
+    )
+    components.html(html, height=720, scrolling=False)
+    st.caption(
+        "▶ 재생하다가 한 줄이 시작되는 순간 **`➕ 지금 줄 추가`** 를 누르면 그 시점에 자막 줄이 "
+        "생깁니다. 아래 칸에 가사를 입력하세요. (스페이스바 = 재생/일시정지) 다 만들면 "
+        "**`📥 SRT 다운로드`** 로 받아 캡컷에 넣으면 됩니다. 🔍＋ 로 파형을 확대하면 정밀하게 "
+        "맞출 수 있고, ▶ 시간칩이나 가사 줄을 누르면 그 구간이 재생됩니다."
+    )
 
 
 def render_sync_tab() -> None:
     st.subheader("🎤 가사 자동 동기화 → SRT (CapCut/Premiere 임포트용)")
     st.caption(
-        "음악(또는 영상)을 업로드하면 OpenAI Whisper 가 가사를 부르는 정확한 시점을 잡아 "
-        "타임라인이 맞아떨어지는 SRT 자막을 만들어줍니다. 직접 쓴 가사를 정렬할 수도, "
-        "Whisper 의 인식 결과를 그대로 받을 수도 있습니다."
+        "음악(또는 영상)을 업로드하면 Whisper 가 가사를 부르는 정확한 시점을 잡아 "
+        "타임라인이 맞아떨어지는 SRT 자막을 만들어줍니다. "
+        "**로컬 Whisper(무료)** 또는 **OpenAI API(유료, 빠름)** 중 선택할 수 있습니다."
     )
 
     ffmpeg = _find_ffmpeg()
@@ -2876,17 +5343,106 @@ def render_sync_tab() -> None:
         st.error("⚠️ ffmpeg 가 필요합니다. (오디오 추출/압축에 사용)")
         return
 
-    default_key = os.getenv("OPENAI_API_KEY", "")
-    api_key = st.text_input(
-        "OpenAI API 키",
-        value=default_key,
-        type="password",
-        key="sync_api_key",
+    # ---- 엔진 선택 ----
+    engine = st.radio(
+        "🎙️ Whisper 엔진",
+        options=["local", "openai"],
+        format_func=lambda k: {
+            "local":  "💻 로컬 Whisper (무료) — 본인 컴퓨터에서 추론, API 키 불필요",
+            "openai": "🌐 OpenAI Whisper API (유료, ~$0.03/5분) — 빠르고 설치 불필요",
+        }[k],
+        index=0,
+        key="sync_engine",
         help=(
-            "https://platform.openai.com/api-keys 에서 발급. "
-            "whisper-1 모델은 약 $0.006/분 입니다 (5분 곡 ≈ $0.03)."
+            "로컬: faster-whisper 패키지 필요 (`pip install faster-whisper`). "
+            "첫 실행 시 모델을 자동 다운로드합니다. 같은 모델은 한 번만 받으면 영구 사용. "
+            "OpenAI: 빠르고 설정이 간단하지만 곡당 약 40원."
         ),
     )
+
+    api_key = ""
+    model_size = "small"
+    if engine == "openai":
+        default_key = os.getenv("OPENAI_API_KEY", "") or SAVED_KEYS.get("openai", "")
+        api_key = st.text_input(
+            "OpenAI API 키",
+            value=default_key,
+            type="password",
+            key="sync_api_key",
+            help=(
+                "https://platform.openai.com/api-keys 에서 발급. "
+                "whisper-1 모델은 약 $0.006/분 입니다 (5분 곡 ≈ $0.03)."
+            ),
+        )
+        save_col, clear_col = st.columns(2)
+        if save_col.button("💾 OpenAI 키 저장", key="sync_openai_save"):
+            if api_key.strip():
+                save_key("openai", api_key.strip())
+                SAVED_KEYS["openai"] = api_key.strip()
+                st.success("저장됨.")
+            else:
+                st.warning("키가 비어 있습니다.")
+        if clear_col.button(
+            "🗑️ 해지", key="sync_openai_clear",
+            disabled=not SAVED_KEYS.get("openai"),
+        ):
+            clear_key("openai")
+            SAVED_KEYS.pop("openai", None)
+            st.rerun()
+    else:
+        # 로컬 모델 크기 선택
+        model_options = {
+            "tiny":     "tiny (75MB) · 매우 빠름 · 한국어 정확도 낮음",
+            "base":     "base (142MB) · 빠름 · 한국어 보통",
+            "small":    "✓ small (462MB) · 균형 · 한국어 권장 (기본)",
+            "medium":   "medium (1.5GB) · 느림 · 한국어 매우 정확",
+            "large-v3": "large-v3 (3GB) · 매우 느림 · 최고 정확도",
+        }
+        model_size = st.selectbox(
+            "🧠 로컬 모델 크기",
+            options=list(model_options.keys()),
+            format_func=lambda k: model_options[k],
+            index=2,
+            key="sync_local_model",
+            help=(
+                "모델은 첫 사용 시 ~/.cache/huggingface 에 자동 다운로드됩니다. "
+                "한 번 받으면 다시 받지 않아요. 한국어 가사면 small 또는 medium 추천."
+            ),
+        )
+        # faster-whisper 설치 여부 체크
+        try:
+            import faster_whisper  # noqa: F401
+            st.caption("✓ faster-whisper 감지됨 — 바로 사용 가능합니다.")
+        except ImportError:
+            st.warning(
+                "⚠️ `faster-whisper` 패키지가 설치되어 있지 않습니다.\n\n"
+                "터미널에서 다음 명령으로 설치하세요:\n"
+                "```\npip install faster-whisper\n```\n"
+                "설치 후 앱을 재시작해주세요. (OpenAI API 옵션은 설치 없이 바로 사용 가능)"
+            )
+
+    # ---- 보컬 분리 (Demucs) — 정확도 향상 옵션 ----
+    demucs_ok = demucs_available()
+    use_demucs = st.checkbox(
+        "🎤 보컬 분리로 정확도 높이기 (반주 제거 후 인식)",
+        value=demucs_ok,
+        key="sync_demucs",
+        disabled=not demucs_ok,
+        help=(
+            "Demucs 로 반주를 제거하고 보컬만 Whisper 에 넣어 인식 정확도를 크게 높입니다. "
+            "곡당 1~3분 정도 더 걸립니다. 재생 플레이어와 파형은 원곡 그대로 유지됩니다."
+        ),
+    )
+    if not demucs_ok:
+        st.info(
+            "🎤 **보컬 분리를 켜려면 한 번만 설치하면 됩니다.**\n\n"
+            "프로젝트 폴더의 **`보컬분리_설치.bat` 파일을 더블클릭**하세요. "
+            "(설치 후 대시보드를 다시 실행하면 이 체크박스가 켜집니다.)\n\n"
+            "직접 설치하려면 터미널에서 `pip install demucs` 도 가능합니다. "
+            "설치 전에는 원곡 그대로 인식합니다 — 가사를 직접 붙여넣으면 분리 없이도 정확합니다."
+        )
+    elif use_demucs:
+        st.caption("✓ Demucs 감지됨 — 반주를 제거하고 보컬만 인식합니다. (가사 없는 곡에 특히 유용)")
 
     audio_file = st.file_uploader(
         "🎵 음악 또는 영상 파일",
@@ -2898,40 +5454,72 @@ def render_sync_tab() -> None:
     col1, col2 = st.columns(2)
     with col1:
         lang_options = [
-            ("자동 감지", None), ("한국어 (ko)", "ko"), ("English (en)", "en"),
-            ("日本語 (ja)", "ja"), ("中文 (zh)", "zh"),
+            ("🌐 자동 감지 (다국어·혼합 가사 권장)", None),
+            ("한국어 (ko)", "ko"),
+            ("English (en)", "en"),
+            ("日本語 (ja)", "ja"),
+            ("中文 / 대만 (zh)", "zh"),
+            ("Español (es)", "es"),
+            ("हिन्दी / Hindi (hi)", "hi"),
+            ("Português (pt)", "pt"),
+            ("Français (fr)", "fr"),
+            ("Deutsch (de)", "de"),
+            ("Italiano (it)", "it"),
+            ("Bahasa Indonesia (id)", "id"),
+            ("Tiếng Việt (vi)", "vi"),
+            ("ภาษาไทย (th)", "th"),
+            ("Русский (ru)", "ru"),
+            ("العربية (ar)", "ar"),
         ]
         lang_pick = st.selectbox(
             "언어",
             options=lang_options,
             format_func=lambda x: x[0],
-            index=1,
+            index=0,
             key="sync_lang",
-            help="명시하면 Whisper 정확도가 올라갑니다. 영문 가사면 'English' 선택.",
+            help=(
+                "단일 언어 곡이면 해당 언어를 직접 고르면 정확도가 가장 높습니다. "
+                "여러 언어가 섞인 가사(예: 한국어+영어, 일본어+영어)는 '🌐 자동 감지'를 쓰세요. "
+                "어떤 언어든 정확한 텍스트가 필요하면 아래 '가사' 칸에 직접 붙여넣는 것이 가장 정확합니다."
+            ),
         )
     with col2:
         mode = st.radio(
             "동기화 모드",
-            options=["내 가사를 Whisper 타이밍에 정렬", "Whisper 인식 결과만 사용"],
+            options=[
+                "🎯 보컬 구간 자동 감지 (권장)",
+                "Whisper 인식 결과만 사용",
+            ],
             index=0,
             key="sync_mode",
-            help="가사 미입력 시 자동으로 'Whisper 결과만' 모드가 됩니다.",
+            help=(
+                "• 🎯 보컬 구간 자동 감지: Whisper 가 가사를 못 알아들어도 동작합니다. "
+                "노래하는 구간(소리 에너지)을 곡 끝까지 찾습니다.\n"
+                "   - 가사를 비워두면 → 각 구간을 **빈 자막 칸**으로 만들어 주고, 아래 표에서 "
+                "직접 가사를 입력하면 됩니다. (가사 시작점만 잡아줌)\n"
+                "   - 가사를 입력하면 → 감지한 구간에 내 가사를 순서대로 배치합니다.\n"
+                "   - **보컬 분리(🎤)를 켜면 구간 감지가 훨씬 정확해집니다.**\n"
+                "• Whisper 인식 결과만: 가사 없이 Whisper 가 들은 그대로 받아쓰기."
+            ),
         )
 
     user_lyrics = st.text_area(
-        "📝 가사 (한 줄 = 한 자막 라인)",
+        "📝 가사 (한 줄 = 한 자막 라인) — 어떤 언어·혼합 가사도 OK",
         value="",
         height=240,
         key="sync_lyrics",
         placeholder=(
-            "예시:\n"
-            "오늘도 비가 내리네\n"
-            "창문 너머 잿빛 하늘\n"
-            "잠시 멈춰 너를 떠올려\n"
+            "한 줄에 한 자막. 언어가 섞여도 그대로 적으면 됩니다:\n"
+            "今夜も星が綺麗だね\n"
+            "But I'm still thinking of you\n"
+            "Bajo la luna seguiré\n"
             "..."
         ),
-        help="비워두면 Whisper 가 들은 그대로 SRT 가 만들어집니다. "
-             "라인 수가 Whisper 구간 수와 달라도 자동으로 그룹화/분할됩니다.",
+        help=(
+            "여기에 가사를 붙여넣으면 언어가 몇 개 섞이든 텍스트가 100% 정확하게 들어가고, "
+            "Whisper 는 타이밍만 맞춥니다. 비워두면 Whisper 가 들은 그대로(자동 감지) SRT 를 만듭니다. "
+            "라인 수가 Whisper 구간 수와 달라도 자동으로 그룹화/분할됩니다."
+        ),
     )
 
     with st.expander("⚙️ 고급 정렬 옵션", expanded=False):
@@ -2974,8 +5562,8 @@ def render_sync_tab() -> None:
     if not audio_file:
         st.error("음악(또는 영상) 파일을 업로드하세요.")
         return
-    if not api_key.strip():
-        st.error("OpenAI API 키가 필요합니다. (Whisper 호출용)")
+    if engine == "openai" and not api_key.strip():
+        st.error("OpenAI API 키가 필요합니다. (또는 위에서 '💻 로컬 Whisper' 를 선택하세요)")
         return
 
     workdir = tempfile.mkdtemp(prefix="ytmusic_sync_")
@@ -3000,72 +5588,189 @@ def render_sync_tab() -> None:
         else:
             audio_path = src_path
 
-        # Whisper 25MB 한도 체크. 넘으면 압축.
-        if os.path.getsize(audio_path) > WHISPER_MAX_BYTES:
-            compressed = os.path.join(workdir, "compressed.mp3")
+        # 재생 플레이어/파형은 원곡(audio_path)을 그대로 쓰고,
+        # Whisper 입력만 transcribe_path 로 따로 둔다.
+        transcribe_path = audio_path
+
+        # 보컬 분리 (Demucs) — 반주를 제거하고 보컬만 인식에 사용.
+        if use_demucs and demucs_available():
+            demucs_out = os.path.join(workdir, "demucs")
             with st.spinner(
-                f"📦 파일이 25MB 를 넘어 mono 64kbps 로 압축 중... "
-                f"({os.path.getsize(audio_path)/1024/1024:.1f}MB)"
+                "🎤 보컬 분리 중 (Demucs)... 곡당 1~3분 소요. "
+                "첫 실행이면 모델 다운로드가 먼저 진행돼요."
             ):
-                ok, log = compress_audio_for_whisper(audio_path, compressed)
-            if not ok or os.path.getsize(compressed) > WHISPER_MAX_BYTES:
-                st.error(
-                    f"파일이 너무 큽니다 ({os.path.getsize(audio_path)/1024/1024:.1f}MB). "
-                    "25MB 이하로 직접 줄여서 다시 시도해주세요."
-                )
-                return
-            audio_path = compressed
+                vocal_path, dlog = separate_vocals(audio_path, demucs_out)
+            if vocal_path:
+                transcribe_path = vocal_path
+                st.caption("✓ 보컬 분리 완료 — 반주를 제거한 보컬로 인식합니다.")
+            else:
+                st.warning("보컬 분리에 실패해 원곡 그대로 인식합니다. 아래 사유를 확인하세요.")
+                with st.expander("🔎 보컬 분리 실패 사유 (전체 로그)", expanded=True):
+                    st.code(dlog or "(로그 없음)", language=None)
 
-        # Whisper 호출.
-        size_mb = os.path.getsize(audio_path) / 1024 / 1024
-        with st.spinner(
-            f"🎤 Whisper 가 가사 타이밍을 분석 중... "
-            f"(업로드 {size_mb:.1f}MB · 곡 길이의 5~15% 소요)"
-        ):
-            try:
-                result = whisper_transcribe(
-                    audio_path, api_key.strip(), language=lang_pick[1]
-                )
-            except Exception as e:
-                st.error(f"Whisper API 호출 실패: {e}")
-                return
+        precomputed_cues = None
+        phrase_mode = mode.startswith("🎯")
 
-        segments = result.get("segments") or []
-        if not segments:
-            st.warning("Whisper 가 음성 구간을 찾지 못했습니다. (반주만 있는 구간일 수 있음)")
-            return
-
-        words: list[dict] = result.get("words") or []
-        use_word_level = (
-            align_precision.startswith("Word")
-            and bool(words)
-            and user_lyrics.strip()
-            and not mode.startswith("Whisper 인식 결과만")
-        )
-
-        if mode.startswith("Whisper 인식 결과만") or not user_lyrics.strip():
-            srt_text = whisper_segments_to_srt(segments)
-            method = f"Whisper 직접 변환 · {len(segments)}구간"
-            line_count = len(segments)
-        elif use_word_level:
+        if phrase_mode:
+            # 인식에 의존하지 않음 — 보컬 에너지로 '노래하는 구간'을 곡 끝까지 찾는다.
             lyrics_lines = [ln for ln in user_lyrics.splitlines() if ln.strip()]
-            srt_text = _word_level_align(lyrics_lines, words)
-            line_count = len(lyrics_lines)
-            method = f"Word 단위 정밀 정렬 · {line_count}줄 → {len(words)}단어"
+            with st.spinner("🎯 보컬 구간(부르는 부분) 감지 중..."):
+                ph_env, ph_dur = extract_waveform_data(transcribe_path, n_points=6000)
+            phrases = detect_vocal_phrases(ph_env, ph_dur)
+            # 감지가 전혀 안 되면 4초 간격의 빈 슬롯이라도 만들어 둔다.
+            if not phrases and ph_dur and ph_dur > 0:
+                step = 4.0
+                k = int(ph_dur // step) + 1
+                phrases = [
+                    (round(i * step, 2), round(min((i + 1) * step, ph_dur), 2))
+                    for i in range(k)
+                ]
+            segments = []
+            result = {"duration": ph_dur, "language": None, "segments": [], "words": []}
+            src_label = (
+                "보컬분리" if (use_demucs and transcribe_path != audio_path) else "원곡"
+            )
+            if lyrics_lines:
+                srt_text = align_lyrics_to_phrases(lyrics_lines, phrases, ph_dur)
+                line_count = srt_text.count(" --> ")
+                method = (
+                    f"🎯 {src_label} 보컬구간 {len(phrases)}개 · 내 가사 배치 "
+                    f"→ 자막 {line_count}줄"
+                )
+            else:
+                # 가사 없음 → 각 보컬 구간을 '빈 자막 칸'으로 만든다. 표에서 직접 입력.
+                precomputed_cues = [
+                    {"start": float(s), "end": float(e), "text": ""}
+                    for (s, e) in phrases
+                ]
+                srt_text = _rows_to_srt(precomputed_cues)
+                line_count = len(precomputed_cues)
+                method = (
+                    f"🎯 {src_label} 보컬구간 {len(phrases)}개 감지 — "
+                    f"아래 ✏️ 표에서 각 구간에 가사를 입력하세요"
+                )
+            if not phrases:
+                st.warning(
+                    "보컬 구간을 감지하지 못했습니다. '🎤 보컬 분리'를 켜고 다시 시도해보세요."
+                )
         else:
-            lyrics_lines = [ln for ln in user_lyrics.splitlines() if ln.strip()]
-            srt_text = align_lyrics_to_segments(lyrics_lines, segments)
-            line_count = len(lyrics_lines)
-            method = f"가사 정렬 · 입력 {line_count}줄 → Whisper {len(segments)}구간"
+            # OpenAI 만 25MB 한도. 로컬은 제한 없음.
+            if engine == "openai" and os.path.getsize(transcribe_path) > WHISPER_MAX_BYTES:
+                compressed = os.path.join(workdir, "compressed.mp3")
+                with st.spinner(
+                    f"📦 파일이 25MB 를 넘어 mono 64kbps 로 압축 중... "
+                    f"({os.path.getsize(transcribe_path)/1024/1024:.1f}MB)"
+                ):
+                    ok, log = compress_audio_for_whisper(transcribe_path, compressed)
+                if not ok or os.path.getsize(compressed) > WHISPER_MAX_BYTES:
+                    st.error(
+                        f"파일이 너무 큽니다 ({os.path.getsize(transcribe_path)/1024/1024:.1f}MB). "
+                        "25MB 이하로 직접 줄여서 다시 시도해주세요. "
+                        "(또는 '💻 로컬 Whisper' 로 전환하면 용량 제한 없음)"
+                    )
+                    return
+                transcribe_path = compressed
 
-        # 후렴구 보정 (가사 입력 모드에서만)
-        if chorus_correct and user_lyrics.strip() and not mode.startswith("Whisper 인식 결과만"):
-            srt_text = _chorus_correct_srt(srt_text)
-            method += " + 후렴구 보정"
+            # Whisper 호출 — 엔진별 분기.
+            size_mb = os.path.getsize(transcribe_path) / 1024 / 1024
+            if engine == "local":
+                spinner_msg = (
+                    f"💻 로컬 Whisper 로 분석 중... ({model_size} 모델, {size_mb:.1f}MB)\n\n"
+                    "첫 실행이면 모델 다운로드(수 분)가 먼저 진행돼요. "
+                    "이후엔 캐시에서 즉시 로드됩니다."
+                )
+                with st.spinner(spinner_msg):
+                    try:
+                        result = whisper_transcribe_local(
+                            transcribe_path,
+                            model_size=model_size,
+                            language=lang_pick[1],
+                        )
+                    except RuntimeError as e:
+                        st.error(str(e))
+                        return
+                    except Exception as e:
+                        st.error(f"로컬 Whisper 추론 실패: {type(e).__name__}: {e}")
+                        return
+            else:
+                with st.spinner(
+                    f"🎤 OpenAI Whisper API 가 가사 타이밍을 분석 중... "
+                    f"(업로드 {size_mb:.1f}MB · 곡 길이의 5~15% 소요)"
+                ):
+                    try:
+                        result = whisper_transcribe(
+                            transcribe_path, api_key.strip(), language=lang_pick[1]
+                        )
+                    except Exception as e:
+                        st.error(f"Whisper API 호출 실패: {e}")
+                        return
 
-        # 파형 추출 (workdir 정리 전)
+            segments = result.get("segments") or []
+            if not segments:
+                st.warning("Whisper 가 음성 구간을 찾지 못했습니다. (반주만 있는 구간일 수 있음)")
+                return
+
+            words: list[dict] = result.get("words") or []
+            use_word_level = (
+                align_precision.startswith("Word")
+                and bool(words)
+                and user_lyrics.strip()
+                and not mode.startswith("Whisper 인식 결과만")
+            )
+
+            engine_label = "💻 로컬" if engine == "local" else "🌐 OpenAI"
+            if engine == "local":
+                engine_label += f"({model_size})"
+
+            fill_mode = mode.startswith("내 가사로 곡 전체")
+
+            if mode.startswith("Whisper 인식 결과만") or not user_lyrics.strip():
+                srt_text = whisper_segments_to_srt(segments)
+                method = f"{engine_label} · Whisper 직접 변환 · {len(segments)}구간"
+                line_count = len(segments)
+            elif fill_mode:
+                lyrics_lines = [ln for ln in user_lyrics.splitlines() if ln.strip()]
+                srt_text = align_lyrics_by_similarity(lyrics_lines, segments)
+                line_count = srt_text.count(" --> ")
+                method = (
+                    f"{engine_label} · 곡 전체 자동 채움(반복 매칭) · "
+                    f"가사 {len(lyrics_lines)}줄 → {len(segments)}구간 → 자막 {line_count}줄"
+                )
+            elif use_word_level:
+                lyrics_lines = [ln for ln in user_lyrics.splitlines() if ln.strip()]
+                srt_text = _word_level_align(lyrics_lines, words)
+                line_count = len(lyrics_lines)
+                method = f"{engine_label} · Word 단위 정밀 정렬 · {line_count}줄 → {len(words)}단어"
+            else:
+                lyrics_lines = [ln for ln in user_lyrics.splitlines() if ln.strip()]
+                srt_text = align_lyrics_to_segments(
+                    lyrics_lines, segments, result.get("duration")
+                )
+                line_count = len(lyrics_lines)
+                method = f"{engine_label} · 가사 정렬 · 입력 {line_count}줄 → Whisper {len(segments)}구간"
+
+            # 곡 끝까지 커버 보정 — '정렬' 모드에서 Whisper 가 앞부분만 잡아 가사가
+            # 앞에 몰린 경우 곡 전체에 고르게 펼친다. (자동 채움 모드는 이미 곡 전체 커버)
+            if user_lyrics.strip() and not mode.startswith("Whisper 인식 결과만") and not fill_mode:
+                srt_text, stretched = _ensure_lyrics_cover_song(
+                    srt_text, lyrics_lines, result.get("duration")
+                )
+                if stretched:
+                    method += " + 곡 전체 커버 보정"
+
+            # 후렴구 보정 ('정렬' 모드에서만 — 자동 채움은 Whisper 타이밍을 그대로 사용)
+            if (
+                chorus_correct and user_lyrics.strip()
+                and not mode.startswith("Whisper 인식 결과만") and not fill_mode
+            ):
+                srt_text = _chorus_correct_srt(srt_text)
+                method += " + 후렴구 보정"
+
+        # 파형 추출 + 재생 플레이어용 오디오 인코딩 (workdir 정리 전)
         with st.spinner("🎵 파형 추출 중... (시각화용)"):
             envelope, wav_dur = extract_waveform_data(audio_path)
+        with st.spinner("🔊 재생 플레이어 준비 중..."):
+            player_bytes, player_mime = _encode_player_audio(audio_path)
         waveform = {
             "envelope": envelope.tolist() if envelope is not None else None,
             "duration": wav_dur or float(result.get("duration") or 0),
@@ -3081,11 +5786,100 @@ def render_sync_tab() -> None:
             "line_count": line_count,
             "audio_filename": audio_file.name,
             "waveform": waveform,
+            "cues": (
+                precomputed_cues if precomputed_cues is not None
+                else _parse_srt_cues(srt_text)
+            ),
+            "audio_b64": (
+                base64.b64encode(player_bytes).decode("ascii")
+                if player_bytes else None
+            ),
+            "audio_mime": player_mime,
         }
         st.success(f"✅ 동기화 완료 — {method}")
         _render_sync_result()
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
+
+
+def _render_sync_editor(info: dict) -> None:
+    """가사·타이밍을 표에서 직접 수정 → SRT/플레이어에 즉시 반영."""
+    st.caption(
+        "각 줄은 노래에서 감지한 **가사 구간(시작~끝 시간)** 입니다. **'가사' 칸이 비어 있으면 "
+        "그 구간에 들리는 가사를 직접 입력**하세요. 위 플레이어에서 그 줄을 클릭하면 해당 "
+        "구간이 재생됩니다. 시작/끝 시간 조정·행 추가/삭제도 가능합니다. 다 채우면 아래 "
+        "**적용** 버튼을 누르세요. (시간 단위: 초)"
+    )
+    cues = info.get("cues") or []
+    df = pd.DataFrame(
+        [
+            {
+                "시작(초)": round(float(c.get("start", 0) or 0), 2),
+                "끝(초)": round(float(c.get("end", 0) or 0), 2),
+                "가사": c.get("text", ""),
+            }
+            for c in cues
+        ],
+        columns=["시작(초)", "끝(초)", "가사"],
+    )
+
+    rev = info.get("editor_rev", 0)
+    edited = st.data_editor(
+        df,
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True,
+        key=f"sync_editor_{rev}",
+        column_config={
+            "시작(초)": st.column_config.NumberColumn(
+                "시작(초)", min_value=0.0, step=0.1, format="%.2f"
+            ),
+            "끝(초)": st.column_config.NumberColumn(
+                "끝(초)", min_value=0.0, step=0.1, format="%.2f"
+            ),
+            "가사": st.column_config.TextColumn("가사", width="large"),
+        },
+    )
+
+    if st.button(
+        "✅ 수정 내용 적용 (SRT·플레이어 갱신)",
+        type="primary",
+        use_container_width=True,
+        key=f"sync_editor_apply_{rev}",
+    ):
+        rows: list[dict] = []
+        for _, r in edited.iterrows():
+            text = str(r.get("가사") or "").strip()
+            if not text:
+                continue
+            try:
+                s = float(r.get("시작(초)") or 0)
+            except (TypeError, ValueError):
+                s = 0.0
+            try:
+                e = float(r.get("끝(초)") or 0)
+            except (TypeError, ValueError):
+                e = s
+            if s < 0:
+                s = 0.0
+            if e <= s:
+                e = s + 2.0
+            rows.append({"start": s, "end": e, "text": text})
+
+        if not rows:
+            st.warning("가사가 비어 있습니다. 최소 한 줄은 있어야 합니다.")
+            return
+
+        rows.sort(key=lambda x: x["start"])
+        info["content"] = _rows_to_srt(rows)
+        info["cues"] = rows
+        info["line_count"] = len(rows)
+        info["editor_rev"] = rev + 1
+        if info.get("waveform"):
+            info["waveform"]["srt_starts"] = [r["start"] for r in rows]
+        st.session_state["sync_srt"] = info
+        st.success("✅ 적용 완료 — 위 플레이어와 SRT 다운로드에 반영했습니다.")
+        st.rerun()
 
 
 def _render_sync_result() -> None:
@@ -3116,14 +5910,15 @@ def _render_sync_result() -> None:
         key="sync_download",
     )
 
-    # 파형 시각화
-    waveform = info.get("waveform")
-    if waveform and waveform.get("envelope"):
-        with st.expander("📊 파형 + 자막 시작 마커", expanded=True):
-            st.caption(
-                "🟢 파형 · 🔴 자막 시작 지점 — 마커와 음악 피크가 잘 맞는지 확인하세요."
-            )
-            _render_waveform(waveform)
+    # 재생 플레이어 (오디오 + 실시간 가사 싱크)
+    if info.get("audio_b64") and info.get("cues"):
+        with st.expander("▶️ 재생하며 가사 싱크 확인", expanded=True):
+            _render_sync_player(info)
+
+    # 가사·타이밍 직접 수정 → 100% 만들기
+    if info.get("cues"):
+        with st.expander("✏️ 가사·타이밍 직접 수정 → 정확도 100% 만들기", expanded=True):
+            _render_sync_editor(info)
 
     with st.expander("📄 생성된 SRT 미리보기", expanded=True):
         preview = info["content"]
@@ -3142,8 +5937,271 @@ def _render_sync_result() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Entry point
+# Title Lab tab — 수동 붙여넣기 → 공식 추출 → 신규 제목 생성
 # ---------------------------------------------------------------------------
+
+
+def _parse_title_lab_input(text: str) -> pd.DataFrame:
+    """탭 5 입력 파서.
+
+    한 줄당 한 제목. 옵션으로 `제목 | 조회수 | 구독자` 형식을 허용해
+    view_sub_ratio 가 있으면 고성과 단어/서사 lift 분석을 함께 켠다.
+    """
+    rows: list[dict] = []
+    for line in text.splitlines():
+        ln = line.strip()
+        if not ln:
+            continue
+        parts = [p.strip() for p in ln.split("|")]
+        title = parts[0]
+        views: int | None = None
+        subs: int | None = None
+        try:
+            if len(parts) >= 2 and parts[1]:
+                views = int(parts[1].replace(",", "").replace(" ", ""))
+            if len(parts) >= 3 and parts[2]:
+                subs = int(parts[2].replace(",", "").replace(" ", ""))
+        except ValueError:
+            views = subs = None
+        ratio = (views / subs) if (views is not None and subs and subs > 0) else None
+        rows.append({
+            "video_title": title,
+            "view_count": views,
+            "subscriber_count": subs,
+            "view_sub_ratio": ratio,
+        })
+    return pd.DataFrame(rows)
+
+
+def render_title_lab_tab() -> None:
+    st.subheader("🧪 제목 공식 발굴 & 생성")
+    st.caption(
+        "직접 모은 제목들을 붙여넣어 빈출 단어·서사 골격·페르소나를 추출하고, "
+        "그 공식을 그대로 적용해 새 제목을 합성합니다."
+    )
+
+    with st.expander("ℹ️ 입력 형식 도움말", expanded=False):
+        st.markdown(
+            "- **기본**: 제목 한 줄에 하나씩 붙여넣기. 보통 10개 이상이 권장.\n"
+            "- **고성과 표시(선택)**: `제목 | 조회수 | 구독자` 형식을 섞으면 "
+            "view/sub 비율 상위 25% 그룹에서 두드러진 단어와 서사를 'Lift' 로 따로 뽑습니다.\n"
+            "- 예시:\n"
+            "  ```\n"
+            "  비 오는 새벽 카페에서 듣는 lofi\n"
+            "  잠 안 올 때 듣기 좋은 피아노 | 120000 | 1500\n"
+            "  Rainy night jazz for studying | 800000 | 12000\n"
+            "  ```"
+        )
+
+    titles_text = st.text_area(
+        "분석할 제목 목록",
+        height=260,
+        placeholder="제목 1\n제목 2\n제목 3 | 50000 | 800\n...",
+        key="title_lab_input",
+    )
+
+    df = _parse_title_lab_input(titles_text)
+
+    if df.empty:
+        st.info("위 박스에 제목을 붙여넣은 뒤 **🔍 패턴 분석하기** 버튼을 눌러주세요.")
+        return
+
+    # Summary metrics
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("입력 제목 수", len(df))
+    ratio_n = int(df["view_sub_ratio"].notna().sum())
+    m2.metric("성과 지표 포함", f"{ratio_n}개")
+    m3.metric("평균 글자수", f"{df['video_title'].str.len().mean():.1f}자")
+    avg_words = df["video_title"].apply(lambda t: len(tokenize_title(t))).mean()
+    m4.metric("평균 단어수", f"{avg_words:.1f}개")
+
+    # view_sub_ratio 가 일부에만 있으면 lift 분석은 해당 행만 사용.
+    df_for_analysis = df.copy()
+    if df_for_analysis["view_sub_ratio"].isna().all():
+        df_for_analysis = df_for_analysis.drop(columns=["view_sub_ratio"])
+
+    analyze_clicked = st.button(
+        "🔍 패턴 분석하기", type="primary", use_container_width=True
+    )
+
+    if analyze_clicked:
+        with st.spinner("토큰화·서사 태깅·골격 추출 중..."):
+            patterns = analyze_title_patterns(df_for_analysis)
+            narrative = analyze_narrative(df_for_analysis)
+            summary = summarize_story(narrative)
+        st.session_state["title_lab_result"] = {
+            "patterns": patterns,
+            "narrative": narrative,
+            "summary": summary,
+            "lang_hint": detect_dominant_language(df["video_title"].tolist()),
+            "existing_titles": df["video_title"].tolist(),
+        }
+        # 새 분석을 했으니 이전 시드는 초기화 — 분석 후 한 번 더 눌러야 새 시드로 생성.
+        st.session_state.pop("title_lab_seed", None)
+
+    result = st.session_state.get("title_lab_result")
+    if not result:
+        return
+
+    patterns = result["patterns"]
+    narrative = result["narrative"]
+    summary = result["summary"]
+
+    st.divider()
+    st.markdown("### 📊 추출된 제목 공식")
+
+    if summary:
+        st.success(f"**지배 서사 한 줄 요약**: {summary}")
+    else:
+        st.warning(
+            "사전 어휘와 일치하는 단서가 적습니다. "
+            "한국어/영어 제목을 더 추가하면 서사 골격이 잡힙니다."
+        )
+
+    # 카테고리별 1위 (공식의 슬롯값들)
+    cats = narrative.get("categories", {})
+    cat_items = [
+        (cat, items[0][0], items[0][1]) for cat, items in cats.items() if items
+    ]
+    if cat_items:
+        st.markdown("#### 🧩 카테고리별 1위 (공식 슬롯값)")
+        cat_df = pd.DataFrame(cat_items, columns=["카테고리", "대표 단서", "빈도"])
+        st.dataframe(cat_df, use_container_width=True, hide_index=True)
+
+    # 서사 골격 = 공식
+    skeletons = narrative.get("skeletons", [])
+    if skeletons:
+        st.markdown("#### 🦴 자주 등장하는 서사 골격 (= 공식)")
+        skel_df = pd.DataFrame(skeletons, columns=["서사 골격", "빈도"])
+        st.dataframe(skel_df, use_container_width=True, hide_index=True)
+
+    skel_lift = narrative.get("skeleton_lift", [])
+    if skel_lift:
+        st.markdown("#### 🚀 고성과 서사 (Lift ≥ 1.5)")
+        lift_df = pd.DataFrame(
+            skel_lift, columns=["서사 골격", "Lift", "상위 등장", "하위 등장"]
+        )
+        st.dataframe(lift_df, use_container_width=True, hide_index=True)
+
+    personas = narrative.get("personas", [])
+    if personas:
+        st.markdown("#### 🎯 청자 페르소나")
+        st.write(
+            " · ".join(f"**{p}** ({c})" for p, c in personas[:10])
+        )
+
+    cooccur = narrative.get("cooccurrence", [])
+    if cooccur:
+        with st.expander("🔗 카테고리 동시 출현 (어떤 조합이 자주 묶이는가)"):
+            co_df = pd.DataFrame(cooccur, columns=["조합", "빈도"])
+            st.dataframe(co_df, use_container_width=True, hide_index=True)
+
+    # n-gram 빈도
+    if patterns:
+        st.markdown("#### 🔤 빈출 단어 / 구문")
+        ng_tabs = st.tabs(["1-gram", "2-gram", "3-gram"])
+        for tab_, key in zip(ng_tabs, ["unigrams", "bigrams", "trigrams"]):
+            with tab_:
+                data = patterns.get(key, [])
+                if data:
+                    st.dataframe(
+                        pd.DataFrame(data, columns=["토큰", "빈도"]),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                else:
+                    st.caption("데이터가 부족합니다.")
+
+        cl = patterns.get("char_length", {})
+        wc = patterns.get("word_count", {})
+        if cl and wc:
+            st.caption(
+                f"🧮 글자수 평균 **{cl.get('mean', 0)}** "
+                f"(중앙값 {cl.get('median', 0)}, 범위 {cl.get('min', 0)}~{cl.get('max', 0)})  ·  "
+                f"단어수 평균 **{wc.get('mean', 0)}** (중앙값 {wc.get('median', 0)})  ·  "
+                f"이모지 포함 {patterns.get('emoji_share', 0):.0%}  ·  "
+                f"괄호/대괄호 포함 {patterns.get('bracket_share', 0):.0%}"
+            )
+
+    diff = patterns.get("differential", []) if patterns else []
+    if diff:
+        st.markdown("#### 💎 고성과 단어 (조회/구독 상위 25% 그룹)")
+        diff_df = pd.DataFrame(diff, columns=["단어", "Lift", "상위 등장", "하위 등장"])
+        st.dataframe(diff_df, use_container_width=True, hide_index=True)
+
+    # ----- 생성 영역 -----
+    st.divider()
+    st.markdown("### ✨ 공식 기반 새 제목 생성")
+
+    gen_c1, gen_c2, gen_c3 = st.columns([2, 1, 1])
+    with gen_c1:
+        seed_theme = st.text_input(
+            "시드 테마 (선택)",
+            placeholder="예: 비 오는 새벽 / late night drive",
+            key="title_lab_seed_theme",
+        )
+    with gen_c2:
+        n_titles = st.slider("생성 개수", 3, 20, 8, key="title_lab_n")
+    with gen_c3:
+        lang_options = {
+            f"자동 감지 ({result['lang_hint']})": result["lang_hint"],
+            "한국어": "ko",
+            "English": "en",
+        }
+        lang_label = st.selectbox(
+            "언어", list(lang_options.keys()), key="title_lab_lang"
+        )
+        lang = lang_options[lang_label]
+
+    btn_c1, btn_c2 = st.columns([1, 1])
+    if btn_c1.button("🎲 제목 생성 / 다시 생성", use_container_width=True):
+        st.session_state["title_lab_seed"] = random.randint(0, 999_999)
+    if btn_c2.button("🧹 결과 초기화", use_container_width=True):
+        st.session_state.pop("title_lab_seed", None)
+        st.rerun()
+
+    seed_val = st.session_state.get("title_lab_seed")
+    if seed_val is None:
+        st.info("**🎲 제목 생성** 버튼을 누르면 공식에서 새 제목을 합성합니다.")
+        return
+
+    generated = generate_titles(
+        narrative,
+        n=n_titles,
+        seed_theme=(seed_theme or None),
+        random_state=seed_val,
+        lang=lang,
+        existing_titles=result["existing_titles"],
+    )
+
+    if not generated:
+        st.warning(
+            "패턴 시그널이 약해 제목 합성에 실패했습니다. "
+            "장르·시간·활동 등 단서가 들어간 제목을 더 추가해 보세요."
+        )
+        return
+
+    st.caption(f"🌱 seed = `{seed_val}`  ·  같은 입력 + 같은 seed 면 결과가 재현됩니다.")
+
+    for i, item in enumerate(generated, 1):
+        with st.container(border=True):
+            st.markdown(f"**#{i}**")
+            st.code(item["title"], language="text")
+
+    bundle = "\n".join(f"{i}. {item['title']}" for i, item in enumerate(generated, 1))
+    st.download_button(
+        "📥 전체 제목 .txt 로 다운로드",
+        data=bundle.encode("utf-8"),
+        file_name="title_lab_results.txt",
+        mime="text/plain",
+        use_container_width=True,
+    )
+
+    # 보너스: 태그도 같은 공식에서 뽑아 준다.
+    tags = generate_tags(narrative, [], df=df_for_analysis)
+    if tags:
+        with st.expander("🏷️ 같은 공식으로 만든 추천 해시태그"):
+            st.code(" ".join(f"#{t}" for t in tags), language="text")
 
 
 @st.cache_data(show_spinner=False)
@@ -3541,6 +6599,11 @@ def render_review_tab() -> None:
                         st.error(f"역설계 실패: {type(e).__name__}: {e}")
 
 
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+
 def main() -> None:
     st.set_page_config(
         page_title="유튜브 음악 채널 자동화",
@@ -3550,12 +6613,23 @@ def main() -> None:
 
     st.title("🎵 유튜브 음악 채널 자동화 대시보드")
 
-    (tab_discovery, tab_story, tab_compose, tab_sync,
-     tab_studio, tab_reverse, tab_review) = st.tabs(
+    (
+        tab_discovery,
+        tab_story,
+        tab_title_lab,
+        tab_compose,
+        tab_jobs,
+        tab_sync,
+        tab_studio,
+        tab_reverse,
+        tab_review,
+    ) = st.tabs(
         [
             "🔍 레퍼런스 발굴",
             "✍️ AI 스토리텔링 & 가사 생성",
+            "🧪 제목 공식 Lab",
             "🎬 영상 합성 (인코딩)",
+            "📦 인코딩 잡",
             "🎤 가사 자동 동기화 (SRT)",
             "🎚️ Suno 프롬프트 스튜디오",
             "🔎 곡 역설계",
@@ -3566,8 +6640,12 @@ def main() -> None:
         render_discovery_tab()
     with tab_story:
         render_storytelling_tab()
+    with tab_title_lab:
+        render_title_lab_tab()
     with tab_compose:
         render_compose_tab()
+    with tab_jobs:
+        render_jobs_tab()
     with tab_sync:
         render_sync_tab()
     with tab_studio:
