@@ -82,8 +82,15 @@ python pipeline.py --init                              # 파이프라인 폴더 
 - 참고: 별도 브랜치 `laughing-hawking-gNIsO`에 또 다른 cron 레이어 `automation.py`가 있음(미통합).
   cron 구현 보강이 필요하면 거기서 가져올 수 있음.
 
+## 환경 셋업 (자동)
+- **SessionStart 훅**(`.claude/hooks/session-start.sh`)이 매 웹 세션 시작 시 자동 실행:
+  ffmpeg 설치 + `pip install -r requirements.txt` + (필요 시)cffi 보정. 멱등·동기 모드.
+- 즉 새 세션에서 별도 셋업 없이 `streamlit run app.py`·검증·인코딩이 바로 가능.
+  (이 훅은 default 브랜치에 머지돼야 모든 세션에 적용됨.)
+
 ## 다음 할 일 / 미확인
-- [ ] 모듈 실제 구동 검증(import·DB 초기화·orchestrator 1사이클·pipeline inbox→output)
-- [ ] 실제 API 키로 end-to-end 점검(collect→score→검수→역설계→pipeline)
+- [x] 모듈 실제 구동 검증 완료(2026-05-26): 전 모듈 헤드리스 검증 35/35 통과 +
+  셀프테스트 + CLI + 실제 ffmpeg 인코딩(inbox→MP4) + app.py import. **코드 버그 없음.**
+- [ ] 실제 API 키로 end-to-end 점검(collect→score→검수→역설계→pipeline) — 키 필요해 미수행
 - [ ] `automation.py`(laughing-hawking) cron 레이어를 통합할지 결정
 - (작업하며 갱신할 것)
