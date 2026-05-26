@@ -17,11 +17,19 @@ SEC = 1_000_000  # 마이크로초
 
 
 def default_draft_folder() -> str:
-    """OS 별 CapCut 드래프트 루트 폴더."""
+    """CapCut 드래프트 루트 폴더.
+
+    우선순위: 환경변수 CAPCUT_DRAFT_DIR → OS 표준 위치(존재할 때) → 로컬 폴백.
+    사용자 진단(detect_capcut.py) 결과 표준 위치는 flat 레이아웃으로 pycapcut 호환.
+    """
+    env = os.environ.get("CAPCUT_DRAFT_DIR")
+    if env:
+        return os.path.expandvars(os.path.expanduser(env))
     if sys.platform.startswith("win"):
-        return os.path.expandvars(
+        std = os.path.expandvars(
             r"%LOCALAPPDATA%\CapCut\User Data\Projects\com.lveditor.draft"
         )
+        return std
     if sys.platform == "darwin":
         return os.path.expanduser(
             "~/Movies/CapCut/User Data/Projects/com.lveditor.draft"
