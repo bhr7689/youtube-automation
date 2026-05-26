@@ -55,9 +55,12 @@ K-Trot(트로트 등 음악) 유튜브 채널 자동화 공장. **collect(정량
 | `vocab.json` | 통제 어휘 사전(차원별 Suno 용어). analyzer/score/studio 정렬 기준. | — |
 | `recipes.json` | 저장된 레시피 자산. | — |
 
-### app.py 탭 (`main()` @ app.py)
-🔍 레퍼런스 발굴 · ✍️ AI 스토리텔링&가사 · 🎬 영상 합성(인코딩) · 🎤 가사 자동 동기화(SRT) ·
+### app.py 탭 (`main()` @ app.py) — 총 9탭
+🔍 레퍼런스 발굴 · ✍️ AI 스토리텔링&가사 · 🧪 제목 공식 Lab · 🎬 영상 합성(인코딩) ·
+📦 인코딩 잡(백그라운드 작업 큐) · 🎤 가사 자동 동기화(SRT, 인터랙티브 편집기+플레이어) ·
 🎚️ Suno 프롬프트 스튜디오 · 🔎 곡 역설계 · 🙋 검수 큐
+- 주의: app.py 는 기능 풍부한 eGtMR 계열을 base 로, 자동화 3탭(스튜디오/역설계/검수)을
+  이식한 합본. 영상 합성·자막은 app.py 자체 inline ffmpeg 사용, pipeline.py 는 media_core 사용.
 
 ## 실행 방법
 
@@ -91,6 +94,9 @@ python pipeline.py --init                              # 파이프라인 폴더 
 ## 다음 할 일 / 미확인
 - [x] 모듈 실제 구동 검증 완료(2026-05-26): 전 모듈 헤드리스 검증 35/35 통과 +
   셀프테스트 + CLI + 실제 ffmpeg 인코딩(inbox→MP4) + app.py import. **코드 버그 없음.**
+- [x] 사라졌던 UI 기능 전체 복원(2026-05-26): eGtMR 기반 9탭 합본. 제목 Lab·인코딩 잡·
+  인터랙티브 자막 편집기·영상합성 고급모드·보컬분리·키 영속저장 복원 + 자동화 3탭 유지.
 - [ ] 실제 API 키로 end-to-end 점검(collect→score→검수→역설계→pipeline) — 키 필요해 미수행
 - [ ] `automation.py`(laughing-hawking) cron 레이어를 통합할지 결정
+- [ ] practical-mendel 의 app.py 복원본을 default 브랜치(eqO5N)로도 머지할지 결정
 - (작업하며 갱신할 것)
