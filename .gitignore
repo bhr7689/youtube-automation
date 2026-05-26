@@ -9,3 +9,6 @@ venv/
 .idea/
 .vscode/
 *.log
+*.db
+inbox/
+outbox/

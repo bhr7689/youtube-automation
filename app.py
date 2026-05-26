@@ -30,6 +30,8 @@ from dotenv import load_dotenv
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+import store
+
 load_dotenv()
 
 DEFAULT_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
@@ -1912,6 +1914,37 @@ def render_title_patterns(filtered: pd.DataFrame, full: pd.DataFrame) -> None:
             st.bar_chart(df_diff.set_index("단어")["Lift"], height=320)
 
 
+def _config_to_dict(cfg: SearchConfig) -> dict:
+    """SearchConfig → SQLite 저장용 dict. api_key 는 비밀값이라 제외한다."""
+    return {
+        "keywords": list(cfg.keywords),
+        "days": cfg.days,
+        "max_results_per_keyword": cfg.max_results_per_keyword,
+        "region_code": cfg.region_code,
+        "language": cfg.language,
+        "max_subscribers": cfg.max_subscribers,
+        "min_views": cfg.min_views,
+        "min_view_sub_ratio": cfg.min_view_sub_ratio,
+        "order": cfg.order,
+    }
+
+
+def _config_from_meta(meta: dict) -> SearchConfig:
+    """저장된 run 메타로부터 필터용 SearchConfig 를 복원(api_key 불필요)."""
+    return SearchConfig(
+        api_key="",
+        keywords=tuple(meta.get("keywords") or ()),
+        days=int(meta.get("days") or 30),
+        max_results_per_keyword=int(meta.get("max_results") or 50),
+        region_code=(meta.get("region") or "KR"),
+        language=(meta.get("language") or "ko"),
+        max_subscribers=int(meta.get("max_subscribers") or 10_000),
+        min_views=int(meta.get("min_views") or 0),
+        min_view_sub_ratio=float(meta.get("min_ratio") or 0.0),
+        order=(meta.get("order_by") or "viewCount"),
+    )
+
+
 def render_discovery_tab() -> None:
     """기존의 '레퍼런스 발굴' 화면 — 사이드바 + 결과 표 + 분석 + 추천 + 썸네일."""
     st.caption(
@@ -1919,12 +1952,62 @@ def render_discovery_tab() -> None:
         "'구독자 수 대비 조회수'가 폭발적인 신규 채널을 찾아냅니다."
     )
 
+    # --- 자동 수집(cron) 결과 즉시 불러오기 — 라이브 API 대기 없이 검수 ---
+    runs = store.list_runs()
+    if runs:
+        st.markdown("##### 📦 자동 수집 결과 (cron 적재 · 즉시 로드)")
+        labels = {
+            r["id"]: (
+                f"#{r['id']} · {(r['created_at'] or '')[:16]} · "
+                f"{', '.join(r['keywords'][:3])}"
+                f"{'…' if len(r['keywords']) > 3 else ''} · "
+                f"후보 {r['filtered_count']}/{r['video_count']}"
+            )
+            for r in runs
+        }
+        col_a, col_b = st.columns([4, 1])
+        chosen = col_a.selectbox(
+            "저장된 수집 선택",
+            options=list(labels.keys()),
+            format_func=lambda i: labels[i],
+            key="db_run_choice",
+        )
+        if col_b.button("불러오기", use_container_width=True):
+            st.session_state.loaded_run_id = chosen
+        st.markdown("---")
+
     new_cfg = render_sidebar()
     if new_cfg is not None:
         st.session_state.active_cfg = new_cfg
+        st.session_state.pop("loaded_run_id", None)  # 라이브 실행 시 DB 로드 해제
+
+    # 1) DB 로드 경로 — 라이브 호출 없이 즉시 표시(버퍼링 없음)
+    loaded_id = st.session_state.get("loaded_run_id")
+    if loaded_id is not None:
+        result = store.load_run(int(loaded_id))
+        if result is None:
+            st.warning("선택한 수집을 찾을 수 없습니다.")
+            return
+        meta, df = result
+        if df.empty:
+            st.warning("이 수집에는 영상이 없습니다. 키워드/기간을 조정해 다시 수집하세요.")
+            return
+        cfg = _config_from_meta(meta)
+        st.success(
+            f"📦 자동 수집 #{loaded_id} 로드됨 — {(meta.get('created_at') or '')[:16]} "
+            f"(전체 {len(df)}건). 라이브 API 호출 없이 검수합니다."
+        )
+        filtered = filter_breakout_channels(df, cfg)
+        render_results(df, filtered, cfg)
+        return
+
+    # 2) 라이브 실행 경로
     cfg = st.session_state.get("active_cfg")
     if cfg is None:
-        st.info("👈 사이드바에서 키워드와 필터를 설정한 뒤 **발굴 시작**을 눌러주세요.")
+        st.info(
+            "👈 사이드바에서 키워드·필터를 설정한 뒤 **발굴 시작**을 누르거나, "
+            "위에서 자동 수집 결과를 불러오세요."
+        )
         return
 
     try:
@@ -1942,6 +2025,17 @@ def render_discovery_tab() -> None:
         return
 
     filtered = filter_breakout_channels(df, cfg)
+
+    # 라이브 결과도 DB 에 적재 → 다음 검수부터 즉시 로드(저장 실패는 UI 를 막지 않음).
+    try:
+        store.save_run(
+            df,
+            _config_to_dict(cfg),
+            filtered_ids=set(filtered["video_id"]) if not filtered.empty else set(),
+        )
+    except Exception:
+        pass
+
     render_results(df, filtered, cfg)
 
 
