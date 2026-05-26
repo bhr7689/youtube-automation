@@ -24,3 +24,9 @@ score_cache.json
 # 오케스트레이터 실행 이력
 orchestrator_log.jsonl
 cron.log
+
+# 캡컷 에이전트 런타임 산출물 (생성 드래프트 / 테스트 클립 / ASR 캐시)
+capcut_agent/capcut_drafts/
+capcut_agent/*.mp4
+capcut_agent/*.mov
+capcut_agent/asr_cache/
