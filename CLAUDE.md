@@ -12,6 +12,11 @@
 2. **작업 단위마다 커밋·푸시한다.** 커밋하지 않은 파일은 컨테이너 회수 시 사라진다.
    푸시: `git push -u origin claude/practical-mendel-8xXP7`
 3. **세션을 끝내기 전에 이 파일의 "현재 상태 / 다음 할 일"을 갱신**하고 함께 푸시한다.
+4. **사용자 PC 배포 흐름(중요!).** 사용자는 바탕화면 `유튜브실행.bat` → `git pull` 로
+   **default 브랜치 `claude/youtube-discovery-dashboard-eqO5N`** 를 받아 실행한다.
+   따라서 **변경을 사용자 화면에 반영하려면 반드시 그 브랜치까지 도달해야 한다**:
+   `practical-mendel` 에 커밋·푸시 → **`eqO5N`(default)로 머지**(PR 또는 직접 머지).
+   `eqO5N` 에 안 올라가면 사용자는 영원히 못 본다(과거에 이걸로 며칠 헤맴).
 
 ## 프로젝트 한 줄 요약
 
