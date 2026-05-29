@@ -6889,6 +6889,246 @@ def render_review_tab() -> None:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# 채널·영상 분석 탭
+# ---------------------------------------------------------------------------
+
+def render_channel_analysis_tab() -> None:
+    """채널 URL 또는 채널 ID로 채널 통계·영상 목록·조회 추이를 분석한다."""
+    st.caption("채널 URL 또는 영상 URL을 입력하면 채널 통계, 인기 영상, 조회 추이를 한눈에 볼 수 있습니다.")
+
+    api_key = (
+        st.session_state.get("yt_api_key_input", "")
+        or os.getenv("YOUTUBE_API_KEY", "")
+        or SAVED_KEYS.get("youtube", "")
+    )
+    if not api_key:
+        st.warning("YouTube API 키가 필요합니다. 레퍼런스 발굴 탭 사이드바에서 저장해주세요.")
+        return
+
+    # ── 입력 ──────────────────────────────────────────────────
+    url_input = st.text_input(
+        "채널 URL 또는 영상 URL 입력",
+        placeholder="예: https://www.youtube.com/@channelname  또는  https://youtu.be/xxxxx",
+        key="ca_url",
+    )
+    col_a, col_b = st.columns([2, 1])
+    max_videos = col_a.slider("분석할 최근 영상 수", 10, 50, 20, step=5, key="ca_max_vid")
+    run_btn = col_b.button("📊 분석 시작", type="primary", key="ca_run", use_container_width=True)
+
+    if not run_btn:
+        if "ca_result" not in st.session_state:
+            st.info("채널 URL 또는 영상 URL을 입력하고 **분석 시작**을 눌러주세요.")
+        # 이전 결과가 있으면 아래서 계속 표시됨
+    else:
+        if not url_input.strip():
+            st.warning("URL을 입력해주세요.")
+            return
+
+        def _extract_channel_id(url: str, youtube) -> str | None:
+            """URL에서 채널 ID를 추출. 영상 URL이면 해당 채널 ID를 반환."""
+            import re as _re
+            # 영상 URL
+            vm = _re.search(r"(?:v=|youtu\.be/)([A-Za-z0-9_-]{11})", url)
+            if vm:
+                vid_id = vm.group(1)
+                resp = youtube.videos().list(part="snippet", id=vid_id).execute()
+                items = resp.get("items", [])
+                return items[0]["snippet"]["channelId"] if items else None
+            # @handle
+            hm = _re.search(r"@([\w.-]+)", url)
+            if hm:
+                resp = youtube.search().list(
+                    part="snippet", q=f"@{hm.group(1)}", type="channel", maxResults=1
+                ).execute()
+                items = resp.get("items", [])
+                return items[0]["snippet"]["channelId"] if items else None
+            # /channel/ID
+            cm = _re.search(r"/channel/([A-Za-z0-9_-]+)", url)
+            if cm:
+                return cm.group(1)
+            # /c/ or /user/
+            sm = _re.search(r"(?:/c/|/user/)([^/?&]+)", url)
+            if sm:
+                resp = youtube.search().list(
+                    part="snippet", q=sm.group(1), type="channel", maxResults=1
+                ).execute()
+                items = resp.get("items", [])
+                return items[0]["snippet"]["channelId"] if items else None
+            return None
+
+        try:
+            from googleapiclient.discovery import build as yt_build  # type: ignore
+            youtube = yt_build("youtube", "v3", developerKey=api_key)
+
+            with st.spinner("채널 정보 가져오는 중..."):
+                channel_id = _extract_channel_id(url_input.strip(), youtube)
+                if not channel_id:
+                    st.error("채널을 찾을 수 없습니다. URL을 확인해주세요.")
+                    return
+
+                # 채널 기본 정보
+                ch_resp = youtube.channels().list(
+                    part="snippet,statistics,brandingSettings",
+                    id=channel_id,
+                ).execute()
+                ch_items = ch_resp.get("items", [])
+                if not ch_items:
+                    st.error("채널 정보를 불러올 수 없습니다.")
+                    return
+                ch = ch_items[0]
+                ch_snip = ch.get("snippet", {})
+                ch_stats = ch.get("statistics", {})
+
+                # 최근 영상 목록
+                search_resp = youtube.search().list(
+                    part="id",
+                    channelId=channel_id,
+                    order="date",
+                    type="video",
+                    maxResults=max_videos,
+                ).execute()
+                vid_ids = [it["id"]["videoId"] for it in search_resp.get("items", [])]
+
+                vid_details: list[dict] = []
+                if vid_ids:
+                    vd_resp = youtube.videos().list(
+                        part="snippet,statistics,contentDetails",
+                        id=",".join(vid_ids),
+                    ).execute()
+                    vid_details = vd_resp.get("items", [])
+
+            st.session_state["ca_result"] = {
+                "channel_id": channel_id,
+                "ch_snip": ch_snip,
+                "ch_stats": ch_stats,
+                "vid_details": vid_details,
+            }
+        except Exception as e:
+            st.error(f"오류: {e}")
+            return
+
+    result = st.session_state.get("ca_result")
+    if not result:
+        return
+
+    ch_snip = result["ch_snip"]
+    ch_stats = result["ch_stats"]
+    vid_details = result["vid_details"]
+
+    # ── 채널 헤더 ──────────────────────────────────────────────
+    st.divider()
+    hcol1, hcol2 = st.columns([1, 4])
+    thumb_url = (ch_snip.get("thumbnails") or {}).get("medium", {}).get("url", "")
+    if thumb_url:
+        hcol1.image(thumb_url, width=100)
+    with hcol2:
+        st.markdown(f"## {ch_snip.get('title', '채널명 없음')}")
+        st.caption(ch_snip.get("description", "")[:200])
+
+    # ── 채널 통계 카드 ─────────────────────────────────────────
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("구독자수", f"{int(ch_stats.get('subscriberCount') or 0):,}")
+    m2.metric("총 조회수", f"{int(ch_stats.get('viewCount') or 0):,}")
+    m3.metric("영상 수", f"{int(ch_stats.get('videoCount') or 0):,}")
+    avg_views = (
+        int(ch_stats.get("viewCount") or 0) // max(int(ch_stats.get("videoCount") or 1), 1)
+    )
+    m4.metric("영상당 평균 조회", f"{avg_views:,}")
+
+    if not vid_details:
+        st.info("분석할 영상이 없습니다.")
+        return
+
+    # ── 영상 데이터프레임 ──────────────────────────────────────
+    rows = []
+    for item in vid_details:
+        snip = item.get("snippet", {})
+        stats = item.get("statistics", {})
+        vid_id = item["id"]
+        pub = snip.get("publishedAt", "")[:10]
+        view = int(stats.get("viewCount") or 0)
+        like = int(stats.get("likeCount") or 0)
+        comment = int(stats.get("commentCount") or 0)
+        subs = int(ch_stats.get("subscriberCount") or 1)
+        rows.append({
+            "thumbnail": (snip.get("thumbnails") or {}).get("medium", {}).get("url", ""),
+            "제목": snip.get("title", ""),
+            "업로드일": pub,
+            "조회수": view,
+            "좋아요": like,
+            "댓글": comment,
+            "조회/구독(배)": round(view / max(subs, 1), 2),
+            "좋아요율(%)": round(like / max(view, 1) * 100, 2),
+            "url": f"https://www.youtube.com/watch?v={vid_id}",
+        })
+    df_vids = pd.DataFrame(rows)
+
+    # ── 조회수 추이 차트 ───────────────────────────────────────
+    st.markdown("### 📈 최근 영상 조회수 추이")
+    chart_df = df_vids[["업로드일", "조회수"]].copy()
+    chart_df["업로드일"] = pd.to_datetime(chart_df["업로드일"])
+    chart_df = chart_df.sort_values("업로드일")
+    st.line_chart(chart_df.set_index("업로드일")["조회수"])
+
+    # ── 인기 영상 TOP 5 썸네일 ────────────────────────────────
+    st.markdown("### 🏆 인기 영상 TOP 5")
+    top5 = df_vids.nlargest(5, "조회수")
+    t_cols = st.columns(5)
+    for col, (_, r) in zip(t_cols, top5.iterrows()):
+        with col:
+            if r["thumbnail"]:
+                st.image(r["thumbnail"], use_container_width=True)
+            title = r["제목"]
+            st.markdown(
+                f"**[{title[:28]}{'…' if len(title) > 28 else ''}]({r['url']})**"
+            )
+            st.caption(f"👁 {int(r['조회수']):,}")
+
+    # ── 전체 영상 테이블 ───────────────────────────────────────
+    st.markdown("### 📋 전체 영상 목록")
+    sort_col = st.selectbox(
+        "정렬 기준",
+        ["조회수", "좋아요", "댓글", "조회/구독(배)", "좋아요율(%)", "업로드일"],
+        key="ca_sort",
+    )
+    df_show = df_vids.sort_values(sort_col, ascending=False).reset_index(drop=True)
+    st.dataframe(
+        df_show.drop(columns=["url"]),
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "thumbnail": st.column_config.ImageColumn("썸네일"),
+            "제목": st.column_config.TextColumn("제목", width="large"),
+            "조회수": st.column_config.NumberColumn("조회수", format="%d"),
+            "좋아요": st.column_config.NumberColumn("좋아요", format="%d"),
+            "댓글": st.column_config.NumberColumn("댓글", format="%d"),
+            "조회/구독(배)": st.column_config.NumberColumn("조회/구독(배)", format="%.2f"),
+            "좋아요율(%)": st.column_config.NumberColumn("좋아요율(%)", format="%.2f%%"),
+        },
+    )
+
+    # ── 요약 인사이트 ─────────────────────────────────────────
+    with st.expander("💡 채널 인사이트 요약"):
+        top_vid = df_vids.loc[df_vids["조회수"].idxmax()]
+        avg_v = int(df_vids["조회수"].mean())
+        avg_like = round(df_vids["좋아요율(%)"].mean(), 2)
+        st.markdown(
+            f"- 분석 영상 **{len(df_vids)}개** 평균 조회수: **{avg_v:,}**\n"
+            f"- 평균 좋아요율: **{avg_like}%**\n"
+            f"- 최고 조회 영상: **{top_vid['제목'][:50]}** ({int(top_vid['조회수']):,}회)\n"
+            f"- 조회/구독 최고: **{df_vids['조회/구독(배)'].max():.2f}배**"
+        )
+
+    st.download_button(
+        "📥 CSV 다운로드",
+        data=df_show.to_csv(index=False).encode("utf-8-sig"),
+        file_name=f"channel_analysis_{datetime.now():%Y%m%d_%H%M%S}.csv",
+        mime="text/csv",
+        key="ca_csv",
+    )
+
+
 def main() -> None:
     st.set_page_config(
         page_title="유튜브 음악 채널 자동화",
@@ -6900,6 +7140,7 @@ def main() -> None:
 
     (
         tab_discovery,
+        tab_channel,
         tab_story,
         tab_title_lab,
         tab_compose,
@@ -6911,6 +7152,7 @@ def main() -> None:
     ) = st.tabs(
         [
             "🔍 레퍼런스 발굴",
+            "📊 채널·영상 분석",
             "✍️ AI 스토리텔링 & 가사 생성",
             "🧪 제목 공식 Lab",
             "🎬 영상 합성 (인코딩)",
@@ -6923,6 +7165,8 @@ def main() -> None:
     )
     with tab_discovery:
         render_discovery_tab()
+    with tab_channel:
+        render_channel_analysis_tab()
     with tab_story:
         render_storytelling_tab()
     with tab_title_lab:
