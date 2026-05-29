@@ -2189,6 +2189,7 @@ _HOTPLI_COUNTRY: dict[str, tuple[str, str]] = {
     "유럽": ("GB", "en"),
     "동남아": ("ID", "id"),
     "라틴": ("MX", "es"),
+    "인도": ("IN", "hi"),
 }
 
 _HOTPLI_GENRE: dict[str, list[str]] = {
