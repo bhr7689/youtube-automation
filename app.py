@@ -2200,6 +2200,7 @@ _HOTPLI_GENRE: dict[str, list[str]] = {
     "공부": ["study music", "공부할 때 듣는 음악", "focus music"],
     "수면": ["sleep music", "수면 음악", "relaxing sleep"],
     "뉴에이지": ["new age music", "뉴에이지 피아노", "instrumental new age"],
+    "힙합": ["hip hop playlist", "힙합 음악", "rap music playlist"],
 }
 
 _HOTPLI_PERIOD: dict[str, int] = {
