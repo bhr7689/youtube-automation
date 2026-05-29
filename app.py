@@ -2181,6 +2181,7 @@ def render_title_patterns(filtered: pd.DataFrame, full: pd.DataFrame) -> None:
 # 핫플리 트렌드 — 장르·국가·기간 필터 + 썸네일 카드 그리드
 # ---------------------------------------------------------------------------
 
+# 국가 → (regionCode, languageCode)
 _HOTPLI_COUNTRY: dict[str, tuple[str, str]] = {
     "전체": ("", ""),
     "한국": ("KR", "ko"),
@@ -2192,16 +2193,74 @@ _HOTPLI_COUNTRY: dict[str, tuple[str, str]] = {
     "인도": ("IN", "hi"),
 }
 
-_HOTPLI_GENRE: dict[str, list[str]] = {
+# 국가별 장르 목록 — 선택 국가에 따라 동적으로 바뀜
+_HOTPLI_COUNTRY_GENRES: dict[str, list[str]] = {
+    "전체": ["전체 (믹스)", "Lo-fi", "재즈", "카페", "공부", "수면", "뉴에이지", "힙합", "클래식"],
+    "한국": ["한국 인기", "K-팝", "K-인디", "발라드", "트로트", "한국 R&B", "한국 힙합",
+             "Lo-fi", "재즈", "카페", "공부", "수면", "뉴에이지"],
+    "일본": ["일본 인기", "J-팝", "J-인디", "시티팝", "애니송", "엔카", "J-록",
+             "Lo-fi", "재즈", "카페", "공부", "수면"],
+    "미국/영미권": ["미국 인기", "팝", "인디팝", "R&B", "힙합", "컨트리", "록",
+                   "Lo-fi", "재즈", "카페", "공부", "수면"],
+    "유럽": ["유럽 인기", "팝", "일렉트로닉", "클래식", "재즈", "카페", "공부", "수면"],
+    "동남아": ["동남아 인기", "팝", "인디", "전통음악", "카페", "공부", "수면"],
+    "라틴": ["라틴 인기", "레게톤", "살사", "보사노바", "팝", "카페", "수면"],
+    "인도": ["인도 인기", "볼리우드", "인디팝", "클래식", "명상", "카페", "수면"],
+}
+
+# 장르 → YouTube 검색 키워드 매핑
+_HOTPLI_GENRE_KEYWORDS: dict[str, list[str]] = {
+    # 전체
     "전체 (믹스)": ["music playlist", "음악 플레이리스트"],
     "Lo-fi": ["lofi music", "lo-fi chill", "lofi hip hop"],
     "재즈": ["jazz music", "jazz cafe playlist"],
-    "카페": ["cafe music", "카페 음악", "coffee shop music"],
-    "공부": ["study music", "공부할 때 듣는 음악", "focus music"],
-    "수면": ["sleep music", "수면 음악", "relaxing sleep"],
-    "뉴에이지": ["new age music", "뉴에이지 피아노", "instrumental new age"],
-    "힙합": ["hip hop playlist", "힙합 음악", "rap music playlist"],
-    "클래식": ["classical music", "클래식 음악", "orchestra playlist"],
+    "카페": ["cafe music", "coffee shop music"],
+    "공부": ["study music", "focus music playlist"],
+    "수면": ["sleep music", "relaxing sleep music"],
+    "뉴에이지": ["new age music", "instrumental new age"],
+    "힙합": ["hip hop playlist", "rap music playlist"],
+    "클래식": ["classical music", "orchestra playlist"],
+    # 한국
+    "한국 인기": ["한국 인기 음악", "Korean popular music playlist"],
+    "K-팝": ["K-pop playlist", "K팝 모음"],
+    "K-인디": ["K-indie music", "한국 인디 음악"],
+    "발라드": ["한국 발라드", "Korean ballad playlist"],
+    "트로트": ["트로트 모음", "트로트 플레이리스트"],
+    "한국 R&B": ["한국 R&B", "Korean R&B playlist"],
+    "한국 힙합": ["한국 힙합 플레이리스트", "Korean hip hop"],
+    # 일본
+    "일본 인기": ["日本 人気 音楽", "Japanese popular music playlist"],
+    "J-팝": ["J-pop playlist", "Jポップ プレイリスト"],
+    "J-인디": ["Japanese indie music", "日本 インディー"],
+    "시티팝": ["city pop playlist", "シティポップ"],
+    "애니송": ["anime song playlist", "アニソン"],
+    "엔카": ["enka music", "演歌 プレイリスト"],
+    "J-록": ["J-rock playlist", "日本 ロック"],
+    # 미국/영미권
+    "미국 인기": ["US popular music playlist", "American top music"],
+    "팝": ["pop music playlist", "top pop songs"],
+    "인디팝": ["indie pop playlist", "indie music"],
+    "R&B": ["R&B playlist", "soul R&B music"],
+    "힙합": ["hip hop playlist", "rap music playlist"],
+    "컨트리": ["country music playlist", "country songs"],
+    "록": ["rock music playlist", "rock songs"],
+    # 유럽
+    "유럽 인기": ["European popular music", "Europe top music playlist"],
+    "일렉트로닉": ["electronic music playlist", "EDM playlist"],
+    # 동남아
+    "동남아 인기": ["Southeast Asia popular music", "OPM playlist"],
+    "인디": ["indie music playlist"],
+    "전통음악": ["traditional Asian music", "folk music playlist"],
+    # 라틴
+    "라틴 인기": ["Latin popular music playlist", "musica latina"],
+    "레게톤": ["reggaeton playlist", "reggaeton mix"],
+    "살사": ["salsa music playlist"],
+    "보사노바": ["bossa nova playlist", "bossa nova jazz"],
+    # 인도
+    "인도 인기": ["Indian popular music playlist", "Bollywood hits"],
+    "볼리우드": ["Bollywood songs playlist", "Hindi songs"],
+    "인디팝": ["Indian indie pop", "Hindi indie music"],
+    "명상": ["Indian meditation music", "yoga music playlist"],
 }
 
 _HOTPLI_PERIOD: dict[str, int] = {
@@ -2217,11 +2276,14 @@ _HOTPLI_SORT: dict[str, str] = {
     "채널 규모 대비": "viewCount",
 }
 
+# 스타일 자동 분류 키워드 (이미지 기준으로 확장)
 _HOTPLI_STYLE_KEYWORDS: dict[str, list[str]] = {
-    "감성 이미지형": ["감성", "이미지", "aesthetic", "chill", "playlist", "플레이리스트"],
-    "라이브 송출형": ["live", "라이브", "concert", "공연", "stream"],
-    "하이라이트 메들리형": ["메들리", "medley", "모음", "compilation", "믹스", "mix"],
-    "가사 영상형": ["가사", "lyrics", "자막"],
+    "감성 이미지형": ["감성", "aesthetic", "chill", "playlist", "플레이리스트", "분위기", "이미지"],
+    "라이브 송출형": ["live", "라이브", "concert", "공연", "stream", "실황"],
+    "장르 마스터형": ["mix", "믹스", "best of", "greatest hits", "명곡", "컬렉션"],
+    "하이라이트 메들리형": ["메들리", "medley", "모음", "compilation", "연속듣기"],
+    "가사 번역 해설형": ["가사", "lyrics", "자막", "번역", "해설", "해석"],
+    "라이징 스타 소개형": ["신인", "debut", "new artist", "rising", "떠오르는"],
 }
 
 
@@ -2230,7 +2292,7 @@ def _classify_style(title: str, description: str) -> str:
     for style, keywords in _HOTPLI_STYLE_KEYWORDS.items():
         if any(k.lower() in text for k in keywords):
             return style
-    return "기타"
+    return "감성 이미지형"  # 기본값: 가장 흔한 스타일
 
 
 def _run_hotpli_search(
@@ -2302,17 +2364,16 @@ def _run_hotpli_search(
 
 
 def render_hotpli_trends() -> None:
-    """핫플리 트렌드: 장르·국가·기간·정렬·스타일 필터 + 썸네일 카드 그리드."""
-    st.markdown("국가별로 어떤 음악 플레이리스트가 뜨는지 비교해보세요. 장르와 기간을 조합해 지금 뜨는 레퍼런스를 찾습니다.")
+    """핫플리 트렌드: 국가 선택 → 국가별 장르 동적 변경 + 기간·정렬·스타일 필터."""
+    st.markdown("국가별로 어떤 음악 플레이리스트가 뜨는지 비교해보세요. 국가를 고르면 그 나라에서 실제로 잘 쓰이는 장르가 나옵니다.")
 
-    # API 키 확인
     api_key = (
         st.session_state.get("yt_api_key_input", "")
         or os.getenv("YOUTUBE_API_KEY", "")
         or SAVED_KEYS.get("youtube", "")
     )
 
-    # ── 필터 행들 ──────────────────────────────────────────────
+    # ── 국가 필터 ──────────────────────────────────────────────
     st.markdown("##### 국가")
     country_sel = st.pills(
         "국가",
@@ -2321,16 +2382,26 @@ def render_hotpli_trends() -> None:
         key="hotpli_country",
         label_visibility="collapsed",
     )
+    active_country = country_sel or "전체"
+
+    # ── 장르 필터 (국가에 따라 동적 변경) ─────────────────────
+    genre_options = _HOTPLI_COUNTRY_GENRES.get(active_country, _HOTPLI_COUNTRY_GENRES["전체"])
+    # 국가가 바뀌면 이전 장르 선택을 초기화
+    prev_country = st.session_state.get("hotpli_prev_country", active_country)
+    if prev_country != active_country:
+        st.session_state.pop("hotpli_genre", None)
+        st.session_state["hotpli_prev_country"] = active_country
 
     st.markdown("##### 장르")
     genre_sel = st.pills(
         "장르",
-        options=list(_HOTPLI_GENRE.keys()),
-        default="전체 (믹스)",
+        options=genre_options,
+        default=genre_options[0],
         key="hotpli_genre",
         label_visibility="collapsed",
     )
 
+    # ── 기간 / 정렬 ────────────────────────────────────────────
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("##### 기간")
@@ -2351,42 +2422,65 @@ def render_hotpli_trends() -> None:
             label_visibility="collapsed",
         )
 
-    st.markdown("##### 스타일")
-    style_options = ["전체"] + list(_HOTPLI_STYLE_KEYWORDS.keys()) + ["기타"]
-    style_sel = st.pills(
-        "스타일",
-        options=style_options,
-        default="전체",
-        key="hotpli_style",
-        label_visibility="collapsed",
-    )
+    # ── 스타일 (결과 후 동적 표시 — 검색 전에는 전체만) ────────
+    # 결과가 있으면 실제 분포 기반으로 pill 표시
+    _cache_key = f"hotpli_results_{active_country}_{genre_sel}_{period_sel}_{sort_sel}"
+    cached_df: pd.DataFrame | None = st.session_state.get(_cache_key)
+
+    if cached_df is not None and not cached_df.empty:
+        style_counts = cached_df["style"].value_counts()
+        style_options_dynamic = ["전체"] + [
+            f"{s} {c}" for s, c in style_counts.items()
+        ]
+        st.markdown("##### 스타일")
+        style_sel_raw = st.pills(
+            "스타일",
+            options=style_options_dynamic,
+            default="전체",
+            key=f"hotpli_style_{_cache_key}",
+            label_visibility="collapsed",
+        )
+        # "감성 이미지형 17" → "감성 이미지형" 추출
+        style_sel = style_sel_raw.rsplit(" ", 1)[0] if style_sel_raw and style_sel_raw != "전체" else "전체"
+    else:
+        st.markdown("##### 스타일")
+        style_options_static = ["전체"] + list(_HOTPLI_STYLE_KEYWORDS.keys())
+        style_sel_raw = st.pills(
+            "스타일",
+            options=style_options_static,
+            default="전체",
+            key="hotpli_style_static",
+            label_visibility="collapsed",
+        )
+        style_sel = style_sel_raw or "전체"
 
     st.divider()
 
     # ── 검색 실행 버튼 ──────────────────────────────────────────
     if not api_key:
-        st.warning("YouTube API 키가 필요합니다. 사이드바에서 입력하거나 저장해주세요.")
+        st.warning("YouTube API 키가 필요합니다. 급상승 채널 발굴 탭 사이드바에서 저장해주세요.")
         return
 
     run_btn = st.button("🔥 트렌드 검색", type="primary", key="hotpli_run")
 
-    _cache_key = f"hotpli_results_{country_sel}_{genre_sel}_{period_sel}_{sort_sel}"
     if run_btn:
-        region, language = _HOTPLI_COUNTRY.get(country_sel or "전체", ("", ""))
-        genre_kws = _HOTPLI_GENRE.get(genre_sel or "전체 (믹스)", ["music playlist"])
+        region, language = _HOTPLI_COUNTRY.get(active_country, ("", ""))
+        active_genre = genre_sel or genre_options[0]
+        genre_kws = _HOTPLI_GENRE_KEYWORDS.get(active_genre, ["music playlist"])
         days = _HOTPLI_PERIOD.get(period_sel or "7일", 7)
         sort = _HOTPLI_SORT.get(sort_sel or "조회수 기준", "viewCount")
         with st.spinner("YouTube에서 트렌드 플레이리스트를 가져오는 중..."):
             try:
                 df = _run_hotpli_search(api_key, genre_kws, region, language, days, sort)
                 st.session_state[_cache_key] = df
+                st.rerun()
             except Exception as e:
                 st.error(f"검색 오류: {e}")
                 return
 
-    df: pd.DataFrame | None = st.session_state.get(_cache_key)
+    df = st.session_state.get(_cache_key)
     if df is None:
-        st.info("위 필터를 설정하고 **트렌드 검색** 버튼을 눌러주세요.")
+        st.info("위 필터를 설정하고 **🔥 트렌드 검색** 버튼을 눌러주세요.")
         return
     if df.empty:
         st.warning("결과가 없습니다. 필터를 바꿔 다시 시도해보세요.")
@@ -2394,22 +2488,19 @@ def render_hotpli_trends() -> None:
 
     # 스타일 필터 적용
     display_df = df.copy()
-    if style_sel and style_sel != "전체":
+    if style_sel != "전체":
         display_df = display_df[display_df["style"] == style_sel]
 
-    # 스타일 분포 카운트 표시
-    style_counts = df["style"].value_counts()
-    style_summary = "  ".join(
-        f"**{s}** {c}" for s, c in style_counts.items()
-    )
+    # 스타일 분포 요약 캡션
+    style_counts_all = df["style"].value_counts()
+    style_summary_parts = [f"• {s} {c}" for s, c in style_counts_all.items()]
     total = len(df)
     filtered_total = len(display_df)
-    filter_label = genre_sel or "전체 (믹스)"
-    country_label = country_sel or "전체"
+    filter_label = genre_sel or genre_options[0]
     period_label = period_sel or "7일"
     st.caption(
-        f"{country_label} · {filter_label} · {period_label} 인기 영상 **{filtered_total}개** "
-        f"(전체 {total}개)  |  스타일: {style_summary}"
+        f"{active_country} · {filter_label} · {period_label} 인기 영상 **{filtered_total}개** "
+        f"(전체 {total}개)  |  스타일: {'  '.join(style_summary_parts)}"
     )
 
     # ── 썸네일 카드 3열 그리드 ──────────────────────────────────
