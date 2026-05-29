@@ -2198,8 +2198,8 @@ _HOTPLI_COUNTRY_GENRES: dict[str, list[str]] = {
     "전체": ["전체 (믹스)", "Lo-fi", "재즈", "카페", "공부", "수면", "뉴에이지", "힙합", "클래식"],
     "한국": ["한국 인기", "K-팝", "K-인디", "발라드", "트로트", "한국 R&B", "한국 힙합",
              "Lo-fi", "재즈", "카페", "공부", "수면", "뉴에이지"],
-    "일본": ["일본 인기", "J-팝", "J-인디", "시티팝", "애니송", "엔카", "J-록",
-             "Lo-fi", "재즈", "카페", "공부", "수면"],
+    "일본": ["일본 인기", "시티팝", "J-pop", "애니송", "J-rock",
+             "Lo-fi", "재즈", "카페", "공부", "수면", "뉴에이지"],
     "미국/영미권": ["미국 인기", "팝", "인디팝", "R&B", "힙합", "컨트리", "록",
                    "Lo-fi", "재즈", "카페", "공부", "수면"],
     "유럽": ["유럽 인기", "팝", "일렉트로닉", "클래식", "재즈", "카페", "공부", "수면"],
@@ -2230,12 +2230,10 @@ _HOTPLI_GENRE_KEYWORDS: dict[str, list[str]] = {
     "한국 힙합": ["한국 힙합 플레이리스트", "Korean hip hop"],
     # 일본
     "일본 인기": ["日本 人気 音楽", "Japanese popular music playlist"],
-    "J-팝": ["J-pop playlist", "Jポップ プレイリスト"],
-    "J-인디": ["Japanese indie music", "日本 インディー"],
     "시티팝": ["city pop playlist", "シティポップ"],
+    "J-pop": ["J-pop playlist", "Jポップ プレイリスト"],
     "애니송": ["anime song playlist", "アニソン"],
-    "엔카": ["enka music", "演歌 プレイリスト"],
-    "J-록": ["J-rock playlist", "日本 ロック"],
+    "J-rock": ["J-rock playlist", "日本 ロック"],
     # 미국/영미권
     "미국 인기": ["US popular music playlist", "American top music"],
     "팝": ["pop music playlist", "top pop songs"],
@@ -2279,9 +2277,10 @@ _HOTPLI_SORT: dict[str, str] = {
 # 스타일 자동 분류 키워드 (이미지 기준으로 확장)
 _HOTPLI_STYLE_KEYWORDS: dict[str, list[str]] = {
     "감성 이미지형": ["감성", "aesthetic", "chill", "playlist", "플레이리스트", "분위기", "이미지"],
+    "Lo-fi 캐릭터형": ["lofi", "lo-fi", "lo fi", "anime lofi", "study lofi", "캐릭터"],
     "라이브 송출형": ["live", "라이브", "concert", "공연", "stream", "실황"],
     "장르 마스터형": ["mix", "믹스", "best of", "greatest hits", "명곡", "컬렉션"],
-    "하이라이트 메들리형": ["메들리", "medley", "모음", "compilation", "연속듣기"],
+    "하이라이트 메들리형(숏폼)": ["메들리", "medley", "모음", "compilation", "연속듣기", "숏폼", "shorts"],
     "가사 번역 해설형": ["가사", "lyrics", "자막", "번역", "해설", "해석"],
     "라이징 스타 소개형": ["신인", "debut", "new artist", "rising", "떠오르는"],
 }
@@ -2289,10 +2288,11 @@ _HOTPLI_STYLE_KEYWORDS: dict[str, list[str]] = {
 
 def _classify_style(title: str, description: str) -> str:
     text = (title + " " + description).lower()
+    # Lo-fi 캐릭터형을 감성 이미지형보다 먼저 체크 (lo-fi 키워드 겹침 방지)
     for style, keywords in _HOTPLI_STYLE_KEYWORDS.items():
         if any(k.lower() in text for k in keywords):
             return style
-    return "감성 이미지형"  # 기본값: 가장 흔한 스타일
+    return "감성 이미지형"  # 기본값
 
 
 def _run_hotpli_search(
