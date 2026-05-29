@@ -2177,39 +2177,321 @@ def render_title_patterns(filtered: pd.DataFrame, full: pd.DataFrame) -> None:
             st.bar_chart(df_diff.set_index("단어")["Lift"], height=320)
 
 
-def render_discovery_tab() -> None:
-    """기존의 '레퍼런스 발굴' 화면 — 사이드바 + 결과 표 + 분석 + 추천 + 썸네일."""
-    st.caption(
-        "YouTube Data API v3 기반. 상황/감정 키워드로 최근 업로드된 영상 중 "
-        "'구독자 수 대비 조회수'가 폭발적인 신규 채널을 찾아냅니다."
+# ---------------------------------------------------------------------------
+# 핫플리 트렌드 — 장르·국가·기간 필터 + 썸네일 카드 그리드
+# ---------------------------------------------------------------------------
+
+_HOTPLI_COUNTRY: dict[str, tuple[str, str]] = {
+    "전체": ("", ""),
+    "한국": ("KR", "ko"),
+    "일본": ("JP", "ja"),
+    "미국/영미권": ("US", "en"),
+    "유럽": ("GB", "en"),
+    "동남아": ("ID", "id"),
+    "라틴": ("MX", "es"),
+}
+
+_HOTPLI_GENRE: dict[str, list[str]] = {
+    "전체 (믹스)": ["music playlist", "음악 플레이리스트"],
+    "Lo-fi": ["lofi music", "lo-fi chill", "lofi hip hop"],
+    "재즈": ["jazz music", "jazz cafe playlist"],
+    "카페": ["cafe music", "카페 음악", "coffee shop music"],
+    "공부": ["study music", "공부할 때 듣는 음악", "focus music"],
+    "수면": ["sleep music", "수면 음악", "relaxing sleep"],
+    "뉴에이지": ["new age music", "뉴에이지 피아노", "instrumental new age"],
+}
+
+_HOTPLI_PERIOD: dict[str, int] = {
+    "24시간": 1,
+    "7일": 7,
+    "30일": 30,
+    "90일": 90,
+}
+
+_HOTPLI_SORT: dict[str, str] = {
+    "조회수 기준": "viewCount",
+    "급상승": "date",
+    "채널 규모 대비": "viewCount",
+}
+
+_HOTPLI_STYLE_KEYWORDS: dict[str, list[str]] = {
+    "감성 이미지형": ["감성", "이미지", "aesthetic", "chill", "playlist", "플레이리스트"],
+    "라이브 송출형": ["live", "라이브", "concert", "공연", "stream"],
+    "하이라이트 메들리형": ["메들리", "medley", "모음", "compilation", "믹스", "mix"],
+    "가사 영상형": ["가사", "lyrics", "자막"],
+}
+
+
+def _classify_style(title: str, description: str) -> str:
+    text = (title + " " + description).lower()
+    for style, keywords in _HOTPLI_STYLE_KEYWORDS.items():
+        if any(k.lower() in text for k in keywords):
+            return style
+    return "기타"
+
+
+def _run_hotpli_search(
+    api_key: str,
+    genre_kws: list[str],
+    region: str,
+    language: str,
+    days: int,
+    sort: str,
+    max_results: int = 24,
+) -> pd.DataFrame:
+    from googleapiclient.discovery import build as yt_build  # type: ignore
+    youtube = yt_build("youtube", "v3", developerKey=api_key)
+
+    published_after = (datetime.utcnow() - timedelta(days=days)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    video_ids: list[str] = []
+    for kw in genre_kws[:3]:
+        try:
+            params: dict = dict(
+                part="id",
+                q=kw,
+                type="video",
+                videoCategoryId="10",  # Music
+                order=sort,
+                publishedAfter=published_after,
+                maxResults=min(max_results, 50),
+            )
+            if region:
+                params["regionCode"] = region
+            if language:
+                params["relevanceLanguage"] = language
+            resp = youtube.search().list(**params).execute()
+            video_ids += [it["id"]["videoId"] for it in resp.get("items", [])]
+        except Exception:
+            pass
+
+    if not video_ids:
+        return pd.DataFrame()
+
+    video_ids = list(dict.fromkeys(video_ids))[:max_results]
+    vid_resp = youtube.videos().list(
+        part="snippet,statistics,contentDetails",
+        id=",".join(video_ids),
+    ).execute()
+
+    rows = []
+    for item in vid_resp.get("items", []):
+        snip = item.get("snippet", {})
+        stats = item.get("statistics", {})
+        vid_id = item["id"]
+        title = snip.get("title", "")
+        desc = snip.get("description", "")
+        rows.append({
+            "video_id": vid_id,
+            "video_title": title,
+            "channel_title": snip.get("channelTitle", ""),
+            "thumbnail_url": (snip.get("thumbnails") or {}).get("medium", {}).get("url", ""),
+            "view_count": int(stats.get("viewCount") or 0),
+            "like_count": int(stats.get("likeCount") or 0),
+            "comment_count": int(stats.get("commentCount") or 0),
+            "published_at": snip.get("publishedAt", "")[:10],
+            "video_url": f"https://www.youtube.com/watch?v={vid_id}",
+            "style": _classify_style(title, desc),
+        })
+
+    return pd.DataFrame(rows)
+
+
+def render_hotpli_trends() -> None:
+    """핫플리 트렌드: 장르·국가·기간·정렬·스타일 필터 + 썸네일 카드 그리드."""
+    st.markdown("국가별로 어떤 음악 플레이리스트가 뜨는지 비교해보세요. 장르와 기간을 조합해 지금 뜨는 레퍼런스를 찾습니다.")
+
+    # API 키 확인
+    api_key = (
+        st.session_state.get("yt_api_key_input", "")
+        or os.getenv("YOUTUBE_API_KEY", "")
+        or SAVED_KEYS.get("youtube", "")
     )
 
-    new_cfg = render_sidebar()
-    if new_cfg is not None:
-        # '발굴 시작'을 눌렀을 때만 API 를 호출하고 결과를 캐시한다.
-        st.session_state.active_cfg = new_cfg
-        try:
-            with st.spinner("YouTube API 호출 및 분석 중..."):
-                st.session_state["disc_df"] = run_pipeline(new_cfg)
-        except HttpError as e:
-            st.error(f"YouTube API 오류: {e}")
-            return
-        except Exception as e:
-            st.error(f"실행 중 오류: {e}")
-            return
+    # ── 필터 행들 ──────────────────────────────────────────────
+    st.markdown("##### 국가")
+    country_sel = st.pills(
+        "국가",
+        options=list(_HOTPLI_COUNTRY.keys()),
+        default="전체",
+        key="hotpli_country",
+        label_visibility="collapsed",
+    )
 
-    cfg = st.session_state.get("active_cfg")
-    df = st.session_state.get("disc_df")
-    if cfg is None or df is None:
-        st.info("👈 사이드바에서 키워드와 필터를 설정한 뒤 **발굴 시작**을 눌러주세요.")
+    st.markdown("##### 장르")
+    genre_sel = st.pills(
+        "장르",
+        options=list(_HOTPLI_GENRE.keys()),
+        default="전체 (믹스)",
+        key="hotpli_genre",
+        label_visibility="collapsed",
+    )
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("##### 기간")
+        period_sel = st.pills(
+            "기간",
+            options=list(_HOTPLI_PERIOD.keys()),
+            default="7일",
+            key="hotpli_period",
+            label_visibility="collapsed",
+        )
+    with c2:
+        st.markdown("##### 정렬")
+        sort_sel = st.pills(
+            "정렬",
+            options=list(_HOTPLI_SORT.keys()),
+            default="조회수 기준",
+            key="hotpli_sort",
+            label_visibility="collapsed",
+        )
+
+    st.markdown("##### 스타일")
+    style_options = ["전체"] + list(_HOTPLI_STYLE_KEYWORDS.keys()) + ["기타"]
+    style_sel = st.pills(
+        "스타일",
+        options=style_options,
+        default="전체",
+        key="hotpli_style",
+        label_visibility="collapsed",
+    )
+
+    st.divider()
+
+    # ── 검색 실행 버튼 ──────────────────────────────────────────
+    if not api_key:
+        st.warning("YouTube API 키가 필요합니다. 사이드바에서 입력하거나 저장해주세요.")
         return
 
+    run_btn = st.button("🔥 트렌드 검색", type="primary", key="hotpli_run")
+
+    _cache_key = f"hotpli_results_{country_sel}_{genre_sel}_{period_sel}_{sort_sel}"
+    if run_btn:
+        region, language = _HOTPLI_COUNTRY.get(country_sel or "전체", ("", ""))
+        genre_kws = _HOTPLI_GENRE.get(genre_sel or "전체 (믹스)", ["music playlist"])
+        days = _HOTPLI_PERIOD.get(period_sel or "7일", 7)
+        sort = _HOTPLI_SORT.get(sort_sel or "조회수 기준", "viewCount")
+        with st.spinner("YouTube에서 트렌드 플레이리스트를 가져오는 중..."):
+            try:
+                df = _run_hotpli_search(api_key, genre_kws, region, language, days, sort)
+                st.session_state[_cache_key] = df
+            except Exception as e:
+                st.error(f"검색 오류: {e}")
+                return
+
+    df: pd.DataFrame | None = st.session_state.get(_cache_key)
+    if df is None:
+        st.info("위 필터를 설정하고 **트렌드 검색** 버튼을 눌러주세요.")
+        return
     if df.empty:
-        st.warning("검색 결과가 없습니다. 키워드나 기간을 조정해보세요.")
+        st.warning("결과가 없습니다. 필터를 바꿔 다시 시도해보세요.")
         return
 
-    filtered = filter_breakout_channels(df, cfg)
-    render_results(df, filtered, cfg)
+    # 스타일 필터 적용
+    display_df = df.copy()
+    if style_sel and style_sel != "전체":
+        display_df = display_df[display_df["style"] == style_sel]
+
+    # 스타일 분포 카운트 표시
+    style_counts = df["style"].value_counts()
+    style_summary = "  ".join(
+        f"**{s}** {c}" for s, c in style_counts.items()
+    )
+    total = len(df)
+    filtered_total = len(display_df)
+    filter_label = genre_sel or "전체 (믹스)"
+    country_label = country_sel or "전체"
+    period_label = period_sel or "7일"
+    st.caption(
+        f"{country_label} · {filter_label} · {period_label} 인기 영상 **{filtered_total}개** "
+        f"(전체 {total}개)  |  스타일: {style_summary}"
+    )
+
+    # ── 썸네일 카드 3열 그리드 ──────────────────────────────────
+    COLS = 3
+    rows_iter = [
+        display_df.iloc[i : i + COLS] for i in range(0, len(display_df), COLS)
+    ]
+    for row_df in rows_iter:
+        cols = st.columns(COLS)
+        for col, (_, r) in zip(cols, row_df.iterrows()):
+            with col:
+                with st.container(border=True):
+                    thumb = r.get("thumbnail_url", "")
+                    if thumb:
+                        st.image(thumb, use_container_width=True)
+                    rank_badge = f"#{display_df.index.get_loc(r.name) + 1}"  # type: ignore[arg-type]
+                    style_badge = r.get("style", "")
+                    st.markdown(
+                        f"<span style='background:#e74c3c;color:white;padding:1px 6px;"
+                        f"border-radius:4px;font-size:12px;font-weight:bold'>{rank_badge}</span> "
+                        f"<span style='background:#f0f0f0;color:#555;padding:1px 6px;"
+                        f"border-radius:4px;font-size:11px'>{style_badge}</span>",
+                        unsafe_allow_html=True,
+                    )
+                    title = r["video_title"]
+                    st.markdown(
+                        f"**[{title[:40]}{'…' if len(title) > 40 else ''}]({r['video_url']})**"
+                    )
+                    st.caption(
+                        f"📺 {r['channel_title']}  \n"
+                        f"👁 {int(r['view_count']):,}  💬 {int(r['comment_count']):,}  "
+                        f"📅 {r['published_at']}"
+                    )
+
+    st.download_button(
+        "📥 CSV 다운로드",
+        data=display_df.to_csv(index=False).encode("utf-8-sig"),
+        file_name=f"hotpli_trends_{datetime.now():%Y%m%d_%H%M%S}.csv",
+        mime="text/csv",
+        key="hotpli_csv",
+    )
+
+
+# ---------------------------------------------------------------------------
+# 레퍼런스 발굴 탭 (서브탭: 핫플리 트렌드 + 급상승 채널)
+# ---------------------------------------------------------------------------
+
+def render_discovery_tab() -> None:
+    """레퍼런스 발굴 — 🔥 핫플리 트렌드 / 🔍 급상승 채널 발굴 서브탭."""
+    sub_trend, sub_breakout = st.tabs(["🔥 핫플리 트렌드", "🔍 급상승 채널 발굴"])
+
+    with sub_trend:
+        render_hotpli_trends()
+
+    with sub_breakout:
+        st.caption(
+            "YouTube Data API v3 기반. 상황/감정 키워드로 최근 업로드된 영상 중 "
+            "'구독자 수 대비 조회수'가 폭발적인 신규 채널을 찾아냅니다."
+        )
+
+        new_cfg = render_sidebar()
+        if new_cfg is not None:
+            st.session_state.active_cfg = new_cfg
+            try:
+                with st.spinner("YouTube API 호출 및 분석 중..."):
+                    st.session_state["disc_df"] = run_pipeline(new_cfg)
+            except HttpError as e:
+                st.error(f"YouTube API 오류: {e}")
+                return
+            except Exception as e:
+                st.error(f"실행 중 오류: {e}")
+                return
+
+        cfg = st.session_state.get("active_cfg")
+        df = st.session_state.get("disc_df")
+        if cfg is None or df is None:
+            st.info("👈 사이드바에서 키워드와 필터를 설정한 뒤 **발굴 시작**을 눌러주세요.")
+            return
+
+        if df.empty:
+            st.warning("검색 결과가 없습니다. 키워드나 기간을 조정해보세요.")
+            return
+
+        filtered = filter_breakout_channels(df, cfg)
+        render_results(df, filtered, cfg)
 
 
 # ---------------------------------------------------------------------------
