@@ -7692,6 +7692,341 @@ def render_reference_monitor_tab() -> None:
             )
 
 
+def render_suno_generator_tab() -> None:
+    """Suno 곡 생성기 — 옵션 pills 선택 → AI가 10곡 가사+스타일 생성 → Suno 전송."""
+
+    # ── 스타일 ─────────────────────────────────────────────────
+    st.markdown("""
+<style>
+.sg-title { font-size:28px; font-weight:900; margin:0; }
+.sg-sub   { font-size:14px; color:#888; margin-bottom:16px; }
+.sg-step  { display:inline-block; background:#e74c3c; color:#fff;
+            font-size:11px; font-weight:700; border-radius:12px;
+            padding:3px 10px; margin-bottom:8px; }
+.ref-banner { background:#fffbe6; border:1.5px solid #f0c040;
+              border-radius:12px; padding:14px 18px; margin-bottom:18px; }
+.song-card  { background:#f8f9fa; border-radius:10px; padding:14px 16px;
+              margin-bottom:8px; border-left:4px solid #e74c3c; }
+</style>
+""", unsafe_allow_html=True)
+
+    st.markdown('<div class="sg-title">🎵 음악 만들기</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sg-sub">플레이리스트 에이전트처럼 세밀하게 옵션을 골라 노래 10곡 만들기!</div>', unsafe_allow_html=True)
+
+    gemini_key = os.getenv("GEMINI_API_KEY") or SAVED_KEYS.get("gemini", "")
+    openai_key = os.getenv("OPENAI_API_KEY") or SAVED_KEYS.get("openai", "")
+    if not gemini_key and not openai_key:
+        st.warning("🔑 Gemini 또는 OpenAI API 키가 필요합니다. 왼쪽 메뉴 **API 연결**에서 키를 등록하세요.")
+
+    # ── 레퍼런스 채널 스타일 배너 ──────────────────────────────
+    ref_channels = _load_ref_channels()
+    if ref_channels:
+        with st.container(border=False):
+            st.markdown(
+                f'<div class="ref-banner">'
+                f'<b>💾 레퍼런스 채널 스타일로 만들기</b><br>'
+                f'저장된 채널 <b>{len(ref_channels)}개</b>의 스타일을 분석해 자동으로 옵션을 채울 수 있어요.<br>'
+                f'<small>📡 레퍼런스 기획 → 레퍼런스 분석 탭에서 채널을 분석·저장하면 그 채널의 장르·무드·BPM·스타일을 한 번에 적용할 수 있어요.</small>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+            if st.button("🔗 레퍼런스 분석하러 가기", key="sg_goto_ref"):
+                st.session_state["nav_menu"] = "레퍼런스 채널"
+                st.rerun()
+    else:
+        st.info("💡 **레퍼런스 채널 스타일로 만들기** — 레퍼런스 채널을 저장하면 그 채널의 장르·무드·스타일을 한 번에 적용할 수 있어요!")
+
+    st.divider()
+
+    # ══════════════════════════════════════════════════════════
+    # STEP 1 : 음악 옵션 고르기
+    # ══════════════════════════════════════════════════════════
+    st.markdown('<span class="sg-step">🎛️ STEP 1 : 음악 옵션 고르기</span>', unsafe_allow_html=True)
+
+    def _pills(label: str, options: list, key: str, default: list | None = None) -> list:
+        """멀티 pills — st.pills multiselect 래퍼."""
+        return st.pills(label, options, selection_mode="multi", default=default or [], key=key)
+
+    with st.container(border=True):
+        # 장르
+        st.markdown("**🎸 장르**")
+        sg_genres = _pills("장르", [
+            "K-pop","트로트","Pop","Ballad","R&B","Hip-hop","Trap","Rock","EDM","House",
+            "Folk","Jazz","Lo-fi","Classical","Indie","Acoustic","Soul","Funk","Disco","Reggae",
+            "Latin","Country","Synthwave","Ambient","Bossa Nova","Citypop","Future Bass","Trance","Drum & Bass",
+        ], key="sg_genres", default=["트로트"])
+
+        st.divider()
+
+        # 언어
+        st.markdown("**🌏 언어**")
+        sg_lang = st.pills("언어", ["한국어","English","日本語","中文","Español","Français","한+영 혼합"],
+                           selection_mode="single", default="한국어", key="sg_lang")
+
+        st.divider()
+
+        # 보컬
+        st.markdown("**🎤 보컬**")
+        sg_vocal = _pills("보컬", ["여자 솔로","남자 솔로","남녀 듀엣","코러스","보이그룹","혼성 그룹","어린이 보컬","래퍼"],
+                          key="sg_vocal", default=["여자 솔로"])
+
+        st.divider()
+
+        # 템포 / BPM
+        st.markdown("**🥁 템포 / BPM**")
+        sg_bpm = st.pills("템포", [
+            "매우 느림 (40-50 BPM)","재즈 노름 (50-70 BPM)","느름 (70-90 BPM)",
+            "보통 (90-110 BPM)","업비트 (110-130 BPM)","매우 빠름 (130-150 BPM)",
+        ], selection_mode="single", default="보통 (90-110 BPM)", key="sg_bpm")
+
+        st.divider()
+
+        # 분위기 / 무드
+        st.markdown("**🌙 분위기 / 무드**")
+        sg_mood = _pills("분위기", [
+            "밝고 신나는","슬프고 감성적인","몽환적인","에너지 넘치고 활력찬","지성적이고 편안한",
+            "자유롭고 힘찬","카페 느낌","이별·그리움","흥겨운","노스탤직","무겁고 웅장한","공격적",
+            "클래식·우아한","일렉트로닉","청량한","따뜻한","새벽감성",
+        ], key="sg_mood", default=["밝고 신나는"])
+
+        st.divider()
+
+        # 시대감 / 스타일
+        st.markdown("**🕰️ 시대감 / 스타일**")
+        sg_era = st.pills("시대감", ["현대 (2020s)","2010s","2000s","90s 레트로","80s 레트로","70s 빈티지","시대 무관","미래형"],
+                          selection_mode="single", default="현대 (2020s)", key="sg_era")
+
+        st.divider()
+
+        # 상황 / 주제
+        st.markdown("**🎬 상황 / 주제**")
+        sg_situation = _pills("상황", [
+            "공부·집중","드라이브","카페에서","늦은 밤","이른 아침","비 오는 날","여행","운동·워크아웃",
+            "파티","데이트","이별","힐링","명상","가족·추억","친구와 함께",
+        ], key="sg_situation", default=["드라이브"])
+
+        st.divider()
+
+        # 곡당 길이
+        c_len, c_spacer = st.columns([2, 1])
+        with c_len:
+            sg_duration = st.slider("🕒 곡당 길이 (Suno 생성 시간)", min_value=60, max_value=300,
+                                    value=180, step=30, key="sg_duration",
+                                    format="%d초")
+            mins, secs = divmod(sg_duration, 60)
+            st.caption(f"→ **{mins}분 {secs:02d}초** | Suno API V3/V3.5+ 기준. 길수록 토큰 소모가 늘어납니다.")
+
+        st.divider()
+
+        # 주제 / 컨텐 (가사 내용)
+        sg_theme = st.text_area(
+            "📝 주제 / 컨텐 (가사 내용, 선택)",
+            height=80,
+            placeholder="예: 피아노 재즈 바 + 스모크 / 달달한 거리 술집 / 친구들과의 추억...",
+            key="sg_theme",
+        )
+
+        # 악기 / 사운드 디테일
+        sg_instrument = st.text_area(
+            "🎹 악기 / 사운드 디테일 (선택)",
+            height=70,
+            placeholder="예: piano, acoustic guitar, soft drums, reverb, warm bass",
+            key="sg_instrument",
+        )
+
+    st.divider()
+
+    gen_btn = st.button("🎵 가사 + 스타일 만들기 ✨", type="primary", use_container_width=True, key="sg_gen")
+
+    # ── 생성 로직 ──────────────────────────────────────────────
+    if gen_btn:
+        if not sg_genres:
+            st.error("장르를 1개 이상 선택해주세요.")
+            st.stop()
+        if not gemini_key and not openai_key:
+            st.error("Gemini 또는 OpenAI API 키를 먼저 등록해주세요.")
+            st.stop()
+
+        bpm_str = sg_bpm or "보통 (90-110 BPM)"
+        prompt = f"""
+당신은 Suno AI 음악 전문 프롬프트 엔지니어입니다.
+아래 조건으로 서로 다른 **10곡**의 제목, Suno 스타일 태그, 가사를 JSON으로 작성하세요.
+
+조건:
+- 장르: {', '.join(sg_genres)}
+- 언어: {sg_lang or '한국어'}
+- 보컬: {', '.join(sg_vocal) if sg_vocal else '여자 솔로'}
+- 템포/BPM: {bpm_str}
+- 분위기: {', '.join(sg_mood) if sg_mood else '밝고 신나는'}
+- 시대감: {sg_era or '현대 (2020s)'}
+- 상황/주제: {', '.join(sg_situation) if sg_situation else ''}
+- 곡 길이: {mins}분 {secs:02d}초
+- 가사 내용: {sg_theme or '자유롭게'}
+- 악기 디테일: {sg_instrument or '자유롭게'}
+
+**각 곡의 스타일 태그는 Suno에 바로 붙여넣을 수 있는 영문 태그** (예: "trot, female vocal, upbeat, 90s retro, piano, emotional")
+
+JSON 스키마 (배열, 10개):
+[
+  {{
+    "num": 1,
+    "title_ko": "한국어 제목",
+    "title_en": "English Title",
+    "style_tags": "suno style prompt tags in english",
+    "lyrics": "가사 (버스1 + 코러스 + 버스2 + 코러스 구조, 언어는 조건에 따름)"
+  }},
+  ...
+]
+
+반드시 JSON 배열만 출력하세요. 다른 텍스트 없음.
+""".strip()
+
+        with st.spinner("🎵 AI가 10곡을 작곡 중입니다... 잠시만 기다려주세요!"):
+            songs = None
+            try:
+                raw = ""
+                if gemini_key:
+                    import google.generativeai as genai  # type: ignore
+                    genai.configure(api_key=gemini_key)
+                    model = genai.GenerativeModel("gemini-1.5-flash")
+                    resp = model.generate_content(prompt)
+                    raw = resp.text.strip()
+                elif openai_key:
+                    import openai as _oai  # type: ignore
+                    client = _oai.OpenAI(api_key=openai_key)
+                    resp = client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.9,
+                    )
+                    raw = resp.choices[0].message.content.strip()
+
+                if raw.startswith("```"):
+                    raw = raw.split("```")[1]
+                    if raw.startswith("json"):
+                        raw = raw[4:]
+                songs = json.loads(raw.strip())
+                st.session_state["sg_songs"] = songs
+                st.session_state["sg_meta"] = {
+                    "genres": sg_genres, "lang": sg_lang, "vocal": sg_vocal,
+                    "bpm": bpm_str, "mood": sg_mood, "era": sg_era,
+                    "situation": sg_situation, "theme": sg_theme,
+                }
+            except Exception as e:
+                st.error(f"생성 실패: {e}")
+                st.stop()
+
+    # ── 결과 표시 ──────────────────────────────────────────────
+    songs = st.session_state.get("sg_songs")
+    meta  = st.session_state.get("sg_meta", {})
+
+    if songs:
+        st.success(f"✅ {len(songs)}곡 생성 완료!")
+        # 스타일 요약 배너
+        tags_preview = ""
+        if songs:
+            tags_preview = songs[0].get("style_tags", "")
+        if tags_preview:
+            with st.container(border=True):
+                st.caption("**생성된 스타일 태그 (첫 번째 곡 기준)**")
+                st.code(tags_preview, language=None)
+                st.caption("→ Suno AI 'Style' 칸에 그대로 붙여넣기!")
+
+        # 노래 리스트 헤더
+        c_h1, c_h2 = st.columns([3, 1])
+        c_h1.markdown(f"### {len(songs)} 노래 리스트")
+        # 플레이리스트 저장 (session_state)
+        if c_h2.button("🎵 플레이리스트로 저장", key="sg_save_pl", use_container_width=True):
+            saved = st.session_state.get("sg_playlists", [])
+            saved.append({"meta": meta, "songs": songs, "saved_at": datetime.now().isoformat()})
+            st.session_state["sg_playlists"] = saved
+            st.toast(f"플레이리스트 저장 완료! (총 {len(saved)}개)")
+
+        # 곡 아코디언
+        for song in songs:
+            num  = song.get("num", "")
+            t_ko = song.get("title_ko", "")
+            t_en = song.get("title_en", "")
+            with st.expander(f"**{num:02d}.** {t_ko}  ·  *{t_en}*"):
+                sc1, sc2 = st.columns([3, 2])
+                with sc1:
+                    st.markdown("**🎨 Suno 스타일 태그**")
+                    st.code(song.get("style_tags", ""), language=None)
+                with sc2:
+                    st.markdown("**📋 제목 (복사용)**")
+                    st.code(t_ko, language=None)
+                    st.code(t_en, language=None)
+                st.markdown("**📝 가사**")
+                lyrics = song.get("lyrics", "")
+                st.text_area(f"가사_{num}", value=lyrics, height=220, key=f"sg_lyrics_{num}", label_visibility="collapsed")
+
+        st.divider()
+
+        # ══════════════════════════════════════════════════════
+        # STEP 2 : 실제 노래 만들기 (선택)
+        # ══════════════════════════════════════════════════════
+        st.markdown('<span class="sg-step">🎵 STEP 2 : 실제 노래 만들기 (선택)</span>', unsafe_allow_html=True)
+        st.caption("가사를 만든 후, 각 노래 옆 버튼으로 전체 파일로이 만들 수 있어요!")
+
+        col_s1, col_s2, col_s3 = st.columns(3)
+
+        with col_s1:
+            with st.container(border=True):
+                st.markdown("#### 🤖 Suno API")
+                st.caption("전체 Suno V3 이상으로 자동 노래 생성 (3~4분). **별도 API 필요**")
+                st.markdown("✅ **kie.ai** 필요")
+                kieai_key = st.text_input("kie.ai API 키", type="password", key="sg_kieai_key",
+                                          placeholder="kie.ai API 키 입력")
+                if st.button("🎵 Suno API로 전체 생성", key="sg_suno_api", use_container_width=True,
+                              type="primary", disabled=not kieai_key):
+                    st.info("Suno API 연동 기능은 곧 지원 예정입니다.")
+
+        with col_s2:
+            with st.container(border=True):
+                st.markdown("#### 🎼 Lyria 3 Pro")
+                st.caption("Google의 전문 음악 AI, Gemini 이용. 가사→음악 자동 변환")
+                st.markdown(f"✅ **Gemini** 붙잡아 {'필요' if not gemini_key else '✓ 연결됨'}")
+                if st.button("🎼 Lyria로 생성", key="sg_lyria", use_container_width=True,
+                              disabled=not gemini_key):
+                    st.info("Lyria 3 Pro 연동 기능은 곧 지원 예정입니다.")
+
+        with col_s3:
+            with st.container(border=True):
+                st.markdown("#### ✋ 사용 안함 (수동)")
+                st.caption("Suno 사이트에서 직접 붙여넣고 생성. **100% 무료**")
+                st.markdown("✅ **100%** 무료")
+                st.markdown("""
+**사용법:**
+1. 위 각 곡의 '스타일 태그' 복사
+2. [suno.com](https://suno.com) → Custom Mode ON
+3. Style 칸에 태그, Lyrics 칸에 가사 붙여넣기
+4. Generate!
+""")
+                # 전체 가사+태그 다운로드
+                all_text = "\n\n".join([
+                    f"{'='*50}\n{s.get('num'):02d}. {s.get('title_ko')} / {s.get('title_en')}\n"
+                    f"[Style] {s.get('style_tags','')}\n\n{s.get('lyrics','')}"
+                    for s in songs
+                ])
+                st.download_button(
+                    "📥 전체 가사+태그 TXT 다운로드",
+                    data=all_text.encode("utf-8"),
+                    file_name=f"suno_songs_{datetime.now():%Y%m%d_%H%M}.txt",
+                    mime="text/plain",
+                    use_container_width=True,
+                )
+
+        st.divider()
+
+        # JSON 다운로드
+        st.download_button(
+            "📥 전체 JSON 다운로드",
+            data=json.dumps(songs, ensure_ascii=False, indent=2).encode("utf-8"),
+            file_name=f"suno_songs_{datetime.now():%Y%m%d_%H%M}.json",
+            mime="application/json",
+        )
+
+
 def render_channel_planning_tab() -> None:
     """AI 채널 기획안 생성기 — 채널 컨셉 입력 → 완성형 기획안 자동 출력."""
 
@@ -8243,7 +8578,8 @@ div[data-testid="stSidebarNav"] { display: none; }
     # 음악 만들기
     elif nav == "음악 만들기":
         st.title("🎵 음악 만들기")
-        tab_plan, tab_story, tab_studio, tab_rev, tab_sync, tab_review = st.tabs([
+        tab_suno_gen, tab_plan, tab_story, tab_studio, tab_rev, tab_sync, tab_review = st.tabs([
+            "🎵 Suno 곡 생성",
             "🏗️ AI 채널 기획안",
             "✍️ AI 스토리텔링 & 가사 생성",
             "🎚️ Suno 프롬프트 스튜디오",
@@ -8251,6 +8587,7 @@ div[data-testid="stSidebarNav"] { display: none; }
             "🎤 가사 자동 동기화 (SRT)",
             "🙋 검수 큐",
         ])
+        with tab_suno_gen: render_suno_generator_tab()
         with tab_plan:    render_channel_planning_tab()
         with tab_story:   render_storytelling_tab()
         with tab_studio:  render_suno_studio_tab()
