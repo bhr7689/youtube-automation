@@ -7465,17 +7465,28 @@ def render_reference_monitor_tab() -> None:
         st.caption(f"현재 저장된 채널: **{len(channels)}개** (권장 최대 50개)")
 
         with st.container(border=True):
-            col_url, col_cat = st.columns([3, 2])
-            new_url = col_url.text_input(
+            new_url = st.text_input(
                 "채널 URL / @핸들 / 채널ID",
                 placeholder="예: @채널명  또는  https://www.youtube.com/@...",
                 key="rm_new_url",
             )
-            cat_options = _REF_CATEGORIES.copy()
-            cat_sel = col_cat.selectbox("카테고리", cat_options, key="rm_cat_sel")
-            custom_cat = ""
-            if cat_sel == "직접 입력":
-                custom_cat = st.text_input("카테고리 이름 직접 입력", key="rm_custom_cat")
+
+            st.markdown("**카테고리** — 아래에서 클릭하거나 직접 입력")
+            # 빠른 선택 버튼 (직접 입력 제외)
+            preset_cols = st.columns(6)
+            quick_cats = [c for c in _REF_CATEGORIES if c != "직접 입력"]
+            for i, cat in enumerate(quick_cats):
+                if preset_cols[i % 6].button(cat, key=f"qcat_{i}", use_container_width=True):
+                    st.session_state["rm_cat_input"] = cat
+
+            # 카테고리 텍스트 입력 (자유 입력)
+            cat_input = st.text_input(
+                "카테고리 입력",
+                value=st.session_state.get("rm_cat_input", ""),
+                placeholder="위에서 클릭하거나 직접 입력 (예: 샹송, 동요, 뉴에이지)",
+                key="rm_cat_input",
+                label_visibility="collapsed",
+            )
 
             add_btn = st.button("➕ 채널 추가", type="primary", key="rm_add")
 
@@ -7484,6 +7495,8 @@ def render_reference_monitor_tab() -> None:
                 st.error("YouTube API 키가 필요합니다. 🔑 API 연결 메뉴에서 저장해주세요.")
             elif not new_url.strip():
                 st.warning("채널 URL을 입력해주세요.")
+            elif not cat_input.strip():
+                st.warning("카테고리를 선택하거나 입력해주세요.")
             elif len(channels) >= 80:
                 st.warning("최대 80개 채널까지 저장 가능합니다.")
             else:
@@ -7496,7 +7509,7 @@ def render_reference_monitor_tab() -> None:
                 elif any(c["channel_id"] == cid for c in channels):
                     st.warning(f"이미 저장된 채널입니다: {ctitle}")
                 else:
-                    final_cat = custom_cat.strip() if cat_sel == "직접 입력" else cat_sel
+                    final_cat = cat_input.strip()
                     channels.append({
                         "channel_id": cid,
                         "channel_title": ctitle,
