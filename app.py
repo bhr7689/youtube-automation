@@ -7345,6 +7345,287 @@ def render_stock_media_tab() -> None:
                         st.markdown(f"[Pexels 페이지]({pexels_url})")
 
 
+# ---------------------------------------------------------------------------
+# 레퍼런스 채널 모니터
+# ---------------------------------------------------------------------------
+
+_REF_CHANNELS_FILE = pathlib.Path(__file__).parent / "reference_channels.json"
+
+# Suno 제작 목적 기본 카테고리
+_REF_CATEGORIES = [
+    "K-팝 / 아이돌", "트로트", "발라드", "K-인디", "한국 R&B·힙합",
+    "동요·키즈", "Lo-fi·카페", "재즈", "클래식·뉴에이지",
+    "시티팝·J-팝", "팝·EDM", "직접 입력",
+]
+
+
+def _load_ref_channels() -> list[dict]:
+    if _REF_CHANNELS_FILE.exists():
+        try:
+            return json.loads(_REF_CHANNELS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return []
+
+
+def _save_ref_channels(channels: list[dict]) -> None:
+    _REF_CHANNELS_FILE.write_text(
+        json.dumps(channels, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def _resolve_channel_id(url: str, youtube) -> tuple[str, str]:
+    """URL/핸들 → (channel_id, channel_title). 실패 시 ('', '')."""
+    import re as _re
+    # 영상 URL
+    vm = _re.search(r"(?:v=|youtu\.be/)([A-Za-z0-9_-]{11})", url)
+    if vm:
+        r = youtube.videos().list(part="snippet", id=vm.group(1)).execute()
+        items = r.get("items", [])
+        if items:
+            snip = items[0]["snippet"]
+            return snip["channelId"], snip["channelTitle"]
+    # @handle
+    hm = _re.search(r"@([\w.-]+)", url)
+    if hm:
+        r = youtube.search().list(part="snippet", q=f"@{hm.group(1)}", type="channel", maxResults=1).execute()
+        items = r.get("items", [])
+        if items:
+            s = items[0]["snippet"]
+            return s["channelId"], s["channelTitle"]
+    # /channel/ID
+    cm = _re.search(r"/channel/([A-Za-z0-9_-]+)", url)
+    if cm:
+        cid = cm.group(1)
+        r = youtube.channels().list(part="snippet", id=cid).execute()
+        items = r.get("items", [])
+        if items:
+            return cid, items[0]["snippet"]["title"]
+    # 직접 channel ID
+    if _re.match(r"^UC[A-Za-z0-9_-]{22}$", url.strip()):
+        cid = url.strip()
+        r = youtube.channels().list(part="snippet", id=cid).execute()
+        items = r.get("items", [])
+        if items:
+            return cid, items[0]["snippet"]["title"]
+    return "", ""
+
+
+def _fetch_channel_latest(youtube, channel_id: str, max_videos: int = 10) -> list[dict]:
+    """채널의 최신 영상 목록 + 통계 반환."""
+    try:
+        s_resp = youtube.search().list(
+            part="id", channelId=channel_id, order="date",
+            type="video", maxResults=max_videos,
+        ).execute()
+        vid_ids = [it["id"]["videoId"] for it in s_resp.get("items", [])]
+        if not vid_ids:
+            return []
+        v_resp = youtube.videos().list(
+            part="snippet,statistics,contentDetails",
+            id=",".join(vid_ids),
+        ).execute()
+        rows = []
+        for item in v_resp.get("items", []):
+            snip  = item.get("snippet", {})
+            stats = item.get("statistics", {})
+            rows.append({
+                "video_id":      item["id"],
+                "title":         snip.get("title", ""),
+                "thumbnail":     (snip.get("thumbnails") or {}).get("medium", {}).get("url", ""),
+                "published_at":  snip.get("publishedAt", "")[:16].replace("T", " "),
+                "view_count":    int(stats.get("viewCount") or 0),
+                "like_count":    int(stats.get("likeCount") or 0),
+                "comment_count": int(stats.get("commentCount") or 0),
+                "video_url":     f"https://www.youtube.com/watch?v={item['id']}",
+                "fetched_at":    datetime.utcnow().strftime("%Y-%m-%d"),
+            })
+        return rows
+    except Exception:
+        return []
+
+
+def render_reference_monitor_tab() -> None:
+    """레퍼런스 채널 모니터 — 채널 저장·카테고리 분류·최신 업로드 대시보드."""
+
+    api_key = (
+        st.session_state.get("yt_api_key_input", "")
+        or os.getenv("YOUTUBE_API_KEY", "")
+        or SAVED_KEYS.get("youtube", "")
+    )
+
+    channels = _load_ref_channels()
+
+    sub_manage, sub_dashboard = st.tabs(["⚙️ 채널 관리", "📊 업로드 대시보드"])
+
+    # ── 채널 관리 탭 ──────────────────────────────────────────
+    with sub_manage:
+        st.markdown("### 채널 추가")
+        st.caption(f"현재 저장된 채널: **{len(channels)}개** (권장 최대 50개)")
+
+        with st.container(border=True):
+            col_url, col_cat = st.columns([3, 2])
+            new_url = col_url.text_input(
+                "채널 URL / @핸들 / 채널ID",
+                placeholder="예: @채널명  또는  https://www.youtube.com/@...",
+                key="rm_new_url",
+            )
+            cat_options = _REF_CATEGORIES.copy()
+            cat_sel = col_cat.selectbox("카테고리", cat_options, key="rm_cat_sel")
+            custom_cat = ""
+            if cat_sel == "직접 입력":
+                custom_cat = st.text_input("카테고리 이름 직접 입력", key="rm_custom_cat")
+
+            add_btn = st.button("➕ 채널 추가", type="primary", key="rm_add")
+
+        if add_btn:
+            if not api_key:
+                st.error("YouTube API 키가 필요합니다. 🔑 API 연결 메뉴에서 저장해주세요.")
+            elif not new_url.strip():
+                st.warning("채널 URL을 입력해주세요.")
+            elif len(channels) >= 80:
+                st.warning("최대 80개 채널까지 저장 가능합니다.")
+            else:
+                from googleapiclient.discovery import build as yt_build  # type: ignore
+                youtube = yt_build("youtube", "v3", developerKey=api_key)
+                with st.spinner("채널 정보 확인 중..."):
+                    cid, ctitle = _resolve_channel_id(new_url.strip(), youtube)
+                if not cid:
+                    st.error("채널을 찾을 수 없습니다. URL을 확인해주세요.")
+                elif any(c["channel_id"] == cid for c in channels):
+                    st.warning(f"이미 저장된 채널입니다: {ctitle}")
+                else:
+                    final_cat = custom_cat.strip() if cat_sel == "직접 입력" else cat_sel
+                    channels.append({
+                        "channel_id": cid,
+                        "channel_title": ctitle,
+                        "category": final_cat or "기타",
+                        "added_at": datetime.utcnow().strftime("%Y-%m-%d"),
+                    })
+                    _save_ref_channels(channels)
+                    st.success(f"✅ 추가됨: **{ctitle}** → [{final_cat or '기타'}]")
+                    st.rerun()
+
+        # 카테고리별 채널 목록
+        st.divider()
+        st.markdown("### 저장된 채널 목록")
+        if not channels:
+            st.info("아직 저장된 채널이 없습니다. 위에서 채널을 추가해보세요.")
+        else:
+            cats = sorted(set(c["category"] for c in channels))
+            for cat in cats:
+                cat_channels = [c for c in channels if c["category"] == cat]
+                with st.expander(f"**{cat}** ({len(cat_channels)}개)", expanded=True):
+                    for ch in cat_channels:
+                        col_t, col_d, col_del = st.columns([4, 2, 1])
+                        col_t.markdown(
+                            f"[{ch['channel_title']}](https://www.youtube.com/channel/{ch['channel_id']})"
+                        )
+                        col_d.caption(f"추가일: {ch.get('added_at','')}")
+                        if col_del.button("🗑️", key=f"del_{ch['channel_id']}"):
+                            channels = [c for c in channels if c["channel_id"] != ch["channel_id"]]
+                            _save_ref_channels(channels)
+                            st.rerun()
+
+    # ── 업로드 대시보드 탭 ────────────────────────────────────
+    with sub_dashboard:
+        if not channels:
+            st.info("먼저 **⚙️ 채널 관리** 탭에서 채널을 추가해주세요.")
+            return
+
+        if not api_key:
+            st.warning("YouTube API 키가 필요합니다.")
+            return
+
+        # 필터: 카테고리 선택
+        all_cats = ["전체"] + sorted(set(c["category"] for c in channels))
+        col_f1, col_f2, col_f3 = st.columns([2, 1, 1])
+        cat_filter = col_f1.selectbox("카테고리 필터", all_cats, key="rm_dash_cat")
+        max_vid = col_f2.selectbox("채널당 영상 수", [5, 10, 20], index=1, key="rm_dash_n")
+        refresh_btn = col_f3.button("🔄 새로고침", type="primary", key="rm_refresh", use_container_width=True)
+
+        filtered_channels = (
+            channels if cat_filter == "전체"
+            else [c for c in channels if c["category"] == cat_filter]
+        )
+
+        if refresh_btn or "rm_dashboard_data" not in st.session_state:
+            from googleapiclient.discovery import build as yt_build  # type: ignore
+            youtube = yt_build("youtube", "v3", developerKey=api_key)
+            data: dict[str, list] = {}
+            prog = st.progress(0, text="채널 데이터 수집 중...")
+            for i, ch in enumerate(filtered_channels):
+                prog.progress((i + 1) / max(len(filtered_channels), 1),
+                              text=f"수집 중: {ch['channel_title']}")
+                data[ch["channel_id"]] = _fetch_channel_latest(youtube, ch["channel_id"], max_vid)
+            prog.empty()
+            st.session_state["rm_dashboard_data"] = data
+            st.session_state["rm_dashboard_channels"] = filtered_channels
+
+        data = st.session_state.get("rm_dashboard_data", {})
+        dash_channels = st.session_state.get("rm_dashboard_channels", filtered_channels)
+
+        if not data:
+            st.info("🔄 새로고침 버튼을 눌러 데이터를 불러오세요.")
+            return
+
+        # 채널별 최신 업로드 표시
+        for ch in dash_channels:
+            videos = data.get(ch["channel_id"], [])
+            if not videos:
+                continue
+
+            latest = videos[0]
+            avg_views = int(sum(v["view_count"] for v in videos) / max(len(videos), 1))
+            total_comments = sum(v["comment_count"] for v in videos)
+
+            with st.expander(
+                f"**{ch['channel_title']}**  ·  [{ch['category']}]  ·  "
+                f"최신: {latest['published_at'][:10]}  ·  "
+                f"평균조회 {avg_views:,}",
+                expanded=True,
+            ):
+                # 메트릭 요약
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("최신 영상 조회수", f"{latest['view_count']:,}")
+                m2.metric("최신 좋아요", f"{latest['like_count']:,}")
+                m3.metric("최신 댓글", f"{latest['comment_count']:,}")
+                like_rate = round(latest['like_count'] / max(latest['view_count'], 1) * 100, 2)
+                m4.metric("좋아요율", f"{like_rate}%")
+
+                # 썸네일 + 제목 그리드 (3열)
+                COLS = 3
+                for i in range(0, len(videos), COLS):
+                    cols = st.columns(COLS)
+                    for col, vid in zip(cols, videos[i:i+COLS]):
+                        with col:
+                            if vid["thumbnail"]:
+                                st.image(vid["thumbnail"], use_container_width=True)
+                            title = vid["title"]
+                            st.markdown(
+                                f"**[{title[:35]}{'…' if len(title)>35 else ''}]({vid['video_url']})**"
+                            )
+                            st.caption(
+                                f"📅 {vid['published_at']}  \n"
+                                f"👁 {vid['view_count']:,}  💬 {vid['comment_count']:,}  "
+                                f"👍 {vid['like_count']:,}"
+                            )
+
+        # 전체 CSV 다운로드
+        all_rows = []
+        for ch in dash_channels:
+            for vid in data.get(ch["channel_id"], []):
+                all_rows.append({**vid, "channel_title": ch["channel_title"], "category": ch["category"]})
+        if all_rows:
+            st.divider()
+            st.download_button(
+                "📥 전체 데이터 CSV 다운로드",
+                data=pd.DataFrame(all_rows).to_csv(index=False).encode("utf-8-sig"),
+                file_name=f"reference_monitor_{datetime.now():%Y%m%d}.csv",
+                mime="text/csv",
+            )
+
+
 def main() -> None:
     st.set_page_config(
         page_title="유튜브 음악 채널 자동화",
@@ -7391,10 +7672,13 @@ div[data-testid="stSidebarNav"] { display: none; }
     # ── 메뉴 정의 ─────────────────────────────────────────────
     st.sidebar.markdown('<div class="sb-label">★ MENU</div>', unsafe_allow_html=True)
 
+    ref_count = len(_load_ref_channels())
+
     _NAV = [
         ("🏠", "홈", None),
         ("🔍", "채널·영상 분석", None),
         ("⚡", "핫플리 트렌드", None),
+        ("📡", "레퍼런스 채널", ref_count if ref_count else None),
         ("📸", "스톡 미디어", None),
         ("🕐", "분석 기록", history_count if history_count else None),
         ("📋", "평가 가이드라인", None),
@@ -7625,6 +7909,12 @@ div[data-testid="stSidebarNav"] { display: none; }
             "스톡 이미지·동영상 검색에 사용됩니다. 무료 플랜으로도 충분합니다.",
             "www.pexels.com/api",
         )
+
+    # 레퍼런스 채널 모니터
+    elif nav == "레퍼런스 채널":
+        st.title("📡 레퍼런스 채널 모니터")
+        st.caption("Suno 제작 참고 채널을 장르별로 저장하고, 최신 업로드를 한눈에 모니터링합니다.")
+        render_reference_monitor_tab()
 
     # 스톡 미디어
     elif nav == "스톡 미디어":
