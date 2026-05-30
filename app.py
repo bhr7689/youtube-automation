@@ -7533,41 +7533,93 @@ def render_reference_monitor_tab() -> None:
             st.info("먼저 **⚙️ 채널 관리** 탭에서 채널을 추가해주세요.")
             return
 
-        if not api_key:
-            st.warning("YouTube API 키가 필요합니다.")
-            return
+        # ── 자동 수집 데이터 확인 ──────────────────────────────
+        _latest_file   = pathlib.Path(__file__).parent / "ref_data" / "latest.json"
+        _history_file  = pathlib.Path(__file__).parent / "ref_data" / "history.json"
+        auto_data: dict = {}
+        if _latest_file.exists():
+            try:
+                auto_data = json.loads(_latest_file.read_text(encoding="utf-8"))
+            except Exception:
+                pass
 
-        # 필터: 카테고리 선택
+        if auto_data:
+            collected_at = auto_data.get("collected_at", "")
+            st.success(f"🤖 GitHub Actions 자동 수집 데이터  ·  마지막 수집: **{collected_at}**")
+        else:
+            st.info("💡 자동 수집 데이터가 없습니다. GitHub Actions 설정 후 매일 자동 수집됩니다. 지금은 아래 **수동 새로고침**을 사용하세요.")
+
+        # 조회수 추이 (history.json)
+        history_data: list = []
+        if _history_file.exists():
+            try:
+                history_data = json.loads(_history_file.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
+        # ── 필터 ──────────────────────────────────────────────
         all_cats = ["전체"] + sorted(set(c["category"] for c in channels))
         col_f1, col_f2, col_f3 = st.columns([2, 1, 1])
         cat_filter = col_f1.selectbox("카테고리 필터", all_cats, key="rm_dash_cat")
-        max_vid = col_f2.selectbox("채널당 영상 수", [5, 10, 20], index=1, key="rm_dash_n")
-        refresh_btn = col_f3.button("🔄 새로고침", type="primary", key="rm_refresh", use_container_width=True)
+        max_vid    = col_f2.selectbox("채널당 영상 수", [5, 10, 20], index=1, key="rm_dash_n")
+        refresh_btn = col_f3.button("🔄 수동 새로고침", type="secondary", key="rm_refresh", use_container_width=True)
 
         filtered_channels = (
             channels if cat_filter == "전체"
             else [c for c in channels if c["category"] == cat_filter]
         )
 
-        if refresh_btn or "rm_dashboard_data" not in st.session_state:
-            from googleapiclient.discovery import build as yt_build  # type: ignore
-            youtube = yt_build("youtube", "v3", developerKey=api_key)
-            data: dict[str, list] = {}
-            prog = st.progress(0, text="채널 데이터 수집 중...")
-            for i, ch in enumerate(filtered_channels):
-                prog.progress((i + 1) / max(len(filtered_channels), 1),
-                              text=f"수집 중: {ch['channel_title']}")
-                data[ch["channel_id"]] = _fetch_channel_latest(youtube, ch["channel_id"], max_vid)
-            prog.empty()
-            st.session_state["rm_dashboard_data"] = data
-            st.session_state["rm_dashboard_channels"] = filtered_channels
+        # 자동 수집 데이터 → session_state에 로드
+        if auto_data and "rm_dashboard_data" not in st.session_state:
+            st.session_state["rm_dashboard_data"] = {
+                cid: ch_data["videos"]
+                for cid, ch_data in auto_data.get("channels", {}).items()
+            }
+            st.session_state["rm_dashboard_channels"] = channels
 
-        data = st.session_state.get("rm_dashboard_data", {})
+        # 수동 새로고침
+        if refresh_btn:
+            if not api_key:
+                st.warning("YouTube API 키가 필요합니다. 🔑 API 연결 메뉴에서 저장해주세요.")
+            else:
+                from googleapiclient.discovery import build as yt_build  # type: ignore
+                youtube = yt_build("youtube", "v3", developerKey=api_key)
+                data_new: dict[str, list] = {}
+                prog = st.progress(0, text="채널 데이터 수집 중...")
+                for i, ch in enumerate(filtered_channels):
+                    prog.progress((i + 1) / max(len(filtered_channels), 1),
+                                  text=f"수집 중: {ch['channel_title']}")
+                    data_new[ch["channel_id"]] = _fetch_channel_latest(youtube, ch["channel_id"], max_vid)
+                prog.empty()
+                st.session_state["rm_dashboard_data"] = data_new
+                st.session_state["rm_dashboard_channels"] = filtered_channels
+
+        data        = st.session_state.get("rm_dashboard_data", {})
         dash_channels = st.session_state.get("rm_dashboard_channels", filtered_channels)
 
+        # 카테고리 필터 적용
+        if cat_filter != "전체":
+            dash_channels = [c for c in dash_channels if c["category"] == cat_filter]
+
         if not data:
-            st.info("🔄 새로고침 버튼을 눌러 데이터를 불러오세요.")
+            st.info("🔄 수동 새로고침 버튼을 눌러 데이터를 불러오세요.")
             return
+
+        # 조회수 추이 차트 (history 있을 때만)
+        if history_data and len(history_data) >= 2:
+            with st.expander("📈 조회수 추이 (최근 30일)", expanded=False):
+                import pandas as _pd2
+                dates = [h["date"] for h in history_data]
+                # 모든 채널 합산 최신 조회수 추이
+                chart_rows = []
+                for h in history_data:
+                    for cid, s in h.get("summary", {}).items():
+                        chart_rows.append({"날짜": h["date"], "채널": s["channel_title"],
+                                           "조회수": s.get("latest_views", 0)})
+                if chart_rows:
+                    df_chart = _pd2.DataFrame(chart_rows)
+                    df_pivot = df_chart.pivot(index="날짜", columns="채널", values="조회수").fillna(0)
+                    st.line_chart(df_pivot)
 
         # 채널별 최신 업로드 표시
         for ch in dash_channels:

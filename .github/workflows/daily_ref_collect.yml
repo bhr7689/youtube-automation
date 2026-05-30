@@ -1,0 +1,39 @@
+name: 📊 레퍼런스 채널 일일 수집
+
+on:
+  schedule:
+    - cron: '0 0 * * *'   # 매일 오전 9시 KST (= UTC 00:00)
+  workflow_dispatch:        # GitHub 웹에서 수동 실행 가능
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # 결과 JSON 커밋 권한
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Python 3.11 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 의존성 설치
+        run: pip install google-api-python-client
+
+      - name: 레퍼런스 채널 수집 실행
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        run: python collect_ref_channels.py
+
+      - name: 수집 결과 커밋 & 푸시
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add ref_data/
+          git diff --staged --quiet || git commit -m "📊 일일 레퍼런스 채널 수집 $(date +'%Y-%m-%d %H:%M UTC')"
+          git push
