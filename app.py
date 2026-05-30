@@ -7219,6 +7219,132 @@ def render_channel_analysis_tab() -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# 스톡 미디어 (Pexels)
+# ---------------------------------------------------------------------------
+
+def _pexels_search(api_key: str, query: str, media_type: str, per_page: int = 20, page: int = 1) -> dict:
+    import urllib.request as _ur
+    import urllib.parse as _up
+    base = "https://api.pexels.com/videos/search" if media_type == "video" else "https://api.pexels.com/v1/search"
+    url = f"{base}?query={_up.quote(query)}&per_page={per_page}&page={page}"
+    req = _ur.Request(url, headers={"Authorization": api_key})
+    with _ur.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read().decode())
+
+
+def render_stock_media_tab() -> None:
+    """Pexels 스톡 이미지·동영상 검색 및 미리보기."""
+    st.title("📸 스톡 미디어")
+    st.caption("Pexels에서 무료 스톡 이미지·동영상을 검색하고 채널 배경으로 활용하세요.")
+
+    api_key = os.getenv("PEXELS_API_KEY") or SAVED_KEYS.get("pexels", "")
+    if not api_key:
+        st.warning(
+            "Pexels API 키가 필요합니다. **🔑 API 연결** 메뉴에서 키를 저장해주세요.\n\n"
+            "무료 발급: [www.pexels.com/api](https://www.pexels.com/api)"
+        )
+        return
+
+    # ── 검색 설정 ──────────────────────────────────────────────
+    with st.container(border=True):
+        col_q, col_type, col_n = st.columns([3, 1, 1])
+        query = col_q.text_input(
+            "🔎 검색어",
+            placeholder="예: rain cafe, lofi music, nature landscape",
+            key="pex_query",
+            label_visibility="collapsed",
+        )
+        media_type = col_type.radio(
+            "유형", ["이미지", "동영상"], horizontal=True, key="pex_type"
+        )
+        per_page = col_n.selectbox("개수", [12, 20, 40], index=1, key="pex_per_page")
+        run = st.button("📸 검색", type="primary", key="pex_run", use_container_width=False)
+
+    if not run and "pex_result" not in st.session_state:
+        st.info("검색어를 입력하고 **📸 검색** 버튼을 눌러주세요.")
+        return
+
+    if run:
+        if not query.strip():
+            st.warning("검색어를 입력해주세요.")
+            return
+        _type = "video" if media_type == "동영상" else "photo"
+        with st.spinner(f"Pexels에서 {media_type} 검색 중..."):
+            try:
+                data = _pexels_search(api_key, query.strip(), _type, per_page)
+                st.session_state["pex_result"] = {"data": data, "type": _type, "query": query}
+            except Exception as e:
+                st.error(f"검색 오류: {e}")
+                return
+
+    result = st.session_state.get("pex_result")
+    if not result:
+        return
+
+    data   = result["data"]
+    _type  = result["type"]
+    _query = result["query"]
+
+    # ── 결과 헤더 ──────────────────────────────────────────────
+    total = data.get("total_results", 0)
+    st.caption(f"**'{_query}'** 검색 결과 총 **{total:,}개** 중 {len(data.get('photos' if _type == 'photo' else 'videos', []))}개 표시")
+    st.divider()
+
+    # ── 이미지 그리드 ──────────────────────────────────────────
+    if _type == "photo":
+        items = data.get("photos", [])
+        COLS = 4
+        for i in range(0, len(items), COLS):
+            cols = st.columns(COLS)
+            for col, item in zip(cols, items[i:i+COLS]):
+                with col:
+                    thumb = item["src"]["medium"]
+                    original = item["src"]["original"]
+                    photographer = item.get("photographer", "")
+                    pexels_url = item.get("url", "")
+                    st.image(thumb, use_container_width=True)
+                    st.caption(f"📷 {photographer}")
+                    c1, c2 = st.columns(2)
+                    c1.markdown(f"[원본]({original})")
+                    c2.markdown(f"[Pexels]({pexels_url})")
+
+    # ── 동영상 그리드 ──────────────────────────────────────────
+    else:
+        items = data.get("videos", [])
+        COLS = 3
+        for i in range(0, len(items), COLS):
+            cols = st.columns(COLS)
+            for col, item in zip(cols, items[i:i+COLS]):
+                with col:
+                    with st.container(border=True):
+                        # 썸네일 이미지
+                        thumb = item.get("image", "")
+                        if thumb:
+                            st.image(thumb, use_container_width=True)
+
+                        duration = item.get("duration", 0)
+                        mins, secs = divmod(int(duration), 60)
+                        user = item.get("user", {}).get("name", "")
+                        pexels_url = item.get("url", "")
+
+                        st.caption(f"⏱ {mins}:{secs:02d}  |  📹 {user}")
+
+                        # 최적 파일 선택 (HD 우선)
+                        files = sorted(
+                            item.get("video_files", []),
+                            key=lambda f: f.get("width", 0),
+                            reverse=True,
+                        )
+                        hd_file = next((f for f in files if f.get("quality") in ("hd", "sd")), None)
+                        if hd_file:
+                            dl_url = hd_file.get("link", "")
+                            w = hd_file.get("width", 0)
+                            h = hd_file.get("height", 0)
+                            st.markdown(f"[▶ 재생/다운로드 ({w}×{h})]({dl_url})")
+                        st.markdown(f"[Pexels 페이지]({pexels_url})")
+
+
 def main() -> None:
     st.set_page_config(
         page_title="유튜브 음악 채널 자동화",
@@ -7269,6 +7395,7 @@ div[data-testid="stSidebarNav"] { display: none; }
         ("🏠", "홈", None),
         ("🔍", "채널·영상 분석", None),
         ("⚡", "핫플리 트렌드", None),
+        ("📸", "스톡 미디어", None),
         ("🕐", "분석 기록", history_count if history_count else None),
         ("📋", "평가 가이드라인", None),
         ("🔑", "API 연결", None),
@@ -7313,9 +7440,10 @@ div[data-testid="stSidebarNav"] { display: none; }
     st.sidebar.divider()
     st.sidebar.markdown('<div class="sb-label">API CONNECTION STATUS</div>', unsafe_allow_html=True)
 
-    yt_key  = bool(st.session_state.get("yt_api_key_input") or os.getenv("YOUTUBE_API_KEY") or SAVED_KEYS.get("youtube"))
-    gem_key = bool(os.getenv("GEMINI_API_KEY") or SAVED_KEYS.get("gemini"))
-    oai_key = bool(os.getenv("OPENAI_API_KEY") or SAVED_KEYS.get("openai"))
+    yt_key     = bool(st.session_state.get("yt_api_key_input") or os.getenv("YOUTUBE_API_KEY") or SAVED_KEYS.get("youtube"))
+    gem_key    = bool(os.getenv("GEMINI_API_KEY") or SAVED_KEYS.get("gemini"))
+    oai_key    = bool(os.getenv("OPENAI_API_KEY") or SAVED_KEYS.get("openai"))
+    pexels_key = bool(os.getenv("PEXELS_API_KEY") or SAVED_KEYS.get("pexels"))
 
     def _dot(on: bool) -> str:
         return f'<span class="{"dot-on" if on else "dot-off"}"></span>'
@@ -7324,7 +7452,8 @@ div[data-testid="stSidebarNav"] { display: none; }
         f'<div class="api-row">{_dot(gem_key)} Gemini</div>'
         f'<div class="api-row">{_dot(False)} Suno (kie.ai)</div>'
         f'<div class="api-row">{_dot(yt_key)} YouTube</div>'
-        f'<div class="api-row">{_dot(oai_key)} OpenAI</div>',
+        f'<div class="api-row">{_dot(oai_key)} OpenAI</div>'
+        f'<div class="api-row">{_dot(pexels_key)} Pexels</div>',
         unsafe_allow_html=True,
     )
 
@@ -7491,6 +7620,15 @@ div[data-testid="stSidebarNav"] { display: none; }
             "Whisper 가사 동기화·AI 스토리텔링(대체)에 사용됩니다.",
             "platform.openai.com/api-keys",
         )
+        _key_section(
+            "📸 Pexels API", "pexels", "PEXELS_API_KEY",
+            "스톡 이미지·동영상 검색에 사용됩니다. 무료 플랜으로도 충분합니다.",
+            "www.pexels.com/api",
+        )
+
+    # 스톡 미디어
+    elif nav == "스톡 미디어":
+        render_stock_media_tab()
 
     # 음악 만들기
     elif nav == "음악 만들기":
