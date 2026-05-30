@@ -7226,53 +7226,137 @@ def main() -> None:
         layout="wide",
     )
 
-    st.title("🎵 유튜브 음악 채널 자동화 대시보드")
+    # ── 사이드바 네비게이션 스타일 ──────────────────────────────
+    st.sidebar.markdown("""
+<style>
+[data-testid="stSidebar"] { min-width: 220px; max-width: 220px; }
+div[data-testid="stSidebarNav"] { display: none; }
+.nav-title { font-size: 22px; font-weight: 900; letter-spacing: -1px; color: #fff; margin-bottom: 2px; }
+.nav-sub   { font-size: 11px; color: #aaa; margin-bottom: 16px; }
+.menu-label { font-size: 11px; color: #888; font-weight: 700;
+              letter-spacing: 1px; margin: 12px 0 6px 0; }
+.api-row   { display: flex; align-items: center; gap: 6px;
+             font-size: 13px; color: #ccc; margin: 4px 0; }
+.dot-green { width:8px;height:8px;border-radius:50%;background:#2ecc71;display:inline-block; }
+.dot-red   { width:8px;height:8px;border-radius:50%;background:#e74c3c;display:inline-block; }
+</style>
+""", unsafe_allow_html=True)
 
-    (
-        tab_discovery,
-        tab_channel,
-        tab_story,
-        tab_title_lab,
-        tab_compose,
-        tab_jobs,
-        tab_sync,
-        tab_studio,
-        tab_reverse,
-        tab_review,
-    ) = st.tabs(
-        [
-            "🔍 레퍼런스 발굴",
-            "📊 채널·영상 분석",
+    # ── 로고 영역 ──────────────────────────────────────────────
+    st.sidebar.markdown(
+        '<div class="nav-title">🎵 유튜브 자동화</div>'
+        '<div class="nav-sub">음악 채널 자동 생산 시스템</div>',
+        unsafe_allow_html=True,
+    )
+    st.sidebar.divider()
+
+    # ── 메뉴 항목 ──────────────────────────────────────────────
+    st.sidebar.markdown('<div class="menu-label">★ MENU</div>', unsafe_allow_html=True)
+
+    _MENU_ITEMS = [
+        ("🏠", "홈"),
+        ("📺", "플리채널 기획"),
+        ("🎵", "음악 만들기"),
+        ("🎬", "영상 만들기"),
+        ("🗂️", "메타데이터"),
+    ]
+
+    if "nav_menu" not in st.session_state:
+        st.session_state["nav_menu"] = "홈"
+
+    for icon, label in _MENU_ITEMS:
+        selected = st.session_state["nav_menu"] == label
+        btn_style = "primary" if selected else "secondary"
+        if st.sidebar.button(
+            f"{icon}  {label}",
+            key=f"nav_{label}",
+            use_container_width=True,
+            type=btn_style,
+        ):
+            st.session_state["nav_menu"] = label
+            st.rerun()
+
+    st.sidebar.divider()
+
+    # ── API 연결 상태 ──────────────────────────────────────────
+    st.sidebar.markdown('<div class="menu-label">API CONNECTION STATUS</div>', unsafe_allow_html=True)
+
+    def _api_dot(connected: bool) -> str:
+        cls = "dot-green" if connected else "dot-red"
+        return f'<span class="{cls}"></span>'
+
+    yt_key  = bool(st.session_state.get("yt_api_key_input", "") or os.getenv("YOUTUBE_API_KEY", "") or SAVED_KEYS.get("youtube", ""))
+    gem_key = bool(os.getenv("GEMINI_API_KEY", "") or SAVED_KEYS.get("gemini", ""))
+    oai_key = bool(os.getenv("OPENAI_API_KEY", "") or SAVED_KEYS.get("openai", ""))
+
+    st.sidebar.markdown(
+        f'<div class="api-row">{_api_dot(gem_key)} Gemini</div>'
+        f'<div class="api-row">{_api_dot(False)} Suno (kie.ai)</div>'
+        f'<div class="api-row">{_api_dot(yt_key)} YouTube</div>'
+        f'<div class="api-row">{_api_dot(oai_key)} OpenAI</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── 메인 콘텐츠 라우팅 ────────────────────────────────────
+    nav = st.session_state.get("nav_menu", "홈")
+
+    # ── 홈 ────────────────────────────────────────────────────
+    if nav == "홈":
+        st.title("🎵 유튜브 음악 채널 자동화 대시보드")
+        st.markdown("왼쪽 메뉴에서 작업 카테고리를 선택하세요.")
+        st.divider()
+        c1, c2, c3, c4 = st.columns(4)
+        c1.info("📺 **플리채널 기획**\n\n레퍼런스 발굴 · 채널 분석")
+        c2.info("🎵 **음악 만들기**\n\nAI 스토리텔링 · Suno 스튜디오 · 역설계")
+        c3.info("🎬 **영상 만들기**\n\n영상 합성 · 인코딩 잡 · 가사 동기화")
+        c4.info("🗂️ **메타데이터**\n\n제목 공식 Lab")
+
+    # ── 플리채널 기획 ──────────────────────────────────────────
+    elif nav == "플리채널 기획":
+        st.title("📺 플리채널 기획")
+        tab_disc, tab_ch = st.tabs(["🔍 레퍼런스 발굴", "📊 채널·영상 분석"])
+        with tab_disc:
+            render_discovery_tab()
+        with tab_ch:
+            render_channel_analysis_tab()
+
+    # ── 음악 만들기 ────────────────────────────────────────────
+    elif nav == "음악 만들기":
+        st.title("🎵 음악 만들기")
+        tab_story, tab_studio, tab_rev, tab_sync, tab_review = st.tabs([
             "✍️ AI 스토리텔링 & 가사 생성",
-            "🧪 제목 공식 Lab",
-            "🎬 영상 합성 (인코딩)",
-            "📦 인코딩 잡",
-            "🎤 가사 자동 동기화 (SRT)",
             "🎚️ Suno 프롬프트 스튜디오",
             "🔎 곡 역설계",
+            "🎤 가사 자동 동기화 (SRT)",
             "🙋 검수 큐",
-        ]
-    )
-    with tab_discovery:
-        render_discovery_tab()
-    with tab_channel:
-        render_channel_analysis_tab()
-    with tab_story:
-        render_storytelling_tab()
-    with tab_title_lab:
+        ])
+        with tab_story:
+            render_storytelling_tab()
+        with tab_studio:
+            render_suno_studio_tab()
+        with tab_rev:
+            render_reverse_tab()
+        with tab_sync:
+            render_sync_tab()
+        with tab_review:
+            render_review_tab()
+
+    # ── 영상 만들기 ────────────────────────────────────────────
+    elif nav == "영상 만들기":
+        st.title("🎬 영상 만들기")
+        tab_compose, tab_jobs = st.tabs([
+            "🎬 영상 합성 (인코딩)",
+            "📦 인코딩 잡",
+        ])
+        with tab_compose:
+            render_compose_tab()
+        with tab_jobs:
+            render_jobs_tab()
+
+    # ── 메타데이터 ─────────────────────────────────────────────
+    elif nav == "메타데이터":
+        st.title("🗂️ 메타데이터")
         render_title_lab_tab()
-    with tab_compose:
-        render_compose_tab()
-    with tab_jobs:
-        render_jobs_tab()
-    with tab_sync:
-        render_sync_tab()
-    with tab_studio:
-        render_suno_studio_tab()
-    with tab_reverse:
-        render_reverse_tab()
-    with tab_review:
-        render_review_tab()
 
 
 if __name__ == "__main__":
