@@ -2,7 +2,7 @@ name: 📊 레퍼런스 채널 일일 수집
 
 on:
   schedule:
-    - cron: '0 0 * * *'   # 매일 오전 9시 KST (= UTC 00:00)
+    - cron: '0 21 * * *'  # 매일 오전 6시 KST (= UTC 21:00 전날)
   workflow_dispatch:        # GitHub 웹에서 수동 실행 가능
 
 jobs:
