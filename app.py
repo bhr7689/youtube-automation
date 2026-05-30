@@ -7692,6 +7692,260 @@ def render_reference_monitor_tab() -> None:
             )
 
 
+def render_channel_planning_tab() -> None:
+    """AI 채널 기획안 생성기 — 채널 컨셉 입력 → 완성형 기획안 자동 출력."""
+
+    st.markdown("## 🏗️ AI 채널 기획안 생성기")
+    st.caption("채널 컨셉을 입력하면 채널명·슬로건·제목 공식·성장전략·수익화 아이디어를 AI가 완성형으로 작성해줍니다.")
+
+    gemini_key = os.getenv("GEMINI_API_KEY") or SAVED_KEYS.get("gemini", "")
+    openai_key = os.getenv("OPENAI_API_KEY") or SAVED_KEYS.get("openai", "")
+
+    if not gemini_key and not openai_key:
+        st.warning("🔑 Gemini 또는 OpenAI API 키가 필요합니다. 왼쪽 메뉴 **API 연결**에서 키를 등록하세요.")
+
+    st.divider()
+
+    # ── 입력 폼 ───────────────────────────────────────────────
+    with st.container(border=True):
+        st.markdown("### 📝 채널 컨셉 입력")
+        col_a, col_b = st.columns(2)
+        with col_a:
+            genre = st.selectbox(
+                "주요 장르",
+                ["트로트", "발라드", "K-팝", "K-인디", "클래식", "재즈", "Lo-fi", "시티팝", "R&B", "힙합", "뉴에이지", "CCM", "동요", "직접 입력"],
+                key="cp_genre",
+            )
+            if genre == "직접 입력":
+                genre = st.text_input("장르 직접 입력", key="cp_genre_custom", placeholder="예: 70~80년대 팝")
+            channel_style = st.selectbox(
+                "채널 스타일",
+                ["감성 힐링형", "노래 모음 플레이리스트", "가사/해석 해설형", "라이브 공연 중심", "AI 커버송", "오리지널 창작", "악기 연주 (반주/MIDI)"],
+                key="cp_style",
+            )
+        with col_b:
+            target_age = st.selectbox(
+                "타겟 연령대",
+                ["전 연령", "10~20대", "20~30대", "30~40대 (밀레니얼)", "40~50대", "50~70대 (중장년)"],
+                key="cp_target",
+            )
+            platform_goal = st.selectbox(
+                "주요 목표",
+                ["구독자 성장 (알고리즘)", "유입 → 수익화", "팬덤 구축", "브랜드 인지도", "Suno 음원 홍보"],
+                key="cp_goal",
+            )
+        mood_keywords = st.text_input(
+            "감성 키워드 (3~5개, 쉼표로 구분)",
+            value="",
+            placeholder="예: 새벽, 위로, 따뜻함, 그리움",
+            key="cp_mood",
+        )
+        extra_note = st.text_area(
+            "추가 특이사항 (선택)",
+            height=80,
+            placeholder="예: 창업 비용 0원, AI 음악 100%, 5070 타겟, 매주 1편 업로드 예정",
+            key="cp_extra",
+        )
+
+    st.divider()
+    gen_btn = st.button("✨ AI 기획안 생성", type="primary", use_container_width=True, key="cp_gen")
+
+    if gen_btn:
+        if not genre or not mood_keywords.strip():
+            st.error("장르와 감성 키워드는 필수입니다.")
+            st.stop()
+
+        prompt_text = f"""
+당신은 유튜브 음악 채널 전문 기획자입니다.
+아래 정보를 바탕으로 완성형 채널 기획안을 JSON 형식으로 작성하세요.
+
+입력 정보:
+- 주요 장르: {genre}
+- 채널 스타일: {channel_style}
+- 타겟 연령대: {target_age}
+- 주요 목표: {platform_goal}
+- 감성 키워드: {mood_keywords}
+- 추가 사항: {extra_note or '없음'}
+
+다음 JSON 스키마를 정확히 따르세요:
+{{
+  "channel_names": ["채널명1", "채널명2", "채널명3"],
+  "slogans": ["슬로건1", "슬로건2"],
+  "channel_description": "채널 소개글 (100~150자)",
+  "differentiators": ["차별화 포인트1", "차별화 포인트2", "차별화 포인트3"],
+  "series_ideas": [
+    {{"title": "시리즈명", "concept": "한 줄 설명"}},
+    {{"title": "시리즈명", "concept": "한 줄 설명"}},
+    {{"title": "시리즈명", "concept": "한 줄 설명"}}
+  ],
+  "title_formulas": [
+    {{"formula": "공식 패턴", "example": "실제 예시 제목"}},
+    {{"formula": "공식 패턴", "example": "실제 예시 제목"}},
+    {{"formula": "공식 패턴", "example": "실제 예시 제목"}},
+    {{"formula": "공식 패턴", "example": "실제 예시 제목"}},
+    {{"formula": "공식 패턴", "example": "실제 예시 제목"}}
+  ],
+  "thumbnail_direction": "썸네일 방향성 및 디자인 가이드 (2~3문장)",
+  "growth_strategies": [
+    {{"area": "전략 분야", "action": "구체적 실행 방안"}},
+    {{"area": "전략 분야", "action": "구체적 실행 방안"}},
+    {{"area": "전략 분야", "action": "구체적 실행 방안"}},
+    {{"area": "전략 분야", "action": "구체적 실행 방안"}},
+    {{"area": "전략 분야", "action": "구체적 실행 방안"}}
+  ],
+  "monetization_ideas": [
+    {{"method": "수익화 방법", "detail": "상세 설명"}},
+    {{"method": "수익화 방법", "detail": "상세 설명"}},
+    {{"method": "수익화 방법", "detail": "상세 설명"}},
+    {{"method": "수익화 방법", "detail": "상세 설명"}}
+  ]
+}}
+
+반드시 JSON만 출력하세요. 다른 텍스트는 넣지 마세요.
+""".strip()
+
+        plan_data = None
+        with st.spinner("AI가 채널 기획안을 작성 중입니다..."):
+            try:
+                if gemini_key:
+                    import google.generativeai as genai  # type: ignore
+                    genai.configure(api_key=gemini_key)
+                    model = genai.GenerativeModel("gemini-1.5-flash")
+                    resp = model.generate_content(prompt_text)
+                    raw = resp.text.strip()
+                elif openai_key:
+                    import openai as _oai  # type: ignore
+                    client = _oai.OpenAI(api_key=openai_key)
+                    resp = client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[{"role": "user", "content": prompt_text}],
+                        temperature=0.8,
+                    )
+                    raw = resp.choices[0].message.content.strip()
+                else:
+                    st.error("API 키가 없습니다.")
+                    st.stop()
+
+                # JSON 파싱
+                if raw.startswith("```"):
+                    raw = raw.split("```")[1]
+                    if raw.startswith("json"):
+                        raw = raw[4:]
+                plan_data = json.loads(raw.strip())
+                st.session_state["cp_last_plan"] = plan_data
+                st.session_state["cp_last_meta"] = {
+                    "genre": genre, "style": channel_style,
+                    "target": target_age, "mood": mood_keywords,
+                }
+            except Exception as e:
+                st.error(f"생성 실패: {e}")
+                st.stop()
+
+    # ── 결과 표시 ─────────────────────────────────────────────
+    plan = st.session_state.get("cp_last_plan")
+    meta = st.session_state.get("cp_last_meta", {})
+
+    if plan:
+        st.success("✅ 채널 기획안이 완성되었습니다!")
+        st.caption(f"장르: **{meta.get('genre','')}** · 스타일: **{meta.get('style','')}** · 타겟: **{meta.get('target','')}** · 키워드: *{meta.get('mood','')}*")
+        st.divider()
+
+        # ── 채널명 후보 ──────────────────────────────────────
+        st.markdown("### 📺 채널명 후보")
+        names = plan.get("channel_names", [])
+        name_cols = st.columns(len(names)) if names else []
+        for i, (col, name) in enumerate(zip(name_cols, names)):
+            with col:
+                with st.container(border=True):
+                    st.markdown(f"**{name}**")
+                    st.code(name, language=None)
+
+        st.divider()
+
+        # ── 슬로건 ──────────────────────────────────────────
+        st.markdown("### 💬 슬로건 후보")
+        for slogan in plan.get("slogans", []):
+            sl_c1, sl_c2 = st.columns([10, 1])
+            sl_c1.markdown(f'> *"{slogan}"*')
+            sl_c2.code(slogan, language=None)
+
+        st.divider()
+
+        # ── 채널 소개글 ──────────────────────────────────────
+        st.markdown("### 📄 채널 소개글")
+        desc = plan.get("channel_description", "")
+        with st.container(border=True):
+            st.write(desc)
+            st.code(desc, language=None)
+
+        st.divider()
+
+        # ── 차별화 포인트 ─────────────────────────────────────
+        col_diff, col_series = st.columns(2)
+        with col_diff:
+            st.markdown("### ⭐ 차별화 포인트")
+            for point in plan.get("differentiators", []):
+                st.markdown(f"⭐ {point}")
+
+        with col_series:
+            st.markdown("### 🎬 시리즈 콘텐츠 아이디어")
+            for i, series in enumerate(plan.get("series_ideas", []), 1):
+                st.markdown(f"**{i}. {series.get('title','')}**")
+                st.caption(series.get("concept", ""))
+
+        st.divider()
+
+        # ── 영상 제목 공식 ────────────────────────────────────
+        st.markdown("### 🏷️ 영상 제목 공식 5가지")
+        for i, tf in enumerate(plan.get("title_formulas", []), 1):
+            with st.container(border=True):
+                c1, c2 = st.columns([1, 2])
+                c1.markdown(f"**공식 {i}**")
+                c1.code(tf.get("formula", ""), language=None)
+                c2.markdown("**예시 제목**")
+                c2.info(tf.get("example", ""))
+
+        st.divider()
+
+        # ── 썸네일 방향성 ─────────────────────────────────────
+        st.markdown("### 🖼️ 썸네일 방향성")
+        with st.container(border=True):
+            st.write(plan.get("thumbnail_direction", ""))
+
+        st.divider()
+
+        # ── 초기 성장 전략 ────────────────────────────────────
+        st.markdown("### 🚀 초기 성장 전략")
+        gs_cols = st.columns(2)
+        for i, gs in enumerate(plan.get("growth_strategies", [])):
+            with gs_cols[i % 2]:
+                with st.container(border=True):
+                    st.markdown(f"**{gs.get('area','')}**")
+                    st.write(gs.get("action", ""))
+
+        st.divider()
+
+        # ── 수익화 아이디어 ────────────────────────────────────
+        st.markdown("### 💰 수익화 아이디어")
+        mon_cols = st.columns(2)
+        for i, mon in enumerate(plan.get("monetization_ideas", [])):
+            with mon_cols[i % 2]:
+                with st.container(border=True):
+                    st.markdown(f"**{mon.get('method','')}**")
+                    st.caption(mon.get("detail", ""))
+
+        st.divider()
+
+        # ── 전체 기획안 JSON 다운로드 ─────────────────────────
+        plan_json = json.dumps(plan, ensure_ascii=False, indent=2)
+        st.download_button(
+            "📥 기획안 JSON 다운로드",
+            data=plan_json.encode("utf-8"),
+            file_name=f"channel_plan_{meta.get('genre','')}_{datetime.now():%Y%m%d_%H%M}.json",
+            mime="application/json",
+        )
+
+
 def main() -> None:
     st.set_page_config(
         page_title="유튜브 음악 채널 자동화",
@@ -7989,13 +8243,15 @@ div[data-testid="stSidebarNav"] { display: none; }
     # 음악 만들기
     elif nav == "음악 만들기":
         st.title("🎵 음악 만들기")
-        tab_story, tab_studio, tab_rev, tab_sync, tab_review = st.tabs([
+        tab_plan, tab_story, tab_studio, tab_rev, tab_sync, tab_review = st.tabs([
+            "🏗️ AI 채널 기획안",
             "✍️ AI 스토리텔링 & 가사 생성",
             "🎚️ Suno 프롬프트 스튜디오",
             "🔎 곡 역설계",
             "🎤 가사 자동 동기화 (SRT)",
             "🙋 검수 큐",
         ])
+        with tab_plan:    render_channel_planning_tab()
         with tab_story:   render_storytelling_tab()
         with tab_studio:  render_suno_studio_tab()
         with tab_rev:     render_reverse_tab()
