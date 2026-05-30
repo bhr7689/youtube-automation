@@ -7748,13 +7748,29 @@ def render_suno_generator_tab() -> None:
         return st.pills(label, options, selection_mode="multi", default=default or [], key=key)
 
     with st.container(border=True):
-        # 장르
+        # 장르 (Suno 공식 태그 기준)
         st.markdown("**🎸 장르**")
+        st.caption("Suno 공식 스타일 태그 기준 — 선택한 태그가 그대로 Suno Style 칸에 들어갑니다.")
         sg_genres = _pills("장르", [
-            "K-pop","트로트","Pop","Ballad","R&B","Hip-hop","Trap","Rock","EDM","House",
-            "Folk","Jazz","Lo-fi","Classical","Indie","Acoustic","Soul","Funk","Disco","Reggae",
-            "Latin","Country","Synthwave","Ambient","Bossa Nova","Citypop","Future Bass","Trance","Drum & Bass",
-        ], key="sg_genres", default=["트로트"])
+            # 한국/아시아
+            "K-Pop","J-Pop","트로트","Modern Bollywood",
+            # 팝/인디
+            "Pop","Alternative Pop","Indie","New Wave",
+            # R&B/소울/힙합
+            "R&B","Soul","Hip Hop","Rap","Trap","Funk",
+            # 록/메탈
+            "Rock","Punk","Grunge","Heavy Metal","Ska",
+            # 전자음악
+            "EDM","Electronic","Synthwave","House","Techno","Cinematic Dubstep","Drum And Bass","Chillhop",
+            # 재즈/블루스/어쿠스틱
+            "Jazz","Blues","Folk","Bluegrass","Gospel","Acoustic Cover","A Capella",
+            # 클래식/명상
+            "Classical","Opera","Meditation","Ambient","Focus","Sleep",
+            # 월드뮤직
+            "Latin","Reggae","Reggaeton","Afrobeats","Bossa Nova",
+            # 로파이/기타
+            "Lofi Beats",
+        ], key="sg_genres", default=["K-Pop","트로트"])
 
         st.divider()
 
