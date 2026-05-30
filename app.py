@@ -7226,101 +7226,273 @@ def main() -> None:
         layout="wide",
     )
 
-    # ── 사이드바 네비게이션 스타일 ──────────────────────────────
+    # ── 사이드바 스타일 ────────────────────────────────────────
     st.sidebar.markdown("""
 <style>
-[data-testid="stSidebar"] { min-width: 220px; max-width: 220px; }
+[data-testid="stSidebar"] { min-width: 230px; max-width: 230px; }
 div[data-testid="stSidebarNav"] { display: none; }
-.nav-title { font-size: 22px; font-weight: 900; letter-spacing: -1px; color: #fff; margin-bottom: 2px; }
-.nav-sub   { font-size: 11px; color: #aaa; margin-bottom: 16px; }
-.menu-label { font-size: 11px; color: #888; font-weight: 700;
-              letter-spacing: 1px; margin: 12px 0 6px 0; }
-.api-row   { display: flex; align-items: center; gap: 6px;
-             font-size: 13px; color: #ccc; margin: 4px 0; }
-.dot-green { width:8px;height:8px;border-radius:50%;background:#2ecc71;display:inline-block; }
-.dot-red   { width:8px;height:8px;border-radius:50%;background:#e74c3c;display:inline-block; }
+.sb-logo   { font-size: 20px; font-weight: 900; color: #fff; margin-bottom: 2px; }
+.sb-sub    { font-size: 11px; color: #aaa; margin-bottom: 4px; }
+.sb-label  { font-size: 10px; color: #888; font-weight: 700;
+             letter-spacing: 1px; margin: 10px 0 4px 0; }
+.badge     { display:inline-block; background:#e74c3c; color:#fff;
+             font-size:10px; font-weight:700; border-radius:10px;
+             padding:1px 6px; margin-left:6px; vertical-align:middle; }
+.api-row   { display:flex; align-items:center; gap:6px;
+             font-size:13px; color:#ccc; margin:3px 0; }
+.dot-on    { width:8px;height:8px;border-radius:50%;
+             background:#2ecc71;display:inline-block;flex-shrink:0; }
+.dot-off   { width:8px;height:8px;border-radius:50%;
+             background:#e74c3c;display:inline-block;flex-shrink:0; }
 </style>
 """, unsafe_allow_html=True)
 
-    # ── 로고 영역 ──────────────────────────────────────────────
+    # ── 로고 ──────────────────────────────────────────────────
     st.sidebar.markdown(
-        '<div class="nav-title">🎵 유튜브 자동화</div>'
-        '<div class="nav-sub">음악 채널 자동 생산 시스템</div>',
+        '<div class="sb-logo">🎵 유튜브 자동화</div>'
+        '<div class="sb-sub">음악 채널 자동 생산 시스템</div>',
         unsafe_allow_html=True,
     )
     st.sidebar.divider()
 
-    # ── 메뉴 항목 ──────────────────────────────────────────────
-    st.sidebar.markdown('<div class="menu-label">★ MENU</div>', unsafe_allow_html=True)
+    # ── 분석 기록 배지 카운트 ──────────────────────────────────
+    # session_state에 캐시된 검색 결과 수를 배지로 표시
+    history_count = sum(
+        1 for k in st.session_state
+        if k.startswith("hotpli_results_") or k == "ca_result"
+    )
 
-    _MENU_ITEMS = [
-        ("🏠", "홈"),
-        ("📺", "플리채널 기획"),
-        ("🎵", "음악 만들기"),
-        ("🎬", "영상 만들기"),
-        ("🗂️", "메타데이터"),
+    # ── 메뉴 정의 ─────────────────────────────────────────────
+    st.sidebar.markdown('<div class="sb-label">★ MENU</div>', unsafe_allow_html=True)
+
+    _NAV = [
+        ("🏠", "홈", None),
+        ("🔍", "채널·영상 분석", None),
+        ("⚡", "핫플리 트렌드", None),
+        ("🕐", "분석 기록", history_count if history_count else None),
+        ("📋", "평가 가이드라인", None),
+        ("🔑", "API 연결", None),
     ]
 
     if "nav_menu" not in st.session_state:
         st.session_state["nav_menu"] = "홈"
 
-    for icon, label in _MENU_ITEMS:
-        selected = st.session_state["nav_menu"] == label
-        btn_style = "primary" if selected else "secondary"
+    for icon, label, badge in _NAV:
+        is_active = st.session_state["nav_menu"] == label
+        btn_label = f"{icon}  {label}" + (f"  [{badge}]" if badge else "")
         if st.sidebar.button(
-            f"{icon}  {label}",
+            btn_label,
             key=f"nav_{label}",
             use_container_width=True,
-            type=btn_style,
+            type="primary" if is_active else "secondary",
         ):
             st.session_state["nav_menu"] = label
             st.rerun()
 
+    # ── 구분선 + 기타 기능 ────────────────────────────────────
     st.sidebar.divider()
+    st.sidebar.markdown('<div class="sb-label">🎛️ 제작 도구</div>', unsafe_allow_html=True)
+
+    _TOOLS = [
+        ("🎵", "음악 만들기"),
+        ("🎬", "영상 만들기"),
+        ("🗂️", "메타데이터"),
+    ]
+    for icon, label in _TOOLS:
+        is_active = st.session_state["nav_menu"] == label
+        if st.sidebar.button(
+            f"{icon}  {label}",
+            key=f"nav_{label}",
+            use_container_width=True,
+            type="primary" if is_active else "secondary",
+        ):
+            st.session_state["nav_menu"] = label
+            st.rerun()
 
     # ── API 연결 상태 ──────────────────────────────────────────
-    st.sidebar.markdown('<div class="menu-label">API CONNECTION STATUS</div>', unsafe_allow_html=True)
+    st.sidebar.divider()
+    st.sidebar.markdown('<div class="sb-label">API CONNECTION STATUS</div>', unsafe_allow_html=True)
 
-    def _api_dot(connected: bool) -> str:
-        cls = "dot-green" if connected else "dot-red"
-        return f'<span class="{cls}"></span>'
+    yt_key  = bool(st.session_state.get("yt_api_key_input") or os.getenv("YOUTUBE_API_KEY") or SAVED_KEYS.get("youtube"))
+    gem_key = bool(os.getenv("GEMINI_API_KEY") or SAVED_KEYS.get("gemini"))
+    oai_key = bool(os.getenv("OPENAI_API_KEY") or SAVED_KEYS.get("openai"))
 
-    yt_key  = bool(st.session_state.get("yt_api_key_input", "") or os.getenv("YOUTUBE_API_KEY", "") or SAVED_KEYS.get("youtube", ""))
-    gem_key = bool(os.getenv("GEMINI_API_KEY", "") or SAVED_KEYS.get("gemini", ""))
-    oai_key = bool(os.getenv("OPENAI_API_KEY", "") or SAVED_KEYS.get("openai", ""))
+    def _dot(on: bool) -> str:
+        return f'<span class="{"dot-on" if on else "dot-off"}"></span>'
 
     st.sidebar.markdown(
-        f'<div class="api-row">{_api_dot(gem_key)} Gemini</div>'
-        f'<div class="api-row">{_api_dot(False)} Suno (kie.ai)</div>'
-        f'<div class="api-row">{_api_dot(yt_key)} YouTube</div>'
-        f'<div class="api-row">{_api_dot(oai_key)} OpenAI</div>',
+        f'<div class="api-row">{_dot(gem_key)} Gemini</div>'
+        f'<div class="api-row">{_dot(False)} Suno (kie.ai)</div>'
+        f'<div class="api-row">{_dot(yt_key)} YouTube</div>'
+        f'<div class="api-row">{_dot(oai_key)} OpenAI</div>',
         unsafe_allow_html=True,
     )
 
-    # ── 메인 콘텐츠 라우팅 ────────────────────────────────────
+    # ── 라우팅 ────────────────────────────────────────────────
     nav = st.session_state.get("nav_menu", "홈")
 
-    # ── 홈 ────────────────────────────────────────────────────
+    # 홈
     if nav == "홈":
         st.title("🎵 유튜브 음악 채널 자동화 대시보드")
-        st.markdown("왼쪽 메뉴에서 작업 카테고리를 선택하세요.")
+        st.caption("왼쪽 메뉴에서 원하는 기능을 선택하세요.")
         st.divider()
-        c1, c2, c3, c4 = st.columns(4)
-        c1.info("📺 **플리채널 기획**\n\n레퍼런스 발굴 · 채널 분석")
-        c2.info("🎵 **음악 만들기**\n\nAI 스토리텔링 · Suno 스튜디오 · 역설계")
-        c3.info("🎬 **영상 만들기**\n\n영상 합성 · 인코딩 잡 · 가사 동기화")
-        c4.info("🗂️ **메타데이터**\n\n제목 공식 Lab")
+        r1c1, r1c2, r1c3 = st.columns(3)
+        r1c1.info("🔍 **채널·영상 분석**\n\n채널 URL로 통계·인기영상·조회 추이 분석")
+        r1c2.info("⚡ **핫플리 트렌드**\n\n국가·장르별 지금 뜨는 플레이리스트 탐색")
+        r1c3.info("🕐 **분석 기록**\n\n이전 검색·분석 결과 모아보기")
+        r2c1, r2c2, r2c3 = st.columns(3)
+        r2c1.info("🎵 **음악 만들기**\n\nAI 스토리텔링 · Suno 스튜디오 · 역설계")
+        r2c2.info("🎬 **영상 만들기**\n\n영상 합성 · 인코딩 잡 · 가사 동기화")
+        r2c3.info("🗂️ **메타데이터**\n\n제목 공식 Lab")
 
-    # ── 플리채널 기획 ──────────────────────────────────────────
-    elif nav == "플리채널 기획":
-        st.title("📺 플리채널 기획")
-        tab_disc, tab_ch = st.tabs(["🔍 레퍼런스 발굴", "📊 채널·영상 분석"])
-        with tab_disc:
-            render_discovery_tab()
-        with tab_ch:
-            render_channel_analysis_tab()
+    # 채널·영상 분석
+    elif nav == "채널·영상 분석":
+        st.title("🔍 채널·영상 분석")
+        render_channel_analysis_tab()
 
-    # ── 음악 만들기 ────────────────────────────────────────────
+    # 핫플리 트렌드
+    elif nav == "핫플리 트렌드":
+        st.title("⚡ 핫플리 트렌드")
+        st.caption("국가별로 어떤 음악 플레이리스트가 뜨는지 비교해보세요.")
+        # 사이드바에 급상승 채널 발굴 검색 설정도 노출
+        tab_hot, tab_breakout = st.tabs(["🔥 핫플리 트렌드", "🔍 급상승 채널 발굴"])
+        with tab_hot:
+            render_hotpli_trends()
+        with tab_breakout:
+            new_cfg = render_sidebar()
+            if new_cfg is not None:
+                st.session_state.active_cfg = new_cfg
+                try:
+                    with st.spinner("YouTube API 호출 및 분석 중..."):
+                        st.session_state["disc_df"] = run_pipeline(new_cfg)
+                except Exception as e:
+                    st.error(f"오류: {e}")
+            cfg = st.session_state.get("active_cfg")
+            df  = st.session_state.get("disc_df")
+            if cfg is None or df is None:
+                st.info("👈 사이드바에서 키워드와 필터를 설정하고 **발굴 시작**을 누르세요.")
+            elif df.empty:
+                st.warning("검색 결과가 없습니다.")
+            else:
+                render_results(df, filter_breakout_channels(df, cfg), cfg)
+
+    # 분석 기록
+    elif nav == "분석 기록":
+        st.title("🕐 분석 기록")
+        st.caption("이 세션에서 실행한 검색·분석 결과를 모아볼 수 있습니다.")
+        st.divider()
+        found = False
+        # 핫플리 트렌드 캐시
+        hotpli_keys = [k for k in st.session_state if k.startswith("hotpli_results_")]
+        if hotpli_keys:
+            found = True
+            st.markdown("### ⚡ 핫플리 트렌드 검색 기록")
+            for k in hotpli_keys:
+                df_h = st.session_state[k]
+                meta = k.replace("hotpli_results_", "")
+                parts = meta.split("_")
+                label = " · ".join(p for p in parts if p)
+                with st.expander(f"🔍 {label}  —  {len(df_h)}개 결과"):
+                    if isinstance(df_h, pd.DataFrame) and not df_h.empty:
+                        st.dataframe(
+                            df_h[["video_title", "channel_title", "view_count", "published_at", "video_url"]],
+                            use_container_width=True, hide_index=True,
+                            column_config={"video_url": st.column_config.LinkColumn("링크")},
+                        )
+        # 채널 분석 캐시
+        if st.session_state.get("ca_result"):
+            found = True
+            st.markdown("### 🔍 채널 분석 기록")
+            r = st.session_state["ca_result"]
+            ch = r.get("ch_snip", {})
+            stats = r.get("ch_stats", {})
+            st.markdown(
+                f"**{ch.get('title', '채널명 없음')}**  ·  "
+                f"구독자 {int(stats.get('subscriberCount') or 0):,}  ·  "
+                f"총 조회수 {int(stats.get('viewCount') or 0):,}"
+            )
+        if not found:
+            st.info("아직 분석 기록이 없습니다. 채널·영상 분석 또는 핫플리 트렌드를 먼저 실행해보세요.")
+
+    # 평가 가이드라인
+    elif nav == "평가 가이드라인":
+        st.title("📋 평가 가이드라인")
+        st.caption("레퍼런스 영상의 점수 체계와 평가 기준을 안내합니다.")
+        st.divider()
+        with st.container(border=True):
+            st.markdown("### 📊 합산 점수 체계 (총 100점)")
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown("**🔢 정량 점수 (55점) — 자동 계산**")
+                st.markdown(
+                    "- 구독자 대비 조회수 비율 (≤ 30점)\n"
+                    "- 시간당 조회수 · 바이럴 속도 (≤ 25점)"
+                )
+            with c2:
+                st.markdown("**🧠 정성 점수 (45점) — Gemini AI**")
+                st.markdown(
+                    "- 댓글 반응 강도 (≤ 20점)\n"
+                    "- 5070 세대 정서 환기력 (≤ 15점)\n"
+                    "- 무대/연주 에너지 (≤ 10점)"
+                )
+        with st.container(border=True):
+            st.markdown("### 🎯 검수 큐 기준")
+            st.markdown(
+                "- **합산 70점 이상** → 우선 승인 대상\n"
+                "- **합산 50~70점** → 검토 후 판단\n"
+                "- **합산 50점 미만** → 반려 권장\n"
+                "- 조회/구독 **2배 이상** → 급상승 채널로 별도 관리"
+            )
+        with st.container(border=True):
+            st.markdown("### ⚡ 핫플리 트렌드 스타일 분류")
+            for style, kws in _HOTPLI_STYLE_KEYWORDS.items():
+                st.markdown(f"- **{style}**: {', '.join(kws[:4])} 등")
+
+    # API 연결
+    elif nav == "API 연결":
+        st.title("🔑 API 연결")
+        st.caption("각 서비스의 API 키를 입력하고 저장하면 모든 세션에서 자동으로 불러옵니다.")
+        st.divider()
+
+        def _key_section(title: str, key_name: str, env_var: str, help_text: str, link: str) -> None:
+            saved = SAVED_KEYS.get(key_name, "")
+            current = os.getenv(env_var, "") or saved
+            with st.container(border=True):
+                st.markdown(f"#### {title}")
+                st.caption(help_text)
+                val = st.text_input(f"{title} 키", value=current, type="password", key=f"api_{key_name}")
+                c1, c2 = st.columns(2)
+                if c1.button("💾 저장", key=f"save_{key_name}", use_container_width=True):
+                    if val.strip():
+                        save_key(key_name, val.strip())
+                        SAVED_KEYS[key_name] = val.strip()
+                        st.success("저장되었습니다.")
+                    else:
+                        st.warning("키 값이 비어 있습니다.")
+                if c2.button("🗑️ 해지", key=f"clear_{key_name}", use_container_width=True, disabled=not saved):
+                    clear_key(key_name)
+                    SAVED_KEYS.pop(key_name, None)
+                    st.info("삭제되었습니다.")
+                    st.rerun()
+                st.caption(f"발급: {link}")
+
+        _key_section(
+            "🎬 YouTube Data API v3", "youtube", "YOUTUBE_API_KEY",
+            "레퍼런스 발굴·핫플리 트렌드·채널 분석에 사용됩니다.",
+            "console.cloud.google.com",
+        )
+        _key_section(
+            "🤖 Gemini API", "gemini", "GEMINI_API_KEY",
+            "정성 점수 채점·역설계·AI 스토리텔링에 사용됩니다.",
+            "aistudio.google.com/app/apikey",
+        )
+        _key_section(
+            "💬 OpenAI API", "openai", "OPENAI_API_KEY",
+            "Whisper 가사 동기화·AI 스토리텔링(대체)에 사용됩니다.",
+            "platform.openai.com/api-keys",
+        )
+
+    # 음악 만들기
     elif nav == "음악 만들기":
         st.title("🎵 음악 만들기")
         tab_story, tab_studio, tab_rev, tab_sync, tab_review = st.tabs([
@@ -7330,30 +7502,20 @@ div[data-testid="stSidebarNav"] { display: none; }
             "🎤 가사 자동 동기화 (SRT)",
             "🙋 검수 큐",
         ])
-        with tab_story:
-            render_storytelling_tab()
-        with tab_studio:
-            render_suno_studio_tab()
-        with tab_rev:
-            render_reverse_tab()
-        with tab_sync:
-            render_sync_tab()
-        with tab_review:
-            render_review_tab()
+        with tab_story:   render_storytelling_tab()
+        with tab_studio:  render_suno_studio_tab()
+        with tab_rev:     render_reverse_tab()
+        with tab_sync:    render_sync_tab()
+        with tab_review:  render_review_tab()
 
-    # ── 영상 만들기 ────────────────────────────────────────────
+    # 영상 만들기
     elif nav == "영상 만들기":
         st.title("🎬 영상 만들기")
-        tab_compose, tab_jobs = st.tabs([
-            "🎬 영상 합성 (인코딩)",
-            "📦 인코딩 잡",
-        ])
-        with tab_compose:
-            render_compose_tab()
-        with tab_jobs:
-            render_jobs_tab()
+        tab_compose, tab_jobs = st.tabs(["🎬 영상 합성 (인코딩)", "📦 인코딩 잡"])
+        with tab_compose: render_compose_tab()
+        with tab_jobs:    render_jobs_tab()
 
-    # ── 메타데이터 ─────────────────────────────────────────────
+    # 메타데이터
     elif nav == "메타데이터":
         st.title("🗂️ 메타데이터")
         render_title_lab_tab()
