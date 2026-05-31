@@ -1,6 +1,6 @@
 """
 공구 중개업 자동화 대시보드
-탭: 📊 대시보드 | 👥 인플루언서 | 🏭 제조사 | 📅 시즌 트래커 | 📧 메일 발송 | 🤝 딜 관리
+탭: 📊 대시보드 | 👥 인플루언서 | 🏭 제조사 | 📅 시즌 트래커 | 💰 단가 계산기 | 📧 메일 발송 | 🤝 딜 관리
 """
 import streamlit as st
 import pandas as pd
@@ -30,7 +30,7 @@ STATUS_KO = {
     "failed": "실패",
 }
 
-tabs = st.tabs(["📊 대시보드", "👥 인플루언서 DB", "🏭 제조사 DB", "📅 시즌 트래커", "📧 메일 발송", "🤝 딜 관리"])
+tabs = st.tabs(["📊 대시보드", "👥 인플루언서 DB", "🏭 제조사 DB", "📅 시즌 트래커", "💰 단가 계산기", "📧 메일 발송", "🤝 딜 관리"])
 
 # ─────────────────────────────────────────────────────────
 # 탭 1: 대시보드
@@ -294,9 +294,211 @@ with tabs[3]:
 
 
 # ─────────────────────────────────────────────────────────
-# 탭 5: 메일 발송
+# 탭 5: 단가 계산기
 # ─────────────────────────────────────────────────────────
 with tabs[4]:
+    st.subheader("💰 공구 단가 자동 계산기")
+    st.caption("공급가·택배비·반품비·수수료를 입력하면 판매가·수익 구조를 자동 계산합니다.")
+
+    # ── 기본 입력 ──────────────────────────────────────────
+    st.markdown("### 1️⃣ 제조사 조건")
+    c1, c2, c3 = st.columns(3)
+    supply_price = c1.number_input("제조사 공급가 (원/개)", min_value=0, value=5000, step=100,
+                                   help="제조사가 중개자에게 제공하는 원가")
+    has_delivery = c2.checkbox("택배비 포함 여부", value=False,
+                               help="체크=공급가에 배송비 포함 / 미체크=별도 청구")
+    delivery_fee = c3.number_input("택배비 (원/건)", min_value=0, value=3000, step=100,
+                                   disabled=has_delivery,
+                                   help="공급가에 미포함 시 건당 추가 택배비")
+
+    c1, c2, c3 = st.columns(3)
+    has_return = c1.checkbox("반품비 발생 여부", value=True)
+    return_fee = c2.number_input("반품비 (원/건)", min_value=0, value=5000, step=500,
+                                  disabled=not has_return,
+                                  help="소비자 반품 시 발생 비용 (왕복 택배비 등)")
+    return_rate = c3.number_input("예상 반품율 (%)", min_value=0.0, max_value=100.0,
+                                   value=3.0, step=0.5,
+                                   help="판매 수량 대비 평균 반품 비율")
+
+    st.markdown("### 2️⃣ 판매 조건")
+    c1, c2, c3 = st.columns(3)
+    sale_price = c1.number_input("공구 판매가 제안 (원/개)", min_value=0, value=12000, step=500,
+                                  help="소비자에게 제시할 공구가")
+    expected_qty = c2.number_input("예상 판매 수량 (개)", min_value=1, value=100, step=10)
+    platform_fee_rate = c3.number_input("플랫폼 수수료 (%)", min_value=0.0, max_value=20.0,
+                                         value=3.5, step=0.5,
+                                         help="스마트스토어 3.5% / 자사몰 0% 등")
+
+    st.markdown("### 3️⃣ 수수료 배분")
+    c1, c2 = st.columns(2)
+    inf_rate = c1.slider("인플루언서 수수료 (%)", min_value=0, max_value=60,
+                          value=30, step=1,
+                          help="판매액 기준 인플루언서에게 지급하는 비율")
+    my_rate = c2.slider("중개사(나) 수수료 (%)", min_value=0, max_value=30,
+                         value=10, step=1,
+                         help="판매액 기준 중개사가 가져가는 비율")
+
+    # ── 자동 계산 ──────────────────────────────────────────
+    st.markdown("---")
+
+    # 개당 실제 원가 (택배비 + 반품 충당금 포함)
+    actual_delivery = 0 if has_delivery else delivery_fee
+    return_allowance = (return_fee * return_rate / 100) if has_return else 0
+    cost_per_unit = supply_price + actual_delivery + return_allowance
+
+    # 판매액 기준 각 항목
+    platform_fee_per = sale_price * platform_fee_rate / 100
+    inf_fee_per = sale_price * inf_rate / 100
+    my_fee_per = sale_price * my_rate / 100
+    mfr_revenue_per = sale_price - platform_fee_per - inf_fee_per - my_fee_per  # 제조사 정산액
+    gross_profit_per = sale_price - cost_per_unit  # 판매가 - 원가
+    net_margin_per = my_fee_per  # 중개사 순수익(개당)
+
+    margin_rate = (my_fee_per / sale_price * 100) if sale_price > 0 else 0
+    total_revenue = sale_price * expected_qty
+    total_my_revenue = my_fee_per * expected_qty
+    total_inf_revenue = inf_fee_per * expected_qty
+    total_mfr = mfr_revenue_per * expected_qty
+    total_platform = platform_fee_per * expected_qty
+
+    # 수익성 경고
+    if cost_per_unit > mfr_revenue_per:
+        st.error(f"⚠️ 원가({cost_per_unit:,.0f}원) > 제조사 정산액({mfr_revenue_per:,.0f}원) — 제조사 손실 구조입니다. 판매가를 올리거나 수수료율을 낮추세요.")
+    elif margin_rate < 5:
+        st.warning(f"⚠️ 중개사 마진이 {margin_rate:.1f}%로 낮습니다. 수수료율 조정을 검토하세요.")
+    else:
+        st.success(f"✅ 수익 구조 정상 — 중개사 마진 {margin_rate:.1f}%")
+
+    # ── 개당 단가 표 ────────────────────────────────────────
+    st.markdown("### 📊 개당 단가 분석표")
+
+    unit_table = pd.DataFrame([
+        {"항목": "소비자 공구 판매가",     "금액(원)": sale_price,             "비율(%)": 100.0,              "비고": "기준"},
+        {"항목": "├ 제조사 공급가",        "금액(원)": supply_price,           "비율(%)": round(supply_price/sale_price*100,1) if sale_price else 0, "비고": "원가"},
+        {"항목": "├ 택배비",               "금액(원)": actual_delivery,        "비율(%)": round(actual_delivery/sale_price*100,1) if sale_price else 0, "비고": "포함" if has_delivery else "별도"},
+        {"항목": "├ 반품 충당금",          "금액(원)": round(return_allowance), "비율(%)": round(return_allowance/sale_price*100,1) if sale_price else 0, "비고": f"반품율 {return_rate}%" if has_return else "없음"},
+        {"항목": "├ 플랫폼 수수료",        "금액(원)": round(platform_fee_per),"비율(%)": platform_fee_rate,  "비고": "스마트스토어 등"},
+        {"항목": "├ 인플루언서 수수료",    "금액(원)": round(inf_fee_per),     "비율(%)": float(inf_rate),    "비고": "판매액 기준"},
+        {"항목": "├ 중개사(나) 수수료",    "금액(원)": round(my_fee_per),      "비율(%)": float(my_rate),     "비고": "판매액 기준"},
+        {"항목": "└ 제조사 정산액",        "금액(원)": round(mfr_revenue_per), "비율(%)": round(mfr_revenue_per/sale_price*100,1) if sale_price else 0, "비고": "제조사 실수령"},
+        {"항목": "▶ 중개사 순이익(개당)",  "금액(원)": round(net_margin_per),  "비율(%)": round(margin_rate,1),"비고": "★ 핵심 지표"},
+    ])
+
+    def highlight_row(row):
+        if "중개사 순이익" in row["항목"]:
+            return ["background-color: #d4edda; font-weight: bold"] * len(row)
+        elif "제조사 정산액" in row["항목"]:
+            return ["background-color: #fff3cd"] * len(row)
+        elif "인플루언서" in row["항목"]:
+            return ["background-color: #cce5ff"] * len(row)
+        return [""] * len(row)
+
+    st.dataframe(
+        unit_table.style.apply(highlight_row, axis=1).format({"금액(원)": "{:,.0f}", "비율(%)": "{:.1f}"}),
+        use_container_width=True, hide_index=True,
+    )
+
+    # ── 전체 수익 시뮬레이션 표 ────────────────────────────
+    st.markdown(f"### 📦 총 {expected_qty:,}개 판매 시 수익 시뮬레이션")
+
+    sim_table = pd.DataFrame([
+        {"구분": "총 매출",              "금액(원)": total_revenue,           "비고": f"{sale_price:,}원 × {expected_qty:,}개"},
+        {"구분": "인플루언서 지급액",    "금액(원)": round(total_inf_revenue), "비고": f"{inf_rate}% × 총매출"},
+        {"구분": "플랫폼 수수료",        "금액(원)": round(total_platform),    "비고": f"{platform_fee_rate}% × 총매출"},
+        {"구분": "제조사 정산액",        "금액(원)": round(total_mfr),         "비고": "공급가·배송비 회수분"},
+        {"구분": "★ 중개사 수익",        "금액(원)": round(total_my_revenue),  "비고": f"{my_rate}% × 총매출"},
+    ])
+
+    st.dataframe(
+        sim_table.style.apply(
+            lambda row: ["background-color: #d4edda; font-weight: bold"] * len(row) if "★" in row["구분"] else [""] * len(row),
+            axis=1
+        ).format({"금액(원)": "{:,.0f}"}),
+        use_container_width=True, hide_index=True,
+    )
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("총 매출", f"{total_revenue:,.0f}원")
+    col2.metric("내 수익", f"{round(total_my_revenue):,}원", f"{margin_rate:.1f}%")
+    col3.metric("인플루언서 지급", f"{round(total_inf_revenue):,}원")
+    col4.metric("제조사 정산", f"{round(total_mfr):,}원")
+
+    # ── 손익분기 & 민감도 ──────────────────────────────────
+    st.markdown("### 🔢 손익분기 & 민감도 분석")
+
+    # 중개사 기준 손익분기 수량 (내 수익이 0이 되는 시점은 없지만 최소 수익 목표 기준)
+    target_my_revenue = st.number_input("목표 중개사 수익 (원)", value=500000, step=100000)
+    bep_qty = (target_my_revenue / my_fee_per) if my_fee_per > 0 else float("inf")
+    st.info(f"목표 수익 **{target_my_revenue:,}원** 달성을 위한 최소 판매 수량: **{bep_qty:,.0f}개**")
+
+    # 판매가 변동 시나리오
+    st.markdown("**판매가 변동 시나리오**")
+    scenarios = []
+    for delta in [-2000, -1000, 0, 1000, 2000]:
+        sp = sale_price + delta
+        if sp <= 0:
+            continue
+        my = sp * my_rate / 100
+        inf_f = sp * inf_rate / 100
+        mfr_r = sp - sp * platform_fee_rate / 100 - inf_f - my
+        scenarios.append({
+            "판매가(원)": sp,
+            "중개사 수익/개(원)": round(my),
+            "인플루언서 수익/개(원)": round(inf_f),
+            "제조사 정산/개(원)": round(mfr_r),
+            "중개사 마진(%)": round(my / sp * 100, 1),
+            "현재가 대비": "◀ 현재" if delta == 0 else f"{'▲' if delta > 0 else '▼'} {abs(delta):,}원",
+        })
+
+    df_sc = pd.DataFrame(scenarios)
+    st.dataframe(
+        df_sc.style.apply(
+            lambda row: ["background-color: #fff3cd; font-weight: bold"] * len(row) if row["현재가 대비"] == "◀ 현재" else [""] * len(row),
+            axis=1,
+        ).format({
+            "판매가(원)": "{:,}",
+            "중개사 수익/개(원)": "{:,}",
+            "인플루언서 수익/개(원)": "{:,}",
+            "제조사 정산/개(원)": "{:,}",
+            "중개사 마진(%)": "{:.1f}",
+        }),
+        use_container_width=True, hide_index=True,
+    )
+
+    # ── 저장 ───────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### 💾 이 조건으로 딜 저장")
+    inf_list_calc = db.get_influencers()
+    mfr_list_calc = db.get_manufacturers()
+    if inf_list_calc and mfr_list_calc:
+        with st.form("calc_deal_form"):
+            c1, c2, c3 = st.columns(3)
+            inf_opts_c = {f"{r['name']} (@{r['instagram_id']})": r["id"] for r in inf_list_calc}
+            mfr_opts_c = {r["company"]: r["id"] for r in mfr_list_calc}
+            sel_inf_c = c1.selectbox("인플루언서", list(inf_opts_c.keys()))
+            sel_mfr_c = c2.selectbox("제조사", list(mfr_opts_c.keys()))
+            d_item_c = c3.text_input("아이템명")
+            note_c = st.text_area("메모 (자동 요약 포함)", height=60,
+                value=f"공급가:{supply_price:,}원 / 판매가:{sale_price:,}원 / 인플루언서:{inf_rate}% / 중개사:{my_rate}% / 예상수량:{expected_qty:,}개 / 중개사예상수익:{round(total_my_revenue):,}원")
+            if st.form_submit_button("딜로 저장"):
+                if d_item_c:
+                    db.add_deal({
+                        "influencer_id": inf_opts_c[sel_inf_c],
+                        "manufacturer_id": mfr_opts_c[sel_mfr_c],
+                        "item_name": d_item_c,
+                        "commission_rate": my_rate,
+                        "note": note_c,
+                    })
+                    st.success("딜 탭에 저장 완료!")
+                else:
+                    st.error("아이템명 입력 필요")
+    else:
+        st.info("인플루언서/제조사를 먼저 DB에 등록하세요")
+
+# ─────────────────────────────────────────────────────────
+# 탭 6: 메일 발송
+# ─────────────────────────────────────────────────────────
+with tabs[5]:
     st.subheader("📧 메일 발송")
 
     # SMTP 설정 확인
@@ -458,9 +660,9 @@ with tabs[4]:
 
 
 # ─────────────────────────────────────────────────────────
-# 탭 6: 딜 관리
+# 탭 7: 딜 관리
 # ─────────────────────────────────────────────────────────
-with tabs[5]:
+with tabs[6]:
     st.subheader("🤝 딜 관리 (인플루언서 × 제조사)")
 
     inf_list_d = db.get_influencers()
