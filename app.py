@@ -8177,9 +8177,139 @@ def render_suno_generator_tab() -> None:
                 st.session_state.pop("sg_preset_tags", None)
                 st.rerun()
 
-    st.divider()
+    # ── Suno 5.5 K-Genre 프리셋 퀵셀렉터 ──────────────────────
+    with st.expander("🇰🇷 Suno 5.5 K-Genre 프리셋 (검증된 스타일 즉시 적용)", expanded=False):
+        st.caption("Suno AI 5.5 Prompt Cheatsheet Part 8 K-Genres — 클릭하면 스타일 태그에 자동 반영됩니다.")
+        _KGENRE_PRESETS = {
+            "🎵 남성 한국발라드": "korean male ballad with emotional piano, warm strings, and heartfelt vocals, dramatic, cinematic, and deeply expressive, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+            "🎵 여성 한국발라드": "korean female ballad with gentle piano, lush strings, and soulful vocals, tender, emotional, and beautifully expressive, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+            "🎬 K-OST 발라드": "cinematic korean ost-style ballad with emotional piano, lush strings, and heartfelt vocals, warm, dramatic, and touching, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+            "🎸 K-인디 발라드": "korean indie ballad with warm acoustic guitar, gentle piano, and heartfelt vocals, intimate, melancholic, and emotionally resonant, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+            "🎸 K-밴드 록": "korean band rock with powerful electric guitar, dynamic drums, and passionate vocals, energetic, emotional, and anthemic, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+            "🎤 K-R&B": "korean r&b with smooth beats, soulful vocals, and emotional production, contemporary, sensual, and deeply expressive, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+            "🎤 국산 힙합·트랩": "korean hip hop with hard-hitting trap beats, rapid-fire korean rap, and intense delivery, aggressive, confident, and authentically korean, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+            "🎤 조선힙합": "joseon hip hop with traditional korean instruments haegeum gayageum, modern trap beats, and korean rap, fusion of ancient and contemporary, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+            "💃 K-EDM": "korean edm with euphoric synths, powerful drops, and uplifting melodies, energetic, exhilarating, and anthemic, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+            "🎷 K-소울": "korean soul with rich brass, warm organ, soulful korean vocals, groovy, emotional, and timeless, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+            "🌙 이모힙합 (K)": "korean emo hip hop with melancholic piano, lo-fi beats, and emotional rap, introspective, vulnerable, and raw, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+            "🎻 트로트 클래식": "trot with haegeum, accordion, and warm female vocals, nostalgic, joyful, and distinctly korean, 85 BPM, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+        }
+        preset_cols = st.columns(3)
+        for i, (name, tags) in enumerate(_KGENRE_PRESETS.items()):
+            with preset_cols[i % 3]:
+                if st.button(name, key=f"kgp_{i}", use_container_width=True):
+                    st.session_state["sg_preset_tags"] = tags
+                    st.toast(f"✅ {name} 프리셋 적용!")
+                    st.rerun()
 
-    # ── Suno 5.5 고급 옵션 ────────────────────────────────────
+        preset_applied = st.session_state.get("sg_preset_tags")
+        if preset_applied:
+            st.success(f"**적용된 프리셋 태그:**")
+            st.code(preset_applied, language=None)
+            if st.button("❌ 프리셋 초기화", key="sg_preset_clear"):
+                st.session_state.pop("sg_preset_tags", None)
+                st.rerun()
+
+    # ── 트로트 특화 기획 프리셋 ───────────────────────────────
+    with st.expander("🚜 트로트 특화 기획 프리셋 (컨셉 통째로 적용)", expanded=False):
+        st.caption("스타일 태그 + 가사 힌트 + BPM 설정까지 기획 컨셉 전체를 한번에 적용합니다.")
+
+        _TROT_CONCEPT_PRESETS = {
+            "🚜 트랙터 흥폭발 트로트": {
+                "tags": "High-energy dance trot, modern K-trot, explosive hyper brass intro, fast electronic accordion loop, driving techno bassline, 137bpm, powerful and clear trot vocal, high-pitched vocal delivery, energetic festival mood, punchy electronic drums, joyful shouting, ultimate high emotional impact, addictive chorus, festive ambience, Korean lyrics, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+                "bpm": "매우 빠름 (130-150 BPM)",
+                "mood": ["밝고 신나는", "흥겨운", "에너지 넘치고 활력찬"],
+                "situation": ["운동·워크아웃"],
+                "intro_hint": """[Intro]
+(부릉 부릉 부르릉 탈탈탈탈!)
+달린다 달려!
+오늘 논밭은 내가 접수한다!
+(얼씨구 좋다!)""",
+                "theme_hint": "트랙터를 타고 논밭을 달리며 느끼는 흥겨움과 해방감. 농사일의 신명나는 에너지. 시원하게 달리는 기분.",
+                "concept": "135~140 BPM 네오트로트·댄스트로트. 테크노 EDM 비트 + 전자 아코디언 루프 + 팝 브라스. 초반 3초 폭발 인트로로 숏폼 이탈 방지. 꽹과리·태평소 샘플링 현대화.",
+            },
+            "🌸 봄날 꽃바람 트로트": {
+                "tags": "spring festival trot, cheerful korean trot, bright accordion melody, light brass fanfare, warm female vocal, 110bpm, joyful and carefree, flower field ambience, bouncy rhythm, singalong chorus, Korean lyrics, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+                "bpm": "업비트 (110-130 BPM)",
+                "mood": ["밝고 신나는", "청량한", "따뜻한"],
+                "situation": ["여행", "드라이브"],
+                "intro_hint": """[Intro]
+(훨훨 꽃잎이 날리네~)
+봄바람아 불어라!
+꽃길만 달려가자 오늘은!""",
+                "theme_hint": "봄날 꽃구경, 들판을 걷는 설렘, 따뜻한 햇살 아래 기분 좋은 나들이.",
+                "concept": "110 BPM 밝은 트로트. 봄 나들이·벚꽃 시즌 숏폼 최적. 아코디언 멜로디 + 가벼운 브라스.",
+            },
+            "🍺 포장마차 뽕짝 트로트": {
+                "tags": "late night pojangmacha trot, retro korean trot, ppongjak rhythm, emotional accordion, husky male vocal, soju drinking, nostalgic 80s trot feel, 95bpm, heartfelt and sentimental, sing-along pub vibe, Korean lyrics, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+                "bpm": "느름 (70-90 BPM)",
+                "mood": ["슬프고 감성적인", "노스탤직", "새벽감성"],
+                "situation": ["늦은 밤", "카페에서"],
+                "intro_hint": """[Intro]
+(탁탁탁 소주잔 부딪히는 소리)
+오늘도 이렇게 한 잔~
+포장마차 불빛 아래...""",
+                "theme_hint": "포장마차에서 홀로 마시는 소주 한 잔, 그리움과 이별, 오래된 친구 생각.",
+                "concept": "95 BPM 레트로 뽕짝. 80년대 감성 아코디언 + 허스키 남성 보컬. 감성 폭발 후렴.",
+            },
+            "💃 신명나는 축제 트로트": {
+                "tags": "festival dance trot, upbeat korean celebration trot, brass band explosion, powerful female trot vocal, 128bpm, high energy crowd singalong, fireworks ambience, shout and cheer, addictive hook, Korean lyrics, Korean percussion kkwaenggwari, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+                "bpm": "업비트 (110-130 BPM)",
+                "mood": ["밝고 신나는", "흥겨운", "에너지 넘치고 활력찬"],
+                "situation": ["파티"],
+                "intro_hint": """[Intro]
+(팡파팡! 꽹과리 소리!)
+모두 나와라~!
+오늘은 신나게 놀자!
+(얼씨구절씨구!)""",
+                "theme_hint": "마을 축제, 모두 함께 춤추고 노래하는 신명나는 잔치 분위기.",
+                "concept": "128 BPM 축제 댄스트로트. 꽹과리·태평소 타악기 + 팝 브라스 + 강력한 여성 보컬. 집단 떼창 유도.",
+            },
+            "🌙 달빛 그리움 트로트 발라드": {
+                "tags": "melancholic trot ballad, emotional korean trot, slow haegeum melody, sorrowful female vocal, 75bpm, moonlit longing, nostalgic heartbreak, gentle piano accompaniment, tear-jerking chorus, Korean lyrics, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+                "bpm": "느름 (70-90 BPM)",
+                "mood": ["슬프고 감성적인", "이별·그리움", "노스탤직"],
+                "situation": ["늦은 밤", "비 오는 날"],
+                "intro_hint": """[Intro]
+(해금 선율이 달빛에 흐르고...)
+그 이름을 부르면...
+가슴이 먹먹해지네.""",
+                "theme_hint": "달빛 아래 그리운 사람 생각, 이별의 아픔, 돌아올 수 없는 그 시절.",
+                "concept": "75 BPM 트로트 발라드. 해금 선율 + 피아노 + 눈물샘 자극 여성 보컬. 극적 감정 폭발 후렴.",
+            },
+        }
+
+        for preset_name, preset_data in _TROT_CONCEPT_PRESETS.items():
+            with st.container(border=True):
+                c_title, c_btn = st.columns([4, 1])
+                with c_title:
+                    st.markdown(f"**{preset_name}**")
+                    st.caption(preset_data["concept"])
+                with c_btn:
+                    if st.button("적용", key=f"tcp_{preset_name}", use_container_width=True, type="primary"):
+                        st.session_state["sg_preset_tags"] = preset_data["tags"]
+                        st.session_state["sg_trot_concept"] = preset_data
+                        st.toast(f"✅ {preset_name} 기획 프리셋 적용!")
+                        st.rerun()
+
+        trot_concept_applied = st.session_state.get("sg_trot_concept")
+        if trot_concept_applied:
+            st.success("**적용된 기획 프리셋:**")
+            col_tc1, col_tc2 = st.columns(2)
+            with col_tc1:
+                st.markdown("**스타일 태그**")
+                st.code(trot_concept_applied["tags"], language=None)
+            with col_tc2:
+                st.markdown("**인트로 가사 힌트**")
+                st.code(trot_concept_applied.get("intro_hint",""), language=None)
+                st.markdown("**주제 힌트**")
+                st.caption(trot_concept_applied.get("theme_hint",""))
+            if st.button("❌ 기획 프리셋 초기화", key="sg_trot_concept_clear"):
+                st.session_state.pop("sg_trot_concept", None)
+                st.session_state.pop("sg_preset_tags", None)
+                st.rerun()
+
+    st.divider()
     with st.container(border=True):
         st.markdown("**⚡ Suno 5.5 고급 옵션**")
         adv_col1, adv_col2 = st.columns(2)
@@ -8394,7 +8524,12 @@ def render_suno_generator_tab() -> None:
             st.error("Gemini 또는 OpenAI API 키를 먼저 등록해주세요.")
             st.stop()
 
-        bpm_str   = sg_bpm or "보통 (90-110 BPM)"
+        # 기획 프리셋이 적용된 경우 BPM·무드·주제를 덮어씀
+        trot_concept = st.session_state.get("sg_trot_concept")
+        if trot_concept:
+            bpm_str = trot_concept.get("bpm", sg_bpm or "보통 (90-110 BPM)")
+        else:
+            bpm_str   = sg_bpm or "보통 (90-110 BPM)"
         sg_exclaim  = st.session_state.get("sg_exclaim_custom", "") if st.session_state.get("sg_exclaim") == "직접 입력" else (st.session_state.get("sg_exclaim","") if st.session_state.get("sg_exclaim","") != "없음" else "")
         sg_dialect  = st.session_state.get("sg_dialect_custom", "") if st.session_state.get("sg_dialect") == "직접 입력" else (st.session_state.get("sg_dialect","") if st.session_state.get("sg_dialect","") not in ("없음 (표준어)","") else "")
         sg_structure = st.session_state.get("sg_structure", "8섹션 풀구조 (V1-PC1-C1-V2-PC2-C2-Br-C3)")
@@ -8433,11 +8568,26 @@ def render_suno_generator_tab() -> None:
 [Tempo: {bpm_num} BPM] [Instruments: {instr_hint}] [Vocal Style: {vocal_hint}] [Mixing: reverb, warm, balanced]
 """
 
-        # K-Genre 프리셋 블록
-        preset_block = f"""
+        # K-Genre / 기획 프리셋 블록
+        trot_concept = st.session_state.get("sg_trot_concept")
+        if trot_concept:
+            _intro_hint = trot_concept.get("intro_hint", "")
+            _theme_hint = trot_concept.get("theme_hint", "")
+            _concept_desc = trot_concept.get("concept", "")
+            preset_block = f"""
+【기획 컨셉 프리셋 (반드시 스타일·가사·분위기에 완전히 반영할 것)】
+- 컨셉 설명: {_concept_desc}
+- 주제/내용: {_theme_hint}
+- 스타일 태그 기반: {sg_preset_tags}
+{"- [Intro] 가사 힌트 (첫 번째 곡에 반드시 사용, 나머지는 비슷한 도입부로 변주):" + chr(10) + _intro_hint if _intro_hint else ""}
+"""
+        elif sg_preset_tags:
+            preset_block = f"""
 【K-Genre 프리셋 스타일 (기반으로 삼을 것)】
 {sg_preset_tags}
-""" if sg_preset_tags else ""
+"""
+        else:
+            preset_block = ""
 
         # 구조 매핑
         struct_map = {
