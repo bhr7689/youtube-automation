@@ -2759,10 +2759,12 @@ def render_storytelling_tab() -> None:
         )
     model_final = (model.strip() or DEFAULT_MODELS[provider])
 
+    _story_key_name = "gemini" if provider == "gemini" else "openai"
+    _saved_story_key = SAVED_KEYS.get(_story_key_name, "")
     env_key = (
         os.getenv("GEMINI_API_KEY") if provider == "gemini"
         else os.getenv("OPENAI_API_KEY")
-    ) or ""
+    ) or _saved_story_key
     api_key = st.text_input(
         f"{'Gemini' if provider == 'gemini' else 'OpenAI'} API 키",
         value=env_key,
@@ -2773,6 +2775,35 @@ def render_storytelling_tab() -> None:
             "OpenAI: https://platform.openai.com/api-keys"
         ),
     )
+
+    _k_col1, _k_col2, _k_col3 = st.columns([2, 1, 1])
+    with _k_col1:
+        if _saved_story_key:
+            st.caption(f"✅ {'Gemini' if provider == 'gemini' else 'OpenAI'} 키 저장됨 (마지막 4자리: `...{_saved_story_key[-4:]}`)")
+        else:
+            st.caption("💡 키를 저장하면 다음 세션에서도 자동으로 불러옵니다.")
+    with _k_col2:
+        if st.button("💾 키 저장", key="story_save_key", use_container_width=True):
+            if api_key.strip():
+                save_key(_story_key_name, api_key.strip())
+                SAVED_KEYS[_story_key_name] = api_key.strip()
+                st.toast(f"✅ {'Gemini' if provider == 'gemini' else 'OpenAI'} 키 저장 완료!")
+                st.rerun()
+            else:
+                st.warning("키를 먼저 입력하세요.")
+    with _k_col3:
+        if st.button("🗑️ 키 해제", key="story_clear_key", use_container_width=True,
+                     disabled=not _saved_story_key):
+            SAVED_KEYS.pop(_story_key_name, None)
+            # 파일에서도 제거
+            _kdata = load_saved_keys()
+            _kdata.pop(_story_key_name, None)
+            os.makedirs(os.path.dirname(KEY_STORE_PATH) or ".", exist_ok=True)
+            with open(KEY_STORE_PATH, "w", encoding="utf-8") as _kf:
+                json.dump(_kdata, _kf, ensure_ascii=False, indent=2)
+            st.session_state.pop("story_api_key", None)
+            st.toast(f"🗑️ {'Gemini' if provider == 'gemini' else 'OpenAI'} 키 해제됨")
+            st.rerun()
 
     theme = st.text_area(
         "채널의 주제 및 감정",
