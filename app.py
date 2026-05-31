@@ -1374,7 +1374,7 @@ def _ai_generate(prompt: str, gemini_key: str, openai_key: str,
             import google.generativeai as genai  # type: ignore
             genai.configure(api_key=gemini_key)
             model = genai.GenerativeModel(
-                "gemini-1.5-flash",
+                "gemini-2.5-flash-preview-05-20",
                 generation_config={"temperature": temperature},
             )
             resp = model.generate_content(prompt)
@@ -2644,7 +2644,7 @@ def render_discovery_tab() -> None:
 
 # 프로바이더별 기본 모델. 사용자가 직접 바꿀 수도 있음.
 DEFAULT_MODELS: dict[str, str] = {
-    "gemini": "gemini-2.0-flash",
+    "gemini": "gemini-2.5-flash-preview-05-20",
     "openai": "gpt-4o",
 }
 
