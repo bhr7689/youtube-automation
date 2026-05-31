@@ -8144,13 +8144,71 @@ def render_suno_generator_tab() -> None:
         """멀티 pills — st.pills multiselect 래퍼."""
         return st.pills(label, options, selection_mode="multi", default=default or [], key=key)
 
+    # ── Suno 5.5 K-Genre 프리셋 퀵셀렉터 ──────────────────────
+    with st.expander("🇰🇷 Suno 5.5 K-Genre 프리셋 (검증된 스타일 즉시 적용)", expanded=False):
+        st.caption("Suno AI 5.5 Prompt Cheatsheet Part 8 K-Genres — 클릭하면 스타일 태그에 자동 반영됩니다.")
+        _KGENRE_PRESETS = {
+            "🎵 남성 한국발라드": "korean male ballad with emotional piano, warm strings, and heartfelt vocals, dramatic, cinematic, and deeply expressive, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+            "🎵 여성 한국발라드": "korean female ballad with gentle piano, lush strings, and soulful vocals, tender, emotional, and beautifully expressive, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+            "🎬 K-OST 발라드": "cinematic korean ost-style ballad with emotional piano, lush strings, and heartfelt vocals, warm, dramatic, and touching, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+            "🎸 K-인디 발라드": "korean indie ballad with warm acoustic guitar, gentle piano, and heartfelt vocals, intimate, melancholic, and emotionally resonant, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+            "🎸 K-밴드 록": "korean band rock with powerful electric guitar, dynamic drums, and passionate vocals, energetic, emotional, and anthemic, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+            "🎤 K-R&B": "korean r&b with smooth beats, soulful vocals, and emotional production, contemporary, sensual, and deeply expressive, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+            "🎤 국산 힙합·트랩": "korean hip hop with hard-hitting trap beats, rapid-fire korean rap, and intense delivery, aggressive, confident, and authentically korean, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+            "🎤 조선힙합": "joseon hip hop with traditional korean instruments haegeum gayageum, modern trap beats, and korean rap, fusion of ancient and contemporary, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+            "💃 K-EDM": "korean edm with euphoric synths, powerful drops, and uplifting melodies, energetic, exhilarating, and anthemic, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+            "🎷 K-소울": "korean soul with rich brass, warm organ, soulful korean vocals, groovy, emotional, and timeless, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+            "🌙 이모힙합 (K)": "korean emo hip hop with melancholic piano, lo-fi beats, and emotional rap, introspective, vulnerable, and raw, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+            "🎻 트로트 클래식": "trot with haegeum, accordion, and warm female vocals, nostalgic, joyful, and distinctly korean, 85 BPM, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
+        }
+        preset_cols = st.columns(3)
+        for i, (name, tags) in enumerate(_KGENRE_PRESETS.items()):
+            with preset_cols[i % 3]:
+                if st.button(name, key=f"kgp_{i}", use_container_width=True):
+                    st.session_state["sg_preset_tags"] = tags
+                    st.toast(f"✅ {name} 프리셋 적용!")
+                    st.rerun()
+
+        preset_applied = st.session_state.get("sg_preset_tags")
+        if preset_applied:
+            st.success(f"**적용된 프리셋 태그:**")
+            st.code(preset_applied, language=None)
+            if st.button("❌ 프리셋 초기화", key="sg_preset_clear"):
+                st.session_state.pop("sg_preset_tags", None)
+                st.rerun()
+
+    st.divider()
+
+    # ── Suno 5.5 고급 옵션 ────────────────────────────────────
+    with st.container(border=True):
+        st.markdown("**⚡ Suno 5.5 고급 옵션**")
+        adv_col1, adv_col2 = st.columns(2)
+        with adv_col1:
+            sg_suffix_tags = st.toggle(
+                "🔥 공통 후미 태그 자동 추가 (Suno 5.5 권장)",
+                value=True, key="sg_suffix_tags",
+                help="detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth — Suno 5.5 치트시트 공통 필수 태그",
+            )
+            if sg_suffix_tags:
+                st.caption("`detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth`")
+        with adv_col2:
+            sg_lyric_header = st.toggle(
+                "📋 가사 최상단 구조 태그 추가",
+                value=False, key="sg_lyric_header",
+                help="[Tempo: BPM] [Instruments: ...] [Vocal Style: ...] [Mixing: ...] — Suno가 구조를 더 잘 이해합니다",
+            )
+            if sg_lyric_header:
+                st.caption("`[Tempo: BPM] [Instruments: 악기] [Vocal Style: 보컬] [Mixing: 믹싱]` 태그를 가사 최상단에 자동 삽입")
+
+    st.divider()
+
     with st.container(border=True):
         # 장르 (Suno 공식 태그 기준)
         st.markdown("**🎸 장르**")
         st.caption("Suno 공식 스타일 태그 기준 — 선택한 태그가 그대로 Suno Style 칸에 들어갑니다.")
         sg_genres = _pills("장르", [
-            # 한국/아시아
-            "K-Pop","J-Pop","트로트","Modern Bollywood",
+            # K-Genre (Suno 5.5 Part 8)
+            "K-Pop","트로트","K-Ballad","K-OST","K-Indie","K-Band","K-R&B","K-EDM","조선힙합","J-Pop","Modern Bollywood",
             # 팝/인디
             "Pop","Alternative Pop","Indie","New Wave",
             # R&B/소울/힙합
@@ -8340,6 +8398,9 @@ def render_suno_generator_tab() -> None:
         sg_viral    = st.session_state.get("sg_viral", False)
         sg_syllable = st.session_state.get("sg_syllable", "보통")
         sg_repeat   = st.session_state.get("sg_repeat", "2회 반복")
+        sg_suffix_tags = st.session_state.get("sg_suffix_tags", True)
+        sg_lyric_header = st.session_state.get("sg_lyric_header", False)
+        sg_preset_tags = st.session_state.get("sg_preset_tags", "")
 
         mc = st.session_state.get("sg_money_code")
         mc_block = ""
@@ -8350,6 +8411,30 @@ def render_suno_generator_tab() -> None:
 {"- 고정 태그 (반드시 포함): " + mc['fixed_tags'] if mc.get('fixed_tags') else ""}
 {"- 금지 태그 (절대 사용 금지): " + mc['banned_tags'] if mc.get('banned_tags') else ""}
 """
+        # Suno 5.5 공통 후미 태그
+        _SUNO55_SUFFIX = "detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth"
+        suffix_block = f"""
+【Suno 5.5 필수 후미 태그 — style_tags 맨 끝에 반드시 포함】
+{_SUNO55_SUFFIX}
+""" if sg_suffix_tags else ""
+
+        # 가사 구조 태그 (Suno 5.5 Lyrics 창 최상단)
+        lyric_header_block = ""
+        if sg_lyric_header:
+            bpm_num = bpm_str.split("(")[-1].replace("BPM)","").strip().split("-")[0].strip() if "(" in bpm_str else "90"
+            instr_hint = sg_instrument or "piano, guitar, strings"
+            vocal_hint = ", ".join(sg_vocal) if sg_vocal else "female vocal"
+            lyric_header_block = f"""
+【가사 최상단 구조 태그 — 가사 맨 첫 줄에 반드시 포함 (Suno 5.5 권장)】
+각 곡 가사의 맨 첫 줄을 아래 형식으로 시작하세요:
+[Tempo: {bpm_num} BPM] [Instruments: {instr_hint}] [Vocal Style: {vocal_hint}] [Mixing: reverb, warm, balanced]
+"""
+
+        # K-Genre 프리셋 블록
+        preset_block = f"""
+【K-Genre 프리셋 스타일 (기반으로 삼을 것)】
+{sg_preset_tags}
+""" if sg_preset_tags else ""
 
         # 구조 매핑
         struct_map = {
@@ -8405,7 +8490,7 @@ def render_suno_generator_tab() -> None:
 """
 
         prompt = f"""
-당신은 한국 트로트 전문 작사가이자 Suno AI 프롬프트 엔지니어입니다.
+당신은 한국 트로트 전문 작사가이자 Suno AI 5.5 프롬프트 엔지니어입니다.
 아래 조건으로 서로 다른 **10곡**의 제목, Suno 스타일 태그, 가사를 JSON으로 작성하세요.
 
 【음악 옵션】
@@ -8419,7 +8504,7 @@ def render_suno_generator_tab() -> None:
 - 곡 길이: {mins}분 {secs:02d}초
 - 가사 내용: {sg_theme or '자유롭게'}
 - 악기 디테일: {sg_instrument or '자유롭게'}
-{mc_block}
+{mc_block}{preset_block}{suffix_block}
 【가사 구조 — 반드시 이 순서로, 섹션 태그 포함】
 {structure_str}
 
@@ -8448,6 +8533,8 @@ def render_suno_generator_tab() -> None:
 【스타일 태그 규칙】
 - 영문, Suno에 바로 붙여넣을 수 있는 형식
 - 예: "trot, female vocal, emotional, piano, haegeum, reverb, 85 BPM, cinematic"
+- style_tags 마지막에는 반드시 다음을 포함: detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth
+{lyric_header_block}
 
 JSON 스키마 (배열, 10개):
 [
