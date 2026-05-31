@@ -1,14 +1,17 @@
 """
 공구 중개업 자동화 대시보드
-탭: 📊 대시보드 | 👥 인플루언서 | 🏭 제조사 | 📅 시즌 트래커 | 💰 단가 계산기 | 📧 메일 발송 | 🤝 딜 관리
+탭: 📊 대시보드 | 📥 인플루언서 수집 | 👥 인플루언서 DB | 🏭 제조사 DB | 📅 시즌 트래커 | 💰 단가 계산기 | 📧 메일 발송 | 🤝 딜 관리
 """
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date
 import os
+import io
+import threading
 
 import gonggu_db as db
 import gonggu_mailer as mailer
+import gonggu_collector as collector
 
 db.init_db()
 
@@ -30,7 +33,7 @@ STATUS_KO = {
     "failed": "실패",
 }
 
-tabs = st.tabs(["📊 대시보드", "👥 인플루언서 DB", "🏭 제조사 DB", "📅 시즌 트래커", "💰 단가 계산기", "📧 메일 발송", "🤝 딜 관리"])
+tabs = st.tabs(["📊 대시보드", "📥 인플루언서 수집", "👥 인플루언서 DB", "🏭 제조사 DB", "📅 시즌 트래커", "💰 단가 계산기", "📧 메일 발송", "🤝 딜 관리"])
 
 # ─────────────────────────────────────────────────────────
 # 탭 1: 대시보드
@@ -86,9 +89,193 @@ with tabs[0]:
 
 
 # ─────────────────────────────────────────────────────────
-# 탭 2: 인플루언서 DB
+# 탭 2: 인플루언서 수집
 # ─────────────────────────────────────────────────────────
 with tabs[1]:
+    st.subheader("📥 인플루언서 DB 수집")
+
+    method_tab = st.radio(
+        "수집 방법 선택",
+        ["📂 엑셀/CSV 파일 임포트", "🔍 구글·네이버 검색 자동 수집", "📊 DB 현황 & 정리"],
+        horizontal=True,
+    )
+
+    # ── 방법 A: 파일 임포트 ──────────────────────────────
+    if method_tab == "📂 엑셀/CSV 파일 임포트":
+        st.markdown("""
+**추천:** 크몽에서 공구 인플루언서 리스트를 구매한 뒤 여기에 업로드하세요.
+
+| 서비스 | 건수 | 가격 | 링크 |
+|--------|------|------|------|
+| 공동구매 인플루언서·업체 5,700명 | 5,700명 | ~5만원 | kmong.com/gig/638757 |
+| 인스타그램 공동구매 인플루언서 리스트 | 3,576명 | ~3만원 | kmong.com/gig/443376 |
+| 고효율 인스타 공동구매 3,850명 | 3,850명 | ~4만원 | kmong.com/gig/544304 |
+| 공구 인플루언서 2,021명+맘카페 | 2,021명 | ~3만원 | kmong.com/gig/583553 |
+
+엑셀/CSV 컬럼명은 자동 인식합니다. (인스타ID, 팔로워수, 카테고리, 이메일 등)
+""")
+        st.divider()
+
+        uploaded = st.file_uploader("엑셀(.xlsx) 또는 CSV 파일 업로드", type=["xlsx", "xls", "csv"])
+        default_cat = st.selectbox("카테고리 자동 분류 실패 시 기본값",
+                                   ["기타"] + ["뷰티", "식품", "패션", "건강식품", "생활용품", "육아", "반려동물", "가전"])
+
+        if uploaded:
+            try:
+                if uploaded.name.endswith(".csv"):
+                    for enc in ("utf-8-sig", "cp949", "utf-8"):
+                        try:
+                            df_preview = pd.read_csv(uploaded, dtype=str, encoding=enc, nrows=5)
+                            uploaded.seek(0)
+                            df_full = pd.read_csv(uploaded, dtype=str, encoding=enc)
+                            break
+                        except UnicodeDecodeError:
+                            uploaded.seek(0)
+                else:
+                    df_preview = pd.read_excel(uploaded, dtype=str, nrows=5)
+                    uploaded.seek(0)
+                    df_full = pd.read_excel(uploaded, dtype=str)
+
+                st.write(f"**파일 미리보기** ({len(df_full)}행 감지)")
+                st.dataframe(df_preview, use_container_width=True)
+
+                # 컬럼 매핑 자동 감지 후 표시
+                mapping = collector.detect_column_mapping(list(df_full.columns))
+                if mapping:
+                    st.success(f"자동 감지된 컬럼: {mapping}")
+                else:
+                    st.warning("컬럼 자동 인식 실패. 아래에서 직접 지정하세요.")
+                    col_options = ["(없음)"] + list(df_full.columns)
+                    c1, c2, c3 = st.columns(3)
+                    id_col    = c1.selectbox("인스타그램 ID 컬럼", col_options)
+                    name_col  = c2.selectbox("이름/닉네임 컬럼", col_options)
+                    fol_col   = c3.selectbox("팔로워 수 컬럼", col_options)
+                    if id_col != "(없음)":
+                        df_full = df_full.rename(columns={id_col: "instagram_id"})
+                    if name_col != "(없음)":
+                        df_full = df_full.rename(columns={name_col: "name"})
+                    if fol_col != "(없음)":
+                        df_full = df_full.rename(columns={fol_col: "followers"})
+
+                if st.button("🚀 DB에 전체 임포트", type="primary"):
+                    result = collector.import_from_dataframe(df_full, default_category=default_cat)
+                    st.success(f"✅ 임포트 완료: {result['imported']}명 저장 / {result['skipped']}개 스킵")
+                    if result["errors"]:
+                        with st.expander("오류 내역"):
+                            for e in result["errors"][:10]:
+                                st.write(e)
+                    st.rerun()
+            except Exception as e:
+                st.error(f"파일 읽기 오류: {e}")
+
+    # ── 방법 B: 검색 자동 수집 ───────────────────────────
+    elif method_tab == "🔍 구글·네이버 검색 자동 수집":
+        st.markdown("""
+구글·네이버 검색결과에서 공개된 인스타그램 공구 계정을 자동으로 수집합니다.
+팔로워 수·이메일은 수집되지 않으며, 계정명만 저장됩니다. (나중에 수동 보완)
+
+> **합법 범위**: 공개 검색결과 파싱. 인스타그램 직접 크롤링 아님.
+""")
+        st.warning("⚠️ 검색 자동화는 구글 캡차로 차단될 수 있습니다. 소량(1~2개 카테고리)씩 진행하세요.")
+
+        cats_to_search = st.multiselect(
+            "수집할 카테고리 선택",
+            ["뷰티", "식품", "패션", "건강식품", "생활용품", "육아", "반려동물", "가전"],
+            default=["뷰티", "식품"],
+        )
+        delay_sec = st.slider("검색 간격 (초, 너무 짧으면 차단됨)", 1.5, 8.0, 3.0, 0.5)
+
+        if "search_log" not in st.session_state:
+            st.session_state["search_log"] = []
+
+        if st.button("🔍 검색 수집 시작", disabled=not cats_to_search, type="primary"):
+            log_container = st.empty()
+            total_new = 0
+
+            for cat in cats_to_search:
+                log_container.info(f"🔍 [{cat}] 검색 중...")
+                candidates = collector.collect_by_category(cat, delay=delay_sec)
+                for c in candidates:
+                    db.upsert_influencer({
+                        "instagram_id": c["instagram_id"],
+                        "name": c["instagram_id"],
+                        "category": c["category"],
+                        "followers": 0,
+                        "note": f"[검색수집] {c['source']}",
+                    })
+                total_new += len(candidates)
+                st.session_state["search_log"].append(
+                    f"[{cat}] {len(candidates)}개 수집"
+                )
+                log_container.success(f"✅ [{cat}] {len(candidates)}개 수집 완료")
+
+            st.success(f"전체 {total_new}개 계정 수집 → DB 저장 완료")
+            st.rerun()
+
+        if st.session_state["search_log"]:
+            st.write("**최근 수집 로그:**")
+            for log in st.session_state["search_log"][-10:]:
+                st.write(f"  • {log}")
+
+        st.divider()
+        st.markdown("#### 직접 검색어 입력 (단건)")
+        custom_query = st.text_input("검색어", placeholder="예: 인스타 홍삼 공구 진행중")
+        custom_cat = st.selectbox("카테고리 지정", ["뷰티", "식품", "패션", "건강식품", "생활용품", "육아", "반려동물", "기타"], key="custom_cat_sel")
+        if st.button("검색 실행") and custom_query:
+            ids_g = collector.search_google(custom_query)
+            ids_n = collector.search_naver(custom_query)
+            all_ids = set(ids_g + ids_n)
+            for iid in all_ids:
+                db.upsert_influencer({
+                    "instagram_id": iid,
+                    "name": iid,
+                    "category": custom_cat,
+                    "followers": 0,
+                    "note": f"[직접검색] {custom_query[:30]}",
+                })
+            st.success(f"구글 {len(ids_g)}개 + 네이버 {len(ids_n)}개 → {len(all_ids)}개 저장 완료")
+            st.rerun()
+
+    # ── 방법 C: DB 현황 & 정리 ──────────────────────────
+    else:
+        stats = collector.get_import_stats()
+        st.markdown(f"### DB 현황: 총 **{stats['total']:,}명**")
+
+        if stats["by_category"]:
+            df_stats = pd.DataFrame(stats["by_category"])
+            df_stats.columns = ["카테고리", "인원수"]
+            df_stats["비율(%)"] = (df_stats["인원수"] / stats["total"] * 100).round(1)
+            st.dataframe(df_stats, use_container_width=True, hide_index=True)
+
+        st.info(f"팔로워 수 미확인 계정: {stats['unknown_followers']:,}명 (검색 수집 계정, 수동 보완 필요)")
+
+        st.divider()
+        st.markdown("### 🧹 중복 제거")
+        st.write("인스타그램 ID 기준으로 중복 레코드를 제거합니다.")
+        if st.button("중복 제거 실행"):
+            deleted = collector.deduplicate_db()
+            st.success(f"중복 {deleted}건 제거 완료")
+            st.rerun()
+
+        st.divider()
+        st.markdown("### 📤 전체 DB 내보내기 (엑셀)")
+        infs = db.get_influencers()
+        if infs:
+            df_export = pd.DataFrame(infs)
+            buf = io.BytesIO()
+            df_export.to_excel(buf, index=False)
+            buf.seek(0)
+            st.download_button(
+                "⬇️ 전체 인플루언서 DB 다운로드",
+                data=buf,
+                file_name=f"influencer_db_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+
+# ─────────────────────────────────────────────────────────
+# 탭 3: 인플루언서 DB
+# ─────────────────────────────────────────────────────────
+with tabs[2]:
     st.subheader("👥 인플루언서 DB")
 
     with st.expander("➕ 인플루언서 추가/수정", expanded=False):
@@ -182,7 +369,7 @@ with tabs[1]:
 # ─────────────────────────────────────────────────────────
 # 탭 3: 제조사 DB
 # ─────────────────────────────────────────────────────────
-with tabs[2]:
+with tabs[3]:
     st.subheader("🏭 제조사/공급사 DB")
 
     with st.expander("➕ 제조사 추가", expanded=False):
@@ -240,7 +427,7 @@ with tabs[2]:
 # ─────────────────────────────────────────────────────────
 # 탭 4: 시즌 트래커
 # ─────────────────────────────────────────────────────────
-with tabs[3]:
+with tabs[4]:
     st.subheader("📅 시즌별 공구 아이템 트래커")
 
     view_mode = st.radio("보기 방식", ["이번 달 추천", "시즌별 전체", "월 선택"], horizontal=True)
@@ -296,7 +483,7 @@ with tabs[3]:
 # ─────────────────────────────────────────────────────────
 # 탭 5: 단가 계산기
 # ─────────────────────────────────────────────────────────
-with tabs[4]:
+with tabs[5]:
     st.subheader("💰 공구 단가 자동 계산기")
     st.caption("공급가·택배비·반품비·수수료를 입력하면 판매가·수익 구조를 자동 계산합니다.")
 
@@ -498,7 +685,7 @@ with tabs[4]:
 # ─────────────────────────────────────────────────────────
 # 탭 6: 메일 발송
 # ─────────────────────────────────────────────────────────
-with tabs[5]:
+with tabs[6]:
     st.subheader("📧 메일 발송")
 
     # SMTP 설정 확인
@@ -662,7 +849,7 @@ with tabs[5]:
 # ─────────────────────────────────────────────────────────
 # 탭 7: 딜 관리
 # ─────────────────────────────────────────────────────────
-with tabs[6]:
+with tabs[7]:
     st.subheader("🤝 딜 관리 (인플루언서 × 제조사)")
 
     inf_list_d = db.get_influencers()
