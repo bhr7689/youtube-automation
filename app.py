@@ -7620,12 +7620,27 @@ def render_reference_monitor_tab() -> None:
             st.info("🔄 수동 새로고침 버튼을 눌러 데이터를 불러오세요.")
             return
 
+        # ── 상단 요약 통계 ────────────────────────────────────
+        total_vids = sum(len(data.get(c["channel_id"], [])) for c in dash_channels)
+        active_chs = sum(1 for c in dash_channels if data.get(c["channel_id"]))
+        s1, s2, s3, s4 = st.columns(4)
+        s1.metric("📡 모니터링 채널", f"{active_chs}개")
+        s2.metric("🎬 수집된 영상", f"{total_vids}개")
+        all_views = sum(
+            v["view_count"]
+            for c in dash_channels
+            for v in data.get(c["channel_id"], [])
+        )
+        s3.metric("👁 총 조회수", f"{all_views:,}")
+        collected_at = auto_data.get("collected_at", "수동 수집") if auto_data else "수동 수집"
+        s4.metric("🕐 마지막 수집", collected_at[:10] if collected_at else "-")
+
+        st.divider()
+
         # 조회수 추이 차트 (history 있을 때만)
         if history_data and len(history_data) >= 2:
             with st.expander("📈 조회수 추이 (최근 30일)", expanded=False):
                 import pandas as _pd2
-                dates = [h["date"] for h in history_data]
-                # 모든 채널 합산 최신 조회수 추이
                 chart_rows = []
                 for h in history_data:
                     for cid, s in h.get("summary", {}).items():
@@ -7636,47 +7651,91 @@ def render_reference_monitor_tab() -> None:
                     df_pivot = df_chart.pivot(index="날짜", columns="채널", values="조회수").fillna(0)
                     st.line_chart(df_pivot)
 
-        # 채널별 최신 업로드 표시
-        for ch in dash_channels:
-            videos = data.get(ch["channel_id"], [])
-            if not videos:
-                continue
+        # ── 카테고리 탭 분류 ──────────────────────────────────
+        cats_in_data = ["전체"] + sorted(set(
+            c["category"] for c in dash_channels if data.get(c["channel_id"])
+        ))
+        cat_tabs = st.tabs(cats_in_data)
 
-            latest = videos[0]
-            avg_views = int(sum(v["view_count"] for v in videos) / max(len(videos), 1))
-            total_comments = sum(v["comment_count"] for v in videos)
+        def _render_channel_cards(ch_list: list) -> None:
+            for ch in ch_list:
+                videos = data.get(ch["channel_id"], [])
+                if not videos:
+                    continue
+                latest   = videos[0]
+                avg_views = int(sum(v["view_count"] for v in videos) / max(len(videos), 1))
+                max_views = max(v["view_count"] for v in videos)
 
-            with st.expander(
-                f"**{ch['channel_title']}**  ·  [{ch['category']}]  ·  "
-                f"최신: {latest['published_at'][:10]}  ·  "
-                f"평균조회 {avg_views:,}",
-                expanded=True,
-            ):
-                # 메트릭 요약
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric("최신 영상 조회수", f"{latest['view_count']:,}")
-                m2.metric("최신 좋아요", f"{latest['like_count']:,}")
-                m3.metric("최신 댓글", f"{latest['comment_count']:,}")
-                like_rate = round(latest['like_count'] / max(latest['view_count'], 1) * 100, 2)
-                m4.metric("좋아요율", f"{like_rate}%")
+                # ── 채널 헤더 ─────────────────────────────────
+                st.markdown(f"""
+<div style="background:linear-gradient(90deg,#1a1a2e,#16213e);
+            border-radius:12px;padding:14px 18px;margin:12px 0 6px 0;
+            border-left:4px solid #e74c3c;">
+  <span style="font-size:17px;font-weight:800;color:#fff;">📺 {ch['channel_title']}</span>
+  <span style="background:#333;color:#aaa;font-size:11px;border-radius:8px;
+               padding:2px 8px;margin-left:8px;">{ch['category']}</span>
+  <span style="color:#888;font-size:12px;margin-left:12px;">
+    최신 업로드: {latest['published_at'][:10]}
+  </span>
+</div>
+""", unsafe_allow_html=True)
 
-                # 썸네일 + 제목 그리드 (3열)
-                COLS = 3
+                # ── 채널 메트릭 ───────────────────────────────
+                mc1, mc2, mc3, mc4, mc5 = st.columns(5)
+                mc1.metric("최신 조회수",   f"{latest['view_count']:,}")
+                mc2.metric("최신 좋아요",   f"{latest['like_count']:,}")
+                mc3.metric("최신 댓글",     f"{latest['comment_count']:,}")
+                mc4.metric("평균 조회수",   f"{avg_views:,}")
+                mc5.metric("최고 조회수",   f"{max_views:,}")
+
+                # ── 썸네일 카드 그리드 ────────────────────────
+                COLS = 4
                 for i in range(0, len(videos), COLS):
                     cols = st.columns(COLS)
                     for col, vid in zip(cols, videos[i:i+COLS]):
                         with col:
-                            if vid["thumbnail"]:
-                                st.image(vid["thumbnail"], use_container_width=True)
-                            title = vid["title"]
+                            thumb = vid.get("thumbnail", "")
+                            url   = vid.get("video_url", "#")
+                            title = vid.get("title", "")
+                            views = vid.get("view_count", 0)
+                            likes = vid.get("like_count", 0)
+                            cmts  = vid.get("comment_count", 0)
+                            pub   = vid.get("published_at", "")[:10]
+
+                            if thumb:
+                                st.markdown(
+                                    f'<a href="{url}" target="_blank">'
+                                    f'<img src="{thumb}" style="width:100%;border-radius:8px;'
+                                    f'margin-bottom:4px;transition:opacity .2s;">'
+                                    f'</a>',
+                                    unsafe_allow_html=True,
+                                )
+                            # 제목
                             st.markdown(
-                                f"**[{title[:35]}{'…' if len(title)>35 else ''}]({vid['video_url']})**"
+                                f'<a href="{url}" target="_blank" '
+                                f'style="font-size:12px;font-weight:700;color:#fff;'
+                                f'text-decoration:none;line-height:1.4;">'
+                                f'{title[:38]}{"…" if len(title)>38 else ""}</a>',
+                                unsafe_allow_html=True,
                             )
-                            st.caption(
-                                f"📅 {vid['published_at']}  \n"
-                                f"👁 {vid['view_count']:,}  💬 {vid['comment_count']:,}  "
-                                f"👍 {vid['like_count']:,}"
+                            # 통계
+                            like_rate = round(likes / max(views, 1) * 100, 1)
+                            st.markdown(
+                                f'<div style="font-size:11px;color:#aaa;margin-top:3px;">'
+                                f'👁 {views:,} &nbsp;💬 {cmts:,} &nbsp;👍 {like_rate}%<br>'
+                                f'📅 {pub}</div>',
+                                unsafe_allow_html=True,
                             )
+                st.divider()
+
+        # 전체 탭
+        with cat_tabs[0]:
+            _render_channel_cards(dash_channels)
+
+        # 카테고리별 탭
+        for tab, cat in zip(cat_tabs[1:], cats_in_data[1:]):
+            with tab:
+                _render_channel_cards([c for c in dash_channels if c["category"] == cat])
 
         # 전체 CSV 다운로드
         all_rows = []
