@@ -2651,6 +2651,26 @@ DEFAULT_MODELS: dict[str, str] = {
     "openai": "gpt-4o",
 }
 
+# ── Suno v5.5 5단계 레이어 마스터 템플릿 ─────────────────────────
+SUNO55_LAYER_TEMPLATE = (
+    "[1단계: 메인 장르/시대배경], [2단계: 알고리즘 훅 인트로], "
+    "[3단계: 시그니처 악기 조합], [4단계: 보컬 톤 & 가창 스타일], "
+    "[5단계: 감정선 및 서사 테마]"
+)
+SUNO55_STYLE_PROMPT = """\
+Suno v5.5 하이브리드 5단계 레이어 구조로 style_tags를 작성하세요:
+[1단계] 메인 장르 + 시대배경 (예: Korean traditional ballad, neo-trot, joseon hip hop...)
+[2단계] 알고리즘 훅 인트로 — 초반 3초를 사로잡는 폭발적·감성적 인트로 묘사
+        (예: explosive hyper brass intro / beautiful emotional piano intro / hybrid cinematic intense intro)
+[3단계] 시그니처 악기 조합 — 핵심악기1 + 핵심악기2 + 베이스/드럼. modern/loop 수식어로 세련되게
+        (예: modern haegeum loop, dark gayageum, heavy techno bassline)
+[4단계] 보컬 톤 & 가창 스타일 + BPM
+        (예: powerful and clear trot vocal, 137bpm / emotional and soft tone, gentle delivery, 75bpm)
+[5단계] 감정선 + 서사 테마 + 공간감
+        (예: dramatic tension, nostalgic ambience, healing theme / survival, betrayal, cinematic OST feeling)
+마지막에 반드시 추가: detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth, Korean lyrics
+"""
+
 
 def _render_seo_card(seo: dict) -> None:
     st.markdown("#### 🔎 [유튜브 SEO]")
@@ -2726,13 +2746,23 @@ def _render_lyrics_card(lyrics: str) -> None:
         st.code(style_line, language=None)
 
     bundle = body + ("\n\nStyle Prompts: " + style_line if style_line else "")
-    st.download_button(
-        "📥 가사 묶음 다운로드 (.txt)",
-        data=bundle.encode("utf-8"),
-        file_name=f"lyrics_{datetime.now():%Y%m%d_%H%M%S}.txt",
-        mime="text/plain",
-        key="story_dl_lyrics",
-    )
+    dl_col, send_col = st.columns([1, 1])
+    with dl_col:
+        st.download_button(
+            "📥 가사 묶음 다운로드 (.txt)",
+            data=bundle.encode("utf-8"),
+            file_name=f"lyrics_{datetime.now():%Y%m%d_%H%M%S}.txt",
+            mime="text/plain",
+            key="story_dl_lyrics",
+        )
+    with send_col:
+        if st.button("🎵 Suno 곡 생성으로 가사 보내기", key="story_send_to_suno",
+                     use_container_width=True, type="primary"):
+            st.session_state["sg_imported_lyrics"] = body
+            st.session_state["sg_imported_style"] = style_line
+            st.session_state["nav_music_subtab"] = "suno_gen"
+            st.toast("✅ 가사를 Suno 곡 생성 탭으로 보냈습니다! '음악 만들기' → 'Suno 곡 생성' 탭을 확인하세요.")
+            st.info("👆 왼쪽 메뉴에서 **음악 만들기 → 🎵 Suno 곡 생성** 탭으로 이동하세요.")
 
 
 def render_storytelling_tab() -> None:
@@ -8242,6 +8272,104 @@ def render_suno_generator_tab() -> None:
     if not gemini_key and not openai_key:
         st.warning("🔑 Gemini 또는 OpenAI API 키가 필요합니다. 왼쪽 메뉴 **API 연결**에서 키를 등록하세요.")
 
+    # ── 스토리텔링 탭에서 가사 임포트 감지 ──────────────────────
+    imported_lyrics = st.session_state.get("sg_imported_lyrics", "")
+    if imported_lyrics:
+        with st.container(border=True):
+            st.markdown(
+                '<div style="background:linear-gradient(90deg,#0d2b1a,#0a1f2e);'
+                'border:1.5px solid #00e676;border-radius:10px;padding:12px 16px;">'
+                '<span style="color:#00e676;font-size:16px;font-weight:900;">📥 스토리텔링 탭에서 가사가 도착했습니다!</span>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+            with st.expander("📝 가져온 가사 확인", expanded=False):
+                st.text_area("가져온 가사", value=imported_lyrics, height=200,
+                             key="sg_imp_preview", label_visibility="collapsed")
+
+            imp_c1, imp_c2, imp_c3 = st.columns(3)
+            with imp_c1:
+                if st.button("🤖 어울리는 Suno 스타일 자동 생성", key="sg_imp_auto_style",
+                             use_container_width=True, type="primary"):
+                    if not gemini_key and not openai_key:
+                        st.error("API 키를 먼저 등록하세요.")
+                    else:
+                        _style_prompt = f"""{SUNO55_STYLE_PROMPT}
+아래 가사를 분석하여 가사의 감정·주제·분위기에 완벽하게 어울리는 Suno v5.5 style_tags를 5단계 레이어 구조로 생성하세요.
+가사의 언어(한국어/영어 등), 장르 힌트, 감정 흐름을 모두 반영하세요.
+결과는 style_tags 문자열 하나만 출력하세요 (다른 설명 없이).
+
+【가사】
+{imported_lyrics[:1500]}
+"""
+                        with st.spinner("🎵 가사 분석 중 — Suno 5.5 5단계 스타일 생성..."):
+                            try:
+                                raw, used = _ai_generate(_style_prompt, gemini_key, openai_key, temperature=0.8)
+                                raw = raw.strip().strip("`").strip()
+                                st.session_state["sg_imported_auto_style"] = raw
+                                st.toast("✅ 스타일 자동 생성 완료!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"스타일 생성 실패: {e}")
+
+            with imp_c2:
+                if st.button("🎲 AI가 장르·무드 임의 선택", key="sg_imp_random_style",
+                             use_container_width=True):
+                    if not gemini_key and not openai_key:
+                        st.error("API 키를 먼저 등록하세요.")
+                    else:
+                        _rand_prompt = f"""{SUNO55_STYLE_PROMPT}
+아래 가사를 분석한 뒤, 가사 분위기와 잘 어울리면서도 **예상을 살짝 벗어나는 흥미로운 장르 조합**으로
+Suno v5.5 style_tags를 5단계 레이어 구조로 창의적으로 생성하세요.
+예: 트로트 가사인데 EDM 퓨전 / 발라드 가사인데 재즈 스윙 등 의외의 조합을 시도하세요.
+결과는 style_tags 문자열 하나만 출력 (다른 설명 없이).
+
+【가사】
+{imported_lyrics[:1500]}
+"""
+                        with st.spinner("🎲 AI가 창의적 스타일을 고르는 중..."):
+                            try:
+                                raw, used = _ai_generate(_rand_prompt, gemini_key, openai_key, temperature=1.1)
+                                raw = raw.strip().strip("`").strip()
+                                st.session_state["sg_imported_random_style"] = raw
+                                st.toast("🎲 창의적 스타일 생성 완료!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"스타일 생성 실패: {e}")
+
+            with imp_c3:
+                if st.button("❌ 가사 지우기", key="sg_imp_clear", use_container_width=True):
+                    st.session_state.pop("sg_imported_lyrics", None)
+                    st.session_state.pop("sg_imported_style", None)
+                    st.session_state.pop("sg_imported_auto_style", None)
+                    st.session_state.pop("sg_imported_random_style", None)
+                    st.rerun()
+
+            # 자동 생성된 스타일 표시
+            auto_style = st.session_state.get("sg_imported_auto_style", "")
+            rand_style = st.session_state.get("sg_imported_random_style", "")
+
+            if auto_style:
+                st.markdown("**🤖 자동 분석 스타일 태그 (5단계 레이어)**")
+                st.code(auto_style, language=None)
+                if st.button("✅ 이 스타일로 프리셋 적용", key="sg_imp_use_auto"):
+                    st.session_state["sg_preset_tags"] = auto_style
+                    st.toast("✅ 프리셋으로 적용됨!")
+                    st.rerun()
+
+            if rand_style:
+                st.markdown("**🎲 AI 임의 선택 스타일 태그**")
+                st.code(rand_style, language=None)
+                if st.button("✅ 이 스타일로 프리셋 적용", key="sg_imp_use_rand"):
+                    st.session_state["sg_preset_tags"] = rand_style
+                    st.toast("✅ 프리셋으로 적용됨!")
+                    st.rerun()
+
+            # 가사를 주제 입력칸에 자동 반영 안내
+            st.caption("💡 아래 **주제/컨텐** 입력란에 가사 내용 요약을 넣으면 더 잘 어울리는 10곡을 생성합니다.")
+
+        st.divider()
+
     # ── 머니코드 적용 배너 ────────────────────────────────────
     mc_applied = st.session_state.get("sg_money_code")
     if mc_applied:
@@ -8822,10 +8950,14 @@ def render_suno_generator_tab() -> None:
 - 한 줄에 음절 12개 초과 금지 (멜로디가 뭉개짐)
 - 억지 라임 금지 (자연스럽게 어울릴 때만)
 {trot_block}
-【스타일 태그 규칙】
-- 영문, Suno에 바로 붙여넣을 수 있는 형식
-- 예: "trot, female vocal, emotional, piano, haegeum, reverb, 85 BPM, cinematic"
-- style_tags 마지막에는 반드시 다음을 포함: detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth
+【스타일 태그 규칙 — Suno v5.5 5단계 레이어 구조 필수 적용】
+각 곡의 style_tags를 아래 5단계 순서로 영문으로 작성하세요:
+[1단계] 메인 장르/시대배경 (예: neo-trot, Korean traditional ballad, joseon hip hop)
+[2단계] 알고리즘 훅 인트로 — 초반 3초를 사로잡는 묘사 (예: explosive hyper brass intro / beautiful emotional piano intro)
+[3단계] 시그니처 악기 조합 — modern/loop 수식어 사용 (예: modern haegeum loop, fast electronic accordion, heavy techno bassline)
+[4단계] 보컬 톤 & 가창 스타일 + BPM (예: powerful and clear trot vocal, high-pitched delivery, 137bpm)
+[5단계] 감정선 + 서사 테마 + 공간감 (예: dramatic tension, festive ambience, healing theme, cinematic OST feeling)
+마지막 필수 태그: detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth, Korean lyrics
 {lyric_header_block}
 
 JSON 스키마 (배열, 10개):
