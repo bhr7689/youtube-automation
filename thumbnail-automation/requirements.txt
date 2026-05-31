@@ -1,0 +1,22 @@
+# 수집
+google-api-python-client>=2.100.0
+httpx>=0.27.0
+beautifulsoup4>=4.12.0
+Pillow>=10.0.0
+
+# 분석
+google-genai>=0.8.0
+colorthief>=0.2.1
+
+# 생성 / 이미지
+openai>=1.30.0
+replicate>=0.25.0
+
+# UI
+streamlit>=1.35.0
+pandas>=2.0.0
+
+# 유틸
+python-dotenv>=1.0.0
+isodate>=0.6.1
+schedule>=1.2.0

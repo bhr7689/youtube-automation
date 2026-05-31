@@ -1,0 +1,46 @@
+{
+  "emotion_map": {
+    "nostalgia": {
+      "color_palette": ["#C9A96E", "#E8D5B7", "#8B6F47", "#F5EFE6"],
+      "composition": "center_heavy",
+      "preferred_hook": ["레트로리마스터", "감정과잉"],
+      "face_expression": "bittersweet_smile",
+      "background": "soft_blur"
+    },
+    "joy": {
+      "color_palette": ["#FF6B35", "#FFD23F", "#FF1744", "#FFFFFF"],
+      "composition": "diagonal_energy",
+      "preferred_hook": ["비현실대비", "시선강탈"],
+      "face_expression": "wide_open_mouth_laugh",
+      "background": "vivid_gradient"
+    },
+    "gratitude": {
+      "color_palette": ["#E8A87C", "#F7D08A", "#C8B8A2", "#FFF8F0"],
+      "composition": "rule_of_thirds",
+      "preferred_hook": ["감정과잉", "레트로리마스터"],
+      "face_expression": "gentle_smile_eyes_closed",
+      "background": "warm_bokeh"
+    },
+    "desire": {
+      "color_palette": ["#D62828", "#F7B731", "#FF6B6B", "#1A1A2E"],
+      "composition": "close_up_fill",
+      "preferred_hook": ["시선강탈", "정보불완전"],
+      "face_expression": "anticipation",
+      "background": "dark_contrast"
+    },
+    "curiosity": {
+      "color_palette": ["#0077B6", "#00B4D8", "#90E0EF", "#03045E"],
+      "composition": "leading_lines",
+      "preferred_hook": ["정보불완전", "비현실대비"],
+      "face_expression": "raised_eyebrow",
+      "background": "mysterious_dark"
+    },
+    "fear": {
+      "color_palette": ["#1A1A2E", "#16213E", "#0F3460", "#E94560"],
+      "composition": "bottom_heavy",
+      "preferred_hook": ["시선강탈", "정보불완전"],
+      "face_expression": "wide_eyes_open_mouth",
+      "background": "dark_vignette"
+    }
+  }
+}

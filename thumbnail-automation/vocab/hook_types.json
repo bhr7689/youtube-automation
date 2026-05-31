@@ -1,0 +1,39 @@
+{
+  "hook_types": [
+    {
+      "id": "시선강탈",
+      "description": "뇌가 '이상하다' 감지하고 멈추게 만드는 요소",
+      "examples": ["눈동자 색 이질감", "비대칭 표정", "손가락이 카메라를 가리킴", "한쪽 눈만 찡그림"],
+      "best_for": ["공포", "반전", "충격"],
+      "prompt_keywords": ["asymmetric expression", "direct eye contact", "unusual gaze", "pointing at camera"]
+    },
+    {
+      "id": "감정과잉",
+      "description": "공감 회로를 즉시 발동시키는 감정 극대화 요소",
+      "examples": ["눈물 한 방울", "입술의 미세한 떨림", "손이 가슴을 짚음", "눈이 충혈"],
+      "best_for": ["트로트_그리움", "트로트_효도", "감동"],
+      "prompt_keywords": ["tear drop", "emotional expression", "hand on chest", "overwhelmed face"]
+    },
+    {
+      "id": "정보불완전",
+      "description": "궁금증을 유발해 클릭을 강제하는 불완전 정보",
+      "examples": ["텍스트 일부 잘림", "뒷모습만 보임", "얼굴 일부 가려짐", "?로 끝나는 텍스트"],
+      "best_for": ["반전_호기심", "먹방", "정보성"],
+      "prompt_keywords": ["partially hidden face", "back view", "silhouette", "mystery element"]
+    },
+    {
+      "id": "비현실대비",
+      "description": "인지 불협화음으로 이중 클릭 충동 유발",
+      "examples": ["할머니 + 힙합 헬멧", "트로트 가수 + 사이버펑크 배경", "전통 한복 + 현대 도심"],
+      "best_for": ["트로트_흥", "반전"],
+      "prompt_keywords": ["unexpected contrast", "traditional meets modern", "surreal combination", "genre mismatch"]
+    },
+    {
+      "id": "레트로리마스터",
+      "description": "낯익지만 새로운 — 과거 히트 패턴 + 현대 감각",
+      "examples": ["VHS 필터 + 4K 인물", "빛바랜 사진 느낌 + 선명한 텍스트", "90년대 색감 + 현대 폰트"],
+      "best_for": ["트로트_그리움", "트로트_효도"],
+      "prompt_keywords": ["retro aesthetic", "VHS grain", "vintage color grade", "nostalgic filter with sharp subject"]
+    }
+  ]
+}
