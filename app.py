@@ -8235,7 +8235,7 @@ def render_suno_generator_tab() -> None:
         sg_theme = st.text_area(
             "📝 주제 / 컨텐 (가사 내용, 선택)",
             height=80,
-            placeholder="예: 피아노 재즈 바 + 스모크 / 달달한 거리 술집 / 친구들과의 추억...",
+            placeholder="예: 고향 가는 길, 보고 싶은 엄마, 새벽 포장마차에서 혼술...",
             key="sg_theme",
         )
 
@@ -8246,6 +8246,79 @@ def render_suno_generator_tab() -> None:
             placeholder="예: piano, acoustic guitar, soft drums, reverb, warm bass",
             key="sg_instrument",
         )
+
+        st.divider()
+
+        # ── 트로트 전용 가사 옵션 ──────────────────────────────
+        st.markdown("**🎤 트로트 전용 가사 옵션**")
+
+        trot_col1, trot_col2 = st.columns(2)
+
+        with trot_col1:
+            # 감탄사 / 반복구
+            st.markdown("**감탄사 · 반복구** (후렴에 삽입)")
+            exclaim_presets = [
+                "없음", "예뻐 예뻐", "얼씨구 얼씨구", "좋다 좋아",
+                "아이고 아이고", "어머 어머", "와~야 와~야",
+                "짝짝꿍 짝짝꿍", "흥이야 흥", "직접 입력",
+            ]
+            exclaim_sel = st.pills(
+                "감탄사", exclaim_presets, selection_mode="single",
+                default="없음", key="sg_exclaim",
+            )
+            if exclaim_sel == "직접 입력":
+                sg_exclaim = st.text_input("감탄사 직접 입력", placeholder="예: 아리랑 아리랑", key="sg_exclaim_custom")
+            else:
+                sg_exclaim = exclaim_sel if exclaim_sel != "없음" else ""
+
+            # 사투리 지역
+            st.markdown("**사투리 지역** (후렴구에 반영)")
+            dialect_opts = [
+                "없음 (표준어)", "경상도 (거마이 좋다~)", "전라도 (거시기~)",
+                "충청도 (그려~ 그려~)", "강원도 (글쎄요~)", "제주도 (헤여~)",
+                "서울 신촌 (야 진짜~)", "직접 입력",
+            ]
+            dialect_sel = st.pills(
+                "사투리", dialect_opts, selection_mode="single",
+                default="없음 (표준어)", key="sg_dialect",
+            )
+            if dialect_sel == "직접 입력":
+                sg_dialect = st.text_input("사투리 직접 입력", placeholder="예: 부산 (~했나예)", key="sg_dialect_custom")
+            else:
+                sg_dialect = "" if dialect_sel == "없음 (표준어)" else dialect_sel
+
+        with trot_col2:
+            # 가사 구조
+            st.markdown("**가사 구조**")
+            struct_opts = [
+                "8섹션 풀구조 (V1-PC1-C1-V2-PC2-C2-Br-C3)",
+                "4섹션 (V1-C1-V2-C2)",
+                "6섹션 (V1-C1-V2-C2-Br-C3)",
+            ]
+            sg_structure = st.pills(
+                "구조", struct_opts, selection_mode="single",
+                default="8섹션 풀구조 (V1-PC1-C1-V2-PC2-C2-Br-C3)", key="sg_structure",
+            )
+
+            # 숏폼 바이럴 느낌
+            sg_viral = st.toggle("🔥 숏폼 바이럴 코믹 느낌", value=False, key="sg_viral",
+                                  help="코러스에 코믹하고 귀에 착착 감기는 반복구 강화")
+
+            # 음절 밀도
+            st.markdown("**음절 밀도**")
+            sg_syllable = st.pills(
+                "음절",
+                ["촘촘 (빠른 랩핏)", "보통", "여유 (긴 멜로디)"],
+                selection_mode="single", default="보통", key="sg_syllable",
+            )
+
+            # 후렴 반복 강도
+            st.markdown("**후렴 반복 강도**")
+            sg_repeat = st.pills(
+                "반복",
+                ["1회", "2회 반복", "3회 강하게"],
+                selection_mode="single", default="2회 반복", key="sg_repeat",
+            )
 
     st.divider()
 
@@ -8260,7 +8333,14 @@ def render_suno_generator_tab() -> None:
             st.error("Gemini 또는 OpenAI API 키를 먼저 등록해주세요.")
             st.stop()
 
-        bpm_str = sg_bpm or "보통 (90-110 BPM)"
+        bpm_str   = sg_bpm or "보통 (90-110 BPM)"
+        sg_exclaim  = st.session_state.get("sg_exclaim_custom", "") if st.session_state.get("sg_exclaim") == "직접 입력" else (st.session_state.get("sg_exclaim","") if st.session_state.get("sg_exclaim","") != "없음" else "")
+        sg_dialect  = st.session_state.get("sg_dialect_custom", "") if st.session_state.get("sg_dialect") == "직접 입력" else (st.session_state.get("sg_dialect","") if st.session_state.get("sg_dialect","") not in ("없음 (표준어)","") else "")
+        sg_structure = st.session_state.get("sg_structure", "8섹션 풀구조 (V1-PC1-C1-V2-PC2-C2-Br-C3)")
+        sg_viral    = st.session_state.get("sg_viral", False)
+        sg_syllable = st.session_state.get("sg_syllable", "보통")
+        sg_repeat   = st.session_state.get("sg_repeat", "2회 반복")
+
         mc = st.session_state.get("sg_money_code")
         mc_block = ""
         if mc:
@@ -8270,23 +8350,61 @@ def render_suno_generator_tab() -> None:
 {"- 고정 태그 (반드시 포함): " + mc['fixed_tags'] if mc.get('fixed_tags') else ""}
 {"- 금지 태그 (절대 사용 금지): " + mc['banned_tags'] if mc.get('banned_tags') else ""}
 """
+
+        # 구조 매핑
+        struct_map = {
+            "8섹션 풀구조 (V1-PC1-C1-V2-PC2-C2-Br-C3)":
+                "[Verse 1] → [Pre-Chorus 1] → [Chorus 1] → [Verse 2] → [Pre-Chorus 2] → [Chorus 2] → [Bridge] → [Chorus 3]",
+            "4섹션 (V1-C1-V2-C2)":
+                "[Verse 1] → [Chorus 1] → [Verse 2] → [Chorus 2]",
+            "6섹션 (V1-C1-V2-C2-Br-C3)":
+                "[Verse 1] → [Chorus 1] → [Verse 2] → [Chorus 2] → [Bridge] → [Chorus 3]",
+        }
+        structure_str = struct_map.get(sg_structure or "", struct_map["8섹션 풀구조 (V1-PC1-C1-V2-PC2-C2-Br-C3)"])
+
+        trot_block = ""
+        if sg_exclaim or sg_dialect or sg_viral:
+            trot_block = f"""
+트로트 전용 가사 규칙:
+{"- 코러스마다 감탄사 반복구 삽입: 「" + sg_exclaim + "」 — 2~3회 연속 반복, 귀에 착착 감기게" if sg_exclaim else ""}
+{"- 후렴구에 " + sg_dialect + " 사투리 표현 자연스럽게 삽입 (코믹하고 친근하게)" if sg_dialect else ""}
+{"- 숏폼 바이럴 코믹 느낌: 코러스는 SNS 댓글에 따라 부를 수 있을 만큼 중독성 강하게, 과장된 감탄과 반복으로 웃음 포인트 삽입" if sg_viral else ""}
+- 음절 밀도: {sg_syllable} (촘촘=랩핏 빠른 가사 / 여유=긴 멜로디 음절)
+- 코러스 반복 강도: {sg_repeat}
+"""
+
         prompt = f"""
-당신은 Suno AI 음악 전문 프롬프트 엔지니어입니다.
+당신은 한국 트로트 전문 작사가이자 Suno AI 프롬프트 엔지니어입니다.
 아래 조건으로 서로 다른 **10곡**의 제목, Suno 스타일 태그, 가사를 JSON으로 작성하세요.
 
-조건:
+【음악 옵션】
 - 장르: {', '.join(sg_genres)}
 - 언어: {sg_lang or '한국어'}
 - 보컬: {', '.join(sg_vocal) if sg_vocal else '여자 솔로'}
 - 템포/BPM: {bpm_str}
 - 분위기: {', '.join(sg_mood) if sg_mood else '밝고 신나는'}
 - 시대감: {sg_era or '현대 (2020s)'}
-- 상황/주제: {', '.join(sg_situation) if sg_situation else ''}
+- 상황/주제: {', '.join(sg_situation) if sg_situation else '자유롭게'}
 - 곡 길이: {mins}분 {secs:02d}초
 - 가사 내용: {sg_theme or '자유롭게'}
 - 악기 디테일: {sg_instrument or '자유롭게'}
 {mc_block}
-**각 곡의 스타일 태그는 Suno에 바로 붙여넣을 수 있는 영문 태그** (예: "trot, female vocal, upbeat, 90s retro, piano, emotional")
+【가사 구조 — 반드시 이 순서로, 섹션 태그 포함】
+{structure_str}
+
+각 섹션 앞에 반드시 Suno 구조 태그를 붙이세요:
+[Verse 1], [Pre-Chorus 1], [Chorus 1], [Verse 2], [Pre-Chorus 2], [Chorus 2], [Bridge], [Chorus 3]
+
+【각 섹션 작사 가이드】
+- [Verse]: 구체적 장면 묘사 (추상 X, 감각적 이미지 O) — "새벽 3시 포장마차 연기 냄새" 같은 식
+- [Pre-Chorus]: 감정 고조, 코러스로 이어지는 브릿지 역할, 짧고 강하게
+- [Chorus]: 핵심 감정 한 줄 + 감탄사 반복구, 누구나 따라 부를 수 있게
+- [Bridge]: 반전 또는 절정 감정, 멜로디 변화 암시
+- [Chorus 3]: 마지막 클라이맥스, 앞 코러스보다 강렬하게
+{trot_block}
+【스타일 태그 규칙】
+- 영문, Suno에 바로 붙여넣을 수 있는 형식
+- 예: "trot, female vocal, emotional, piano, haegeum, reverb, 85 BPM, cinematic"
 
 JSON 스키마 (배열, 10개):
 [
@@ -8294,8 +8412,8 @@ JSON 스키마 (배열, 10개):
     "num": 1,
     "title_ko": "한국어 제목",
     "title_en": "English Title",
-    "style_tags": "suno style prompt tags in english",
-    "lyrics": "가사 (버스1 + 코러스 + 버스2 + 코러스 구조, 언어는 조건에 따름)"
+    "style_tags": "suno style tags in english",
+    "lyrics": "섹션 태그 포함 전체 가사"
   }},
   ...
 ]
