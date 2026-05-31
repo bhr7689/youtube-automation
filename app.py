@@ -1361,6 +1361,55 @@ def call_llm(
     raise ValueError(f"Unknown provider: {provider}")
 
 
+def _ai_generate(prompt: str, gemini_key: str, openai_key: str,
+                 temperature: float = 0.9) -> tuple[str, str]:
+    """Gemini 우선 호출, 실패 시 OpenAI 자동 폴백.
+    Returns (raw_text, used_provider).
+    API_KEY_SERVICE_BLOCKED 등 Gemini 오류 시 OpenAI로 전환.
+    """
+    _GEMINI_BLOCKED_HINTS = ("API_KEY_SERVICE_BLOCKED", "blocked", "403", "PERMISSION_DENIED")
+
+    if gemini_key:
+        try:
+            import google.generativeai as genai  # type: ignore
+            genai.configure(api_key=gemini_key)
+            model = genai.GenerativeModel(
+                "gemini-1.5-flash",
+                generation_config={"temperature": temperature},
+            )
+            resp = model.generate_content(prompt)
+            return (resp.text or "").strip(), "gemini"
+        except Exception as e:
+            err_str = str(e)
+            if any(h in err_str for h in _GEMINI_BLOCKED_HINTS):
+                # API 키 서비스 차단 → OpenAI 폴백
+                if openai_key:
+                    pass  # fall through to OpenAI below
+                else:
+                    raise RuntimeError(
+                        "🚫 Gemini API 키가 차단되었습니다 (API_KEY_SERVICE_BLOCKED).\n\n"
+                        "**해결 방법:**\n"
+                        "1. [Google Cloud Console](https://console.cloud.google.com) → API 및 서비스 → 사용 설정된 API\n"
+                        "2. **'Generative Language API'** 검색 후 **사용 설정**\n"
+                        "3. API 키 제한이 있다면 해당 API 허용 목록에 추가\n\n"
+                        "또는 OpenAI API 키를 등록하면 자동으로 사용됩니다."
+                    ) from e
+            else:
+                raise
+
+    if openai_key:
+        from openai import OpenAI  # type: ignore
+        client = OpenAI(api_key=openai_key)
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=temperature,
+        )
+        return (resp.choices[0].message.content or "").strip(), "openai"
+
+    raise RuntimeError("Gemini 또는 OpenAI API 키를 먼저 등록해주세요.")
+
+
 def _parse_seo_payload(raw: str) -> dict:
     """LLM 이 JSON 외 텍스트(코드펜스 등)를 섞어 보내도 견디게 파싱."""
     import json
@@ -7960,22 +8009,9 @@ JSON 스키마 (배열, 10개):
         with st.spinner("🎵 AI가 10곡을 작곡 중입니다... 잠시만 기다려주세요!"):
             songs = None
             try:
-                raw = ""
-                if gemini_key:
-                    import google.generativeai as genai  # type: ignore
-                    genai.configure(api_key=gemini_key)
-                    model = genai.GenerativeModel("gemini-1.5-flash")
-                    resp = model.generate_content(prompt)
-                    raw = resp.text.strip()
-                elif openai_key:
-                    import openai as _oai  # type: ignore
-                    client = _oai.OpenAI(api_key=openai_key)
-                    resp = client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=[{"role": "user", "content": prompt}],
-                        temperature=0.9,
-                    )
-                    raw = resp.choices[0].message.content.strip()
+                raw, used = _ai_generate(prompt, gemini_key, openai_key, temperature=0.9)
+                if used == "openai" and gemini_key:
+                    st.info("ℹ️ Gemini 키 오류로 OpenAI로 자동 전환했습니다.")
 
                 if raw.startswith("```"):
                     raw = raw.split("```")[1]
@@ -7988,6 +8024,29 @@ JSON 스키마 (배열, 10개):
                     "bpm": bpm_str, "mood": sg_mood, "era": sg_era,
                     "situation": sg_situation, "theme": sg_theme,
                 }
+            except RuntimeError as e:
+                st.error(str(e))
+                if "API_KEY_SERVICE_BLOCKED" in str(e) or "차단" in str(e):
+                    with st.expander("🔧 Gemini API 활성화 방법"):
+                        st.markdown("""
+**원인:** Gemini API 키에 `Generative Language API` 서비스가 차단되어 있습니다.
+
+**해결 방법 (택1):**
+
+**방법 1 — Gemini API 활성화 (권장)**
+1. [Google Cloud Console](https://console.cloud.google.com) 접속
+2. 좌측 메뉴 → **API 및 서비스** → **라이브러리**
+3. `Generative Language API` 검색 → **사용 설정** 클릭
+4. API 키에 제한이 있다면: **사용자 인증 정보** → 해당 키 → API 제한 → 목록에 추가
+
+**방법 2 — AI Studio 키 새로 발급**
+1. [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey) 접속
+2. 새 키 발급 → 앱 **API 연결** 메뉴에서 교체
+
+**방법 3 — OpenAI 키 등록**
+- OpenAI API 키를 등록하면 Gemini 없이도 바로 사용 가능합니다.
+""")
+                st.stop()
             except Exception as e:
                 st.error(f"생성 실패: {e}")
                 st.stop()
@@ -8218,24 +8277,9 @@ def render_channel_planning_tab() -> None:
         plan_data = None
         with st.spinner("AI가 채널 기획안을 작성 중입니다..."):
             try:
-                if gemini_key:
-                    import google.generativeai as genai  # type: ignore
-                    genai.configure(api_key=gemini_key)
-                    model = genai.GenerativeModel("gemini-1.5-flash")
-                    resp = model.generate_content(prompt_text)
-                    raw = resp.text.strip()
-                elif openai_key:
-                    import openai as _oai  # type: ignore
-                    client = _oai.OpenAI(api_key=openai_key)
-                    resp = client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=[{"role": "user", "content": prompt_text}],
-                        temperature=0.8,
-                    )
-                    raw = resp.choices[0].message.content.strip()
-                else:
-                    st.error("API 키가 없습니다.")
-                    st.stop()
+                raw, used = _ai_generate(prompt_text, gemini_key, openai_key, temperature=0.8)
+                if used == "openai" and gemini_key:
+                    st.info("ℹ️ Gemini 키 오류로 OpenAI로 자동 전환했습니다.")
 
                 # JSON 파싱
                 if raw.startswith("```"):
@@ -8248,6 +8292,9 @@ def render_channel_planning_tab() -> None:
                     "genre": genre, "style": channel_style,
                     "target": target_age, "mood": mood_keywords,
                 }
+            except RuntimeError as e:
+                st.error(str(e))
+                st.stop()
             except Exception as e:
                 st.error(f"생성 실패: {e}")
                 st.stop()
