@@ -2264,6 +2264,7 @@ _HOTPLI_GENRE_KEYWORDS: dict[str, list[str]] = {
 _HOTPLI_PERIOD: dict[str, int] = {
     "24시간": 1,
     "7일": 7,
+    "14일": 14,
     "30일": 30,
     "90일": 90,
 }
