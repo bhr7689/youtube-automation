@@ -700,19 +700,24 @@ if results:
                     unsafe_allow_html=True,
                 )
                 # 액션 버튼
-                btn_c1, btn_c2 = st.columns(2)
+                btn_c1, btn_c2, btn_c3 = st.columns(3)
                 with btn_c1:
                     if st.button("제목 복사", key=f"copy_{item['video_id']}", use_container_width=True):
-                        # JS clipboard copy
+                        st.toast("📋 제목이 복사되었습니다!")
                         st.markdown(
-                            f"""<script>
-                            navigator.clipboard.writeText({json.dumps(item['title'])});
-                            </script>""",
+                            f"""<script>navigator.clipboard.writeText({json.dumps(item['title'])});</script>""",
                             unsafe_allow_html=True,
                         )
-                        st.toast("📋 제목이 복사되었습니다!")
 
                 with btn_c2:
+                    if st.button("🔗 링크 복사", key=f"link_{item['video_id']}", use_container_width=True):
+                        st.toast("🔗 링크가 복사되었습니다!")
+                        st.markdown(
+                            f"""<script>navigator.clipboard.writeText({json.dumps(item['youtube_url'])});</script>""",
+                            unsafe_allow_html=True,
+                        )
+
+                with btn_c3:
                     if st.button("AI 아이디어", key=f"ai_{item['video_id']}", use_container_width=True, type="primary"):
                         ai_key = st.session_state.ai_key or os.environ.get("GEMINI_API_KEY", "")
                         if not ai_key:
