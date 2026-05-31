@@ -1309,18 +1309,19 @@ def _call_gemini(
     api_key: str, prompt: str, *, model: str, response_json: bool
 ) -> str:
     try:
-        import google.generativeai as genai  # type: ignore
+        from google import genai as _genai  # type: ignore
+        from google.genai import types as _gtypes  # type: ignore
     except ImportError as e:
         raise RuntimeError(
-            "google-generativeai 패키지가 설치되어 있지 않습니다. "
-            "`pip install google-generativeai` 후 다시 시도하세요."
+            "google-genai 패키지가 설치되어 있지 않습니다. "
+            "`pip install google-genai` 후 다시 시도하세요."
         ) from e
-    genai.configure(api_key=api_key)
-    gen_cfg: dict = {"temperature": 0.9}
+    client = _genai.Client(api_key=api_key)
+    cfg_kwargs: dict = {"temperature": 0.9}
     if response_json:
-        gen_cfg["response_mime_type"] = "application/json"
-    m = genai.GenerativeModel(model_name=model, generation_config=gen_cfg)
-    resp = m.generate_content(prompt)
+        cfg_kwargs["response_mime_type"] = "application/json"
+    cfg = _gtypes.GenerateContentConfig(**cfg_kwargs)
+    resp = client.models.generate_content(model=model, contents=prompt, config=cfg)
     return (resp.text or "").strip()
 
 
@@ -1371,13 +1372,15 @@ def _ai_generate(prompt: str, gemini_key: str, openai_key: str,
 
     if gemini_key:
         try:
-            import google.generativeai as genai  # type: ignore
-            genai.configure(api_key=gemini_key)
-            model = genai.GenerativeModel(
-                "gemini-2.5-flash-preview-05-20",
-                generation_config={"temperature": temperature},
+            from google import genai as _genai  # type: ignore
+            from google.genai import types as _gtypes  # type: ignore
+            client = _genai.Client(api_key=gemini_key)
+            cfg = _gtypes.GenerateContentConfig(temperature=temperature)
+            resp = client.models.generate_content(
+                model="gemini-2.5-flash-preview-05-20",
+                contents=prompt,
+                config=cfg,
             )
-            resp = model.generate_content(prompt)
             return (resp.text or "").strip(), "gemini"
         except Exception as e:
             err_str = str(e)
@@ -2740,14 +2743,19 @@ def render_storytelling_tab() -> None:
         "청취자의 마음과 몸 컨디션을 묻는 질문을 항상 포함합니다."
     )
 
+    # 비교 모드 토글
+    compare_mode = st.toggle("⚖️ Gemini vs OpenAI 양측 비교 모드", value=False, key="story_compare",
+                             help="두 AI가 동시에 생성해 나란히 비교합니다")
+
     col_p, col_m = st.columns([1, 1])
     with col_p:
         provider_label = st.selectbox(
-            "AI 모델",
+            "AI 모델" if not compare_mode else "AI 모델 (비교 모드: 양쪽 모두 사용)",
             options=["Google Gemini (대본·가사 권장)", "OpenAI GPT"],
             index=0,
             key="story_provider",
             help="대본·가사는 Gemini 로 생성하는 것이 권장됩니다.",
+            disabled=compare_mode,
         )
     provider = "gemini" if provider_label.startswith("Google") else "openai"
     with col_m:
@@ -2759,51 +2767,68 @@ def render_storytelling_tab() -> None:
         )
     model_final = (model.strip() or DEFAULT_MODELS[provider])
 
-    _story_key_name = "gemini" if provider == "gemini" else "openai"
-    _saved_story_key = SAVED_KEYS.get(_story_key_name, "")
-    env_key = (
-        os.getenv("GEMINI_API_KEY") if provider == "gemini"
-        else os.getenv("OPENAI_API_KEY")
-    ) or _saved_story_key
-    api_key = st.text_input(
-        f"{'Gemini' if provider == 'gemini' else 'OpenAI'} API 키",
-        value=env_key,
-        type="password",
-        key="story_api_key",
-        help=(
-            "Gemini: https://aistudio.google.com/app/apikey   "
-            "OpenAI: https://platform.openai.com/api-keys"
-        ),
-    )
+    # API 키 입력
+    if compare_mode:
+        _gem_saved = SAVED_KEYS.get("gemini", "") or os.getenv("GEMINI_API_KEY", "")
+        _oai_saved = SAVED_KEYS.get("openai", "") or os.getenv("OPENAI_API_KEY", "")
+        cmp_c1, cmp_c2 = st.columns(2)
+        with cmp_c1:
+            gemini_key_cmp = st.text_input("🔵 Gemini API 키", value=_gem_saved, type="password", key="story_gem_cmp")
+        with cmp_c2:
+            openai_key_cmp = st.text_input("🟢 OpenAI API 키", value=_oai_saved, type="password", key="story_oai_cmp")
+        api_key = gemini_key_cmp  # 단일 모드 호환용
+    else:
+        _story_key_name = "gemini" if provider == "gemini" else "openai"
+        _saved_story_key = SAVED_KEYS.get(_story_key_name, "")
+        env_key = (
+            os.getenv("GEMINI_API_KEY") if provider == "gemini"
+            else os.getenv("OPENAI_API_KEY")
+        ) or _saved_story_key
+        api_key = st.text_input(
+            f"{'Gemini' if provider == 'gemini' else 'OpenAI'} API 키",
+            value=env_key,
+            type="password",
+            key="story_api_key",
+            help=(
+                "Gemini: https://aistudio.google.com/app/apikey   "
+                "OpenAI: https://platform.openai.com/api-keys"
+            ),
+        )
 
-    _k_col1, _k_col2, _k_col3 = st.columns([2, 1, 1])
-    with _k_col1:
-        if _saved_story_key:
-            st.caption(f"✅ {'Gemini' if provider == 'gemini' else 'OpenAI'} 키 저장됨 (마지막 4자리: `...{_saved_story_key[-4:]}`)")
-        else:
-            st.caption("💡 키를 저장하면 다음 세션에서도 자동으로 불러옵니다.")
-    with _k_col2:
-        if st.button("💾 키 저장", key="story_save_key", use_container_width=True):
-            if api_key.strip():
-                save_key(_story_key_name, api_key.strip())
-                SAVED_KEYS[_story_key_name] = api_key.strip()
-                st.toast(f"✅ {'Gemini' if provider == 'gemini' else 'OpenAI'} 키 저장 완료!")
-                st.rerun()
+    if compare_mode:
+        st.caption("💡 비교 모드: 두 키를 입력하면 Gemini·OpenAI가 동시에 생성해 나란히 보여줍니다.")
+
+    if compare_mode:
+        _k_col1, _k_col2, _k_col3 = None, None, None
+    else:
+        _k_col1, _k_col2, _k_col3 = st.columns([2, 1, 1])
+    if not compare_mode:
+        with _k_col1:
+            if _saved_story_key:
+                st.caption(f"✅ {'Gemini' if provider == 'gemini' else 'OpenAI'} 키 저장됨 (마지막 4자리: `...{_saved_story_key[-4:]}`)")
             else:
-                st.warning("키를 먼저 입력하세요.")
-    with _k_col3:
-        if st.button("🗑️ 키 해제", key="story_clear_key", use_container_width=True,
-                     disabled=not _saved_story_key):
-            SAVED_KEYS.pop(_story_key_name, None)
-            # 파일에서도 제거
-            _kdata = load_saved_keys()
-            _kdata.pop(_story_key_name, None)
-            os.makedirs(os.path.dirname(KEY_STORE_PATH) or ".", exist_ok=True)
-            with open(KEY_STORE_PATH, "w", encoding="utf-8") as _kf:
-                json.dump(_kdata, _kf, ensure_ascii=False, indent=2)
-            st.session_state.pop("story_api_key", None)
-            st.toast(f"🗑️ {'Gemini' if provider == 'gemini' else 'OpenAI'} 키 해제됨")
-            st.rerun()
+                st.caption("💡 키를 저장하면 다음 세션에서도 자동으로 불러옵니다.")
+        with _k_col2:
+            if st.button("💾 키 저장", key="story_save_key", use_container_width=True):
+                if api_key.strip():
+                    save_key(_story_key_name, api_key.strip())
+                    SAVED_KEYS[_story_key_name] = api_key.strip()
+                    st.toast(f"✅ {'Gemini' if provider == 'gemini' else 'OpenAI'} 키 저장 완료!")
+                    st.rerun()
+                else:
+                    st.warning("키를 먼저 입력하세요.")
+        with _k_col3:
+            if st.button("🗑️ 키 해제", key="story_clear_key", use_container_width=True,
+                         disabled=not _saved_story_key):
+                SAVED_KEYS.pop(_story_key_name, None)
+                _kdata = load_saved_keys()
+                _kdata.pop(_story_key_name, None)
+                os.makedirs(os.path.dirname(KEY_STORE_PATH) or ".", exist_ok=True)
+                with open(KEY_STORE_PATH, "w", encoding="utf-8") as _kf:
+                    json.dump(_kdata, _kf, ensure_ascii=False, indent=2)
+                st.session_state.pop("story_api_key", None)
+                st.toast(f"🗑️ {'Gemini' if provider == 'gemini' else 'OpenAI'} 키 해제됨")
+                st.rerun()
 
     theme = st.text_area(
         "채널의 주제 및 감정",
@@ -2819,7 +2844,7 @@ def render_storytelling_tab() -> None:
     col_btn, col_clear = st.columns([1, 1])
     with col_btn:
         run = st.button(
-            "🚀 SEO · 대본 · 가사 한 번에 생성",
+            "🚀 SEO · 대본 · 가사 한 번에 생성" if not compare_mode else "⚖️ Gemini + OpenAI 동시 생성",
             type="primary",
             use_container_width=True,
             key="story_run",
@@ -2835,65 +2860,125 @@ def render_storytelling_tab() -> None:
         st.session_state.pop("story_package", None)
         st.session_state.pop("story_theme_used", None)
 
+    _GEMINI_BLOCKED_HINTS = ("API_KEY_SERVICE_BLOCKED", "blocked", "403", "PERMISSION_DENIED", "404", "no longer available")
+
     if run:
-        if not api_key.strip():
-            st.error("API 키를 입력해주세요.")
-        elif not theme.strip():
+        if not theme.strip():
             st.error("채널의 주제 및 감정을 입력해주세요.")
+
+        elif compare_mode:
+            # ── 비교 모드: Gemini + OpenAI 동시 생성 ──────────
+            if not gemini_key_cmp.strip() and not openai_key_cmp.strip():
+                st.error("Gemini 또는 OpenAI 키 중 하나 이상 입력해주세요.")
+            else:
+                gem_pkg, oai_pkg, gem_err, oai_err = None, None, "", ""
+                col_g, col_o = st.columns(2)
+
+                with col_g:
+                    if gemini_key_cmp.strip():
+                        with st.spinner("🔵 Gemini 생성 중..."):
+                            try:
+                                gem_pkg = generate_story_package(
+                                    "gemini", gemini_key_cmp.strip(), theme.strip(),
+                                    model=DEFAULT_MODELS["gemini"]
+                                )
+                                st.success("🔵 Gemini 완료!")
+                            except Exception as e:
+                                gem_err = str(e)
+                                st.error(f"🔵 Gemini 실패: {gem_err[:120]}")
+                    else:
+                        st.info("🔵 Gemini 키 없음")
+
+                with col_o:
+                    if openai_key_cmp.strip():
+                        with st.spinner("🟢 OpenAI 생성 중..."):
+                            try:
+                                oai_pkg = generate_story_package(
+                                    "openai", openai_key_cmp.strip(), theme.strip(),
+                                    model=DEFAULT_MODELS["openai"]
+                                )
+                                st.success("🟢 OpenAI 완료!")
+                            except Exception as e:
+                                oai_err = str(e)
+                                st.error(f"🟢 OpenAI 실패: {oai_err[:120]}")
+                    else:
+                        st.info("🟢 OpenAI 키 없음")
+
+                st.session_state["story_compare_result"] = {
+                    "gem": gem_pkg, "oai": oai_pkg,
+                    "gem_err": gem_err, "oai_err": oai_err,
+                    "theme": theme.strip(),
+                }
+                st.session_state.pop("story_package", None)
+
         else:
-            _GEMINI_BLOCKED_HINTS = ("API_KEY_SERVICE_BLOCKED", "blocked", "403", "PERMISSION_DENIED")
-            _openai_key = os.getenv("OPENAI_API_KEY") or SAVED_KEYS.get("openai", "")
-            try:
-                with st.spinner(
-                    f"{provider_label} 호출 중 — SEO → 오프닝 대본 → 가사 순으로 생성합니다..."
-                ):
-                    pkg = generate_story_package(
-                        provider, api_key.strip(), theme.strip(), model=model_final
-                    )
-                st.session_state.story_package = pkg
-                st.session_state.story_theme_used = theme.strip()
-                st.success("생성 완료. 아래 카드에서 확인하고 복사하세요.")
-            except Exception as e:
-                _err = str(e)
-                _is_blocked = any(h in _err for h in _GEMINI_BLOCKED_HINTS)
-                if _is_blocked and provider == "gemini" and _openai_key:
-                    # OpenAI 자동 폴백
-                    st.warning("⚠️ Gemini API가 차단됐습니다. OpenAI로 자동 전환합니다...")
-                    try:
-                        with st.spinner("OpenAI로 재시도 중 — SEO → 오프닝 대본 → 가사..."):
-                            pkg = generate_story_package(
-                                "openai", _openai_key, theme.strip(),
-                                model=DEFAULT_MODELS["openai"]
-                            )
-                        st.session_state.story_package = pkg
-                        st.session_state.story_theme_used = theme.strip()
-                        st.success("✅ OpenAI로 생성 완료!")
-                        st.info("ℹ️ Gemini API 키 차단으로 OpenAI를 사용했습니다.")
-                    except Exception as e2:
-                        st.error(f"OpenAI 호출도 실패: {e2}")
-                elif _is_blocked and provider == "gemini":
-                    st.error("🚫 Gemini API가 차단됐습니다.")
-                    with st.expander("🔧 해결 방법 (클릭해서 확인)", expanded=True):
-                        st.markdown("""
-**원인:** Gemini API 키에 `Generative Language API` 서비스가 차단되어 있습니다.
-
-**해결 방법 (택1):**
-
+            # ── 단일 모드 ────────────────────────────────────
+            if not api_key.strip():
+                st.error("API 키를 입력해주세요.")
+            else:
+                _openai_key = os.getenv("OPENAI_API_KEY") or SAVED_KEYS.get("openai", "")
+                try:
+                    with st.spinner(f"{provider_label} 호출 중 — SEO → 오프닝 대본 → 가사 순으로 생성합니다..."):
+                        pkg = generate_story_package(provider, api_key.strip(), theme.strip(), model=model_final)
+                    st.session_state.story_package = pkg
+                    st.session_state.story_theme_used = theme.strip()
+                    st.session_state.pop("story_compare_result", None)
+                    st.success("생성 완료. 아래 카드에서 확인하고 복사하세요.")
+                except Exception as e:
+                    _err = str(e)
+                    _is_blocked = any(h in _err for h in _GEMINI_BLOCKED_HINTS)
+                    if _is_blocked and provider == "gemini" and _openai_key:
+                        st.warning("⚠️ Gemini API가 차단됐습니다. OpenAI로 자동 전환합니다...")
+                        try:
+                            with st.spinner("OpenAI로 재시도 중..."):
+                                pkg = generate_story_package("openai", _openai_key, theme.strip(), model=DEFAULT_MODELS["openai"])
+                            st.session_state.story_package = pkg
+                            st.session_state.story_theme_used = theme.strip()
+                            st.success("✅ OpenAI로 생성 완료!")
+                            st.info("ℹ️ Gemini API 키 차단으로 OpenAI를 사용했습니다.")
+                        except Exception as e2:
+                            st.error(f"OpenAI 호출도 실패: {e2}")
+                    elif _is_blocked and provider == "gemini":
+                        st.error("🚫 Gemini API가 차단됐습니다.")
+                        with st.expander("🔧 해결 방법", expanded=True):
+                            st.markdown("""
 **방법 1 — AI Studio에서 새 키 발급 (가장 빠름)**
-1. [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey) 접속
-2. `+ Create API key` → 새 키 발급
-3. 위 API 키 입력란에 붙여넣기 → **💾 키 저장**
+1. `aistudio.google.com/app/apikey` 접속 → `+ Create API key`
+2. 위 API 키 입력란에 붙여넣기 → **💾 키 저장**
 
-**방법 2 — Google Cloud Console에서 API 활성화**
-1. [console.cloud.google.com](https://console.cloud.google.com) 접속
-2. **API 및 서비스 → 라이브러리** → `Generative Language API` 검색 → **사용 설정**
-
-**방법 3 — OpenAI 키 등록 후 사용**
-- AI 모델을 `OpenAI GPT`로 바꾸고 OpenAI API 키를 입력하세요.
+**방법 2 — OpenAI 키 사용**
+- AI 모델을 `OpenAI GPT`로 바꾸고 OpenAI API 키 입력
 """)
-                else:
-                    st.error(f"AI 호출 중 오류: {_err}")
+                    else:
+                        st.error(f"AI 호출 중 오류: {_err}")
 
+    # ── 비교 모드 결과 표시 ──────────────────────────────────
+    cmp_result = st.session_state.get("story_compare_result")
+    if cmp_result:
+        st.divider()
+        st.markdown("### ⚖️ Gemini vs OpenAI 비교 결과")
+        st.caption(f"주제: {cmp_result.get('theme','')}")
+        col_g, col_o = st.columns(2)
+
+        def _render_cmp_col(pkg, label, color):
+            st.markdown(f"<h4 style='color:{color}'>{label}</h4>", unsafe_allow_html=True)
+            if pkg:
+                with st.container(border=True):
+                    _render_seo_card(pkg.get("seo", {}))
+                with st.container(border=True):
+                    _render_opening_card(pkg.get("opening", "") or "")
+                with st.container(border=True):
+                    _render_lyrics_card(pkg.get("lyrics", "") or "")
+            else:
+                st.error("생성 실패")
+
+        with col_g:
+            _render_cmp_col(cmp_result.get("gem"), "🔵 Gemini", "#4285f4")
+        with col_o:
+            _render_cmp_col(cmp_result.get("oai"), "🟢 OpenAI GPT", "#10a37f")
+        return
+
+    # ── 단일 모드 결과 표시 ──────────────────────────────────
     pkg = st.session_state.get("story_package")
     if not pkg:
         st.info(
