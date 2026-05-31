@@ -2841,6 +2841,8 @@ def render_storytelling_tab() -> None:
         elif not theme.strip():
             st.error("채널의 주제 및 감정을 입력해주세요.")
         else:
+            _GEMINI_BLOCKED_HINTS = ("API_KEY_SERVICE_BLOCKED", "blocked", "403", "PERMISSION_DENIED")
+            _openai_key = os.getenv("OPENAI_API_KEY") or SAVED_KEYS.get("openai", "")
             try:
                 with st.spinner(
                     f"{provider_label} 호출 중 — SEO → 오프닝 대본 → 가사 순으로 생성합니다..."
@@ -2851,10 +2853,46 @@ def render_storytelling_tab() -> None:
                 st.session_state.story_package = pkg
                 st.session_state.story_theme_used = theme.strip()
                 st.success("생성 완료. 아래 카드에서 확인하고 복사하세요.")
-            except RuntimeError as e:
-                st.error(str(e))
             except Exception as e:
-                st.error(f"AI 호출 중 오류: {e}")
+                _err = str(e)
+                _is_blocked = any(h in _err for h in _GEMINI_BLOCKED_HINTS)
+                if _is_blocked and provider == "gemini" and _openai_key:
+                    # OpenAI 자동 폴백
+                    st.warning("⚠️ Gemini API가 차단됐습니다. OpenAI로 자동 전환합니다...")
+                    try:
+                        with st.spinner("OpenAI로 재시도 중 — SEO → 오프닝 대본 → 가사..."):
+                            pkg = generate_story_package(
+                                "openai", _openai_key, theme.strip(),
+                                model=DEFAULT_MODELS["openai"]
+                            )
+                        st.session_state.story_package = pkg
+                        st.session_state.story_theme_used = theme.strip()
+                        st.success("✅ OpenAI로 생성 완료!")
+                        st.info("ℹ️ Gemini API 키 차단으로 OpenAI를 사용했습니다.")
+                    except Exception as e2:
+                        st.error(f"OpenAI 호출도 실패: {e2}")
+                elif _is_blocked and provider == "gemini":
+                    st.error("🚫 Gemini API가 차단됐습니다.")
+                    with st.expander("🔧 해결 방법 (클릭해서 확인)", expanded=True):
+                        st.markdown("""
+**원인:** Gemini API 키에 `Generative Language API` 서비스가 차단되어 있습니다.
+
+**해결 방법 (택1):**
+
+**방법 1 — AI Studio에서 새 키 발급 (가장 빠름)**
+1. [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey) 접속
+2. `+ Create API key` → 새 키 발급
+3. 위 API 키 입력란에 붙여넣기 → **💾 키 저장**
+
+**방법 2 — Google Cloud Console에서 API 활성화**
+1. [console.cloud.google.com](https://console.cloud.google.com) 접속
+2. **API 및 서비스 → 라이브러리** → `Generative Language API` 검색 → **사용 설정**
+
+**방법 3 — OpenAI 키 등록 후 사용**
+- AI 모델을 `OpenAI GPT`로 바꾸고 OpenAI API 키를 입력하세요.
+""")
+                else:
+                    st.error(f"AI 호출 중 오류: {_err}")
 
     pkg = st.session_state.get("story_package")
     if not pkg:
