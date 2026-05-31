@@ -8350,6 +8350,7 @@ def render_suno_generator_tab() -> None:
             st.markdown("**가사 구조**")
             struct_opts = [
                 "8섹션 풀구조 (V1-PC1-C1-V2-PC2-C2-Br-C3)",
+                "10섹션 Hook 중심 (Intro-V1-PC-Hook-V2-PC-Hook-Br-Hook-Outro)",
                 "4섹션 (V1-C1-V2-C2)",
                 "6섹션 (V1-C1-V2-C2-Br-C3)",
             ]
@@ -8357,6 +8358,8 @@ def render_suno_generator_tab() -> None:
                 "구조", struct_opts, selection_mode="single",
                 default="8섹션 풀구조 (V1-PC1-C1-V2-PC2-C2-Br-C3)", key="sg_structure",
             )
+            if sg_structure == "10섹션 Hook 중심 (Intro-V1-PC-Hook-V2-PC-Hook-Br-Hook-Outro)":
+                st.caption("🎯 트로트·K-팝 숏폼 바이럴 최적 — Hook이 3회 반복되어 중독성 극대화. Intro/Outro로 완성도 UP")
 
             # 숏폼 바이럴 느낌
             sg_viral = st.toggle("🔥 숏폼 바이럴 코믹 느낌", value=False, key="sg_viral",
@@ -8440,12 +8443,30 @@ def render_suno_generator_tab() -> None:
         struct_map = {
             "8섹션 풀구조 (V1-PC1-C1-V2-PC2-C2-Br-C3)":
                 "[Verse 1] → [Pre-Chorus 1] → [Chorus 1] → [Verse 2] → [Pre-Chorus 2] → [Chorus 2] → [Bridge] → [Chorus 3]",
+            "10섹션 Hook 중심 (Intro-V1-PC-Hook-V2-PC-Hook-Br-Hook-Outro)":
+                "[Intro] → [Verse 1] → [Pre-Chorus] → [Hook] → [Verse 2] → [Pre-Chorus] → [Hook] → [Bridge] → [Hook] → [Outro]",
             "4섹션 (V1-C1-V2-C2)":
                 "[Verse 1] → [Chorus 1] → [Verse 2] → [Chorus 2]",
             "6섹션 (V1-C1-V2-C2-Br-C3)":
                 "[Verse 1] → [Chorus 1] → [Verse 2] → [Chorus 2] → [Bridge] → [Chorus 3]",
         }
         structure_str = struct_map.get(sg_structure or "", struct_map["8섹션 풀구조 (V1-PC1-C1-V2-PC2-C2-Br-C3)"])
+
+        # 10섹션 구조 전용 섹션 가이드
+        hook_guide = ""
+        if sg_structure == "10섹션 Hook 중심 (Intro-V1-PC-Hook-V2-PC-Hook-Br-Hook-Outro)":
+            hook_guide = """
+【10섹션 Hook 중심 구조 작사 가이드】
+- [Intro]: 보컬 없이 분위기·멜로디 설정. 2~4줄 짧은 허밍 가능. Suno가 인스트루멘탈 인트로 생성.
+- [Verse 1]: 구체적 장면 묘사. 이야기 시작. 4~6줄.
+- [Pre-Chorus]: 긴장 고조, 훅 직전 감정 폭발 직전. 2~4줄.
+- [Hook]: ★핵심★ 4줄 이내. 처음 들어도 바로 따라 부를 수 있어야 함. 3번 모두 동일한 가사 사용.
+  음절 수 고정 (7·5 또는 8·6 패턴), 라임 필수, 반복구/감탄사 포함 가능.
+- [Verse 2]: Verse 1과 다른 장면·감정. 이야기 전개.
+- [Bridge]: 조용히 감정 반전. 멜로디 변화. 3~4줄.
+- [Outro]: 여운. Hook 마지막 라인 반복하거나 새로운 마무리 멜로디. 2~4줄.
+⚠️ Hook 3번 모두 가사가 동일해야 함 — 반복될수록 귀에 박힘.
+"""
 
         trot_block = ""
         if sg_exclaim or sg_dialect or sg_viral:
@@ -8508,8 +8529,8 @@ def render_suno_generator_tab() -> None:
 【가사 구조 — 반드시 이 순서로, 섹션 태그 포함】
 {structure_str}
 
-각 섹션 앞에 반드시 Suno 구조 태그를 붙이세요:
-[Verse 1], [Pre-Chorus 1], [Chorus 1], [Verse 2], [Pre-Chorus 2], [Chorus 2], [Bridge], [Chorus 3]
+각 섹션 앞에 반드시 Suno 구조 태그를 붙이세요 (구조에 맞게):
+{hook_guide if hook_guide else "[Verse 1], [Pre-Chorus 1], [Chorus 1], [Verse 2], [Pre-Chorus 2], [Chorus 2], [Bridge], [Chorus 3]"}
 
 【트로트 가사 3대 원칙 — 절대 원칙】
 1. 쉬워야 한다: 초등학생도 이해하는 단어, 어려운 한자어·영어 금지
