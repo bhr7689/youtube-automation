@@ -7801,6 +7801,267 @@ def render_reference_monitor_tab() -> None:
             )
 
 
+_MONEY_CODE_FILE = pathlib.Path(__file__).parent / "money_codes.json"
+
+
+def _load_money_codes() -> list[dict]:
+    if _MONEY_CODE_FILE.exists():
+        try:
+            return json.loads(_MONEY_CODE_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return []
+
+
+def _save_money_codes(codes: list[dict]) -> None:
+    _MONEY_CODE_FILE.write_text(
+        json.dumps(codes, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def render_money_code_tab() -> None:
+    """💰 머니코드 — 나만의 Suno 스타일 공식을 등록·관리·적용하는 탭."""
+
+    st.markdown("""
+<style>
+.mc-card { background:linear-gradient(135deg,#1a1a2e,#16213e);
+           border:1.5px solid #f0c040; border-radius:14px;
+           padding:16px 18px; margin-bottom:12px; }
+.mc-name { font-size:18px; font-weight:900; color:#f0c040; margin-bottom:4px; }
+.mc-tags { background:#111; border-radius:8px; padding:8px 12px;
+           font-size:12px; color:#7fff7f; font-family:monospace;
+           word-break:break-all; margin:8px 0; }
+.mc-desc { font-size:13px; color:#ccc; margin-top:4px; }
+.mc-badge { display:inline-block; background:#e74c3c; color:#fff;
+            font-size:10px; font-weight:700; border-radius:8px;
+            padding:2px 8px; margin-right:4px; }
+</style>
+""", unsafe_allow_html=True)
+
+    st.markdown("## 💰 머니코드")
+    st.caption("검증된 나만의 Suno 스타일 공식을 저장해두고, 곡 생성 시 한 번에 적용하세요.")
+
+    codes = _load_money_codes()
+
+    # ── 새 머니코드 등록 ──────────────────────────────────────
+    with st.expander("➕ 새 머니코드 등록", expanded=len(codes) == 0):
+        with st.container(border=True):
+            mc_name = st.text_input(
+                "공식 이름 *",
+                placeholder="예: 트로트 황금공식, 새벽감성 A, 드라이브 힙합",
+                key="mc_new_name",
+            )
+            mc_tags = st.text_area(
+                "Suno 스타일 태그 * (영문, Suno에 바로 붙여넣을 내용)",
+                height=90,
+                placeholder="예: trot, female vocal, emotional, piano, haegeum, reverb, 90 BPM, cinematic, warm",
+                key="mc_new_tags",
+            )
+            mc_desc = st.text_input(
+                "설명 (선택) — 언제 쓰는 공식인지",
+                placeholder="예: 50~60대 타겟, 이별·그리움 테마, 조회수 높았던 스타일",
+                key="mc_new_desc",
+            )
+
+            # 카테고리 빠른 선택
+            st.markdown("**카테고리 (선택)**")
+            mc_cat_presets = ["트로트","발라드","K-Pop","Lo-fi","드라이브","새벽감성","힐링","파티","명상","직접 입력"]
+            mc_cat_cols = st.columns(5)
+            for i, cat in enumerate(mc_cat_presets[:10]):
+                if mc_cat_cols[i % 5].button(cat, key=f"mc_cat_{i}", use_container_width=True):
+                    st.session_state["mc_new_cat_val"] = cat
+            mc_cat = st.text_input(
+                "카테고리",
+                value=st.session_state.get("mc_new_cat_val", ""),
+                key="mc_new_cat",
+                label_visibility="collapsed",
+                placeholder="카테고리 입력 또는 위에서 클릭",
+            )
+
+            # 고정 태그 (항상 포함)
+            mc_fixed = st.text_input(
+                "🔒 고정 태그 (곡 생성 시 항상 강제 포함)",
+                placeholder="예: no rap, no spoken word, instrumental only",
+                key="mc_new_fixed",
+            )
+
+            # 금지 태그
+            mc_banned = st.text_input(
+                "🚫 금지 태그 (이 키워드가 스타일에 들어가지 않도록 AI에 전달)",
+                placeholder="예: metal, aggressive, fast tempo",
+                key="mc_new_banned",
+            )
+
+            if st.button("💾 머니코드 저장", type="primary", use_container_width=True, key="mc_save"):
+                if not mc_name.strip():
+                    st.error("공식 이름을 입력해주세요.")
+                elif not mc_tags.strip():
+                    st.error("Suno 스타일 태그를 입력해주세요.")
+                else:
+                    # 중복 이름 체크
+                    if any(c["name"] == mc_name.strip() for c in codes):
+                        st.error(f"'{mc_name}' 이름이 이미 존재합니다. 다른 이름을 사용하세요.")
+                    else:
+                        codes.append({
+                            "name":        mc_name.strip(),
+                            "tags":        mc_tags.strip(),
+                            "description": mc_desc.strip(),
+                            "category":    mc_cat.strip(),
+                            "fixed_tags":  mc_fixed.strip(),
+                            "banned_tags": mc_banned.strip(),
+                            "created_at":  datetime.now().strftime("%Y-%m-%d %H:%M"),
+                            "use_count":   0,
+                        })
+                        _save_money_codes(codes)
+                        st.success(f"✅ '{mc_name}' 머니코드가 저장되었습니다!")
+                        # 입력 초기화
+                        for k in ["mc_new_name","mc_new_tags","mc_new_desc","mc_new_cat","mc_new_fixed","mc_new_banned","mc_new_cat_val"]:
+                            st.session_state.pop(k, None)
+                        st.rerun()
+
+    st.divider()
+
+    if not codes:
+        st.info("아직 등록된 머니코드가 없습니다. 위에서 첫 번째 공식을 등록해보세요!")
+        return
+
+    # ── 필터 ─────────────────────────────────────────────────
+    all_cats = ["전체"] + sorted(set(c.get("category","기타") or "기타" for c in codes))
+    f1, f2 = st.columns([2, 2])
+    cat_f   = f1.selectbox("카테고리 필터", all_cats, key="mc_filter_cat")
+    sort_f  = f2.selectbox("정렬", ["최근 등록순","많이 쓴 순","이름순"], key="mc_filter_sort")
+
+    filtered = [c for c in codes if cat_f == "전체" or c.get("category","기타") == cat_f]
+    if sort_f == "많이 쓴 순":
+        filtered = sorted(filtered, key=lambda x: x.get("use_count", 0), reverse=True)
+    elif sort_f == "이름순":
+        filtered = sorted(filtered, key=lambda x: x["name"])
+    else:
+        filtered = list(reversed(filtered))
+
+    st.markdown(f"**{len(filtered)}개** 머니코드")
+    st.divider()
+
+    # ── 머니코드 카드 목록 ────────────────────────────────────
+    for idx, code in enumerate(filtered):
+        real_idx = codes.index(code)
+        cat_label  = code.get("category","") or ""
+        fixed_tags = code.get("fixed_tags","") or ""
+        banned_tags= code.get("banned_tags","") or ""
+        use_count  = code.get("use_count", 0)
+
+        with st.container(border=True):
+            h1, h2 = st.columns([7, 3])
+            with h1:
+                st.markdown(
+                    f'<div class="mc-name">💰 {code["name"]}</div>'
+                    + (f'<span class="mc-badge">{cat_label}</span>' if cat_label else "")
+                    + (f'<div class="mc-desc">{code["description"]}</div>' if code.get("description") else ""),
+                    unsafe_allow_html=True,
+                )
+            with h2:
+                st.caption(f"사용 {use_count}회 · {code.get('created_at','')}")
+
+            # 스타일 태그
+            st.markdown("**🎨 스타일 태그**")
+            st.markdown(f'<div class="mc-tags">{code["tags"]}</div>', unsafe_allow_html=True)
+
+            # 고정/금지 태그
+            if fixed_tags or banned_tags:
+                t1, t2 = st.columns(2)
+                if fixed_tags:
+                    t1.markdown(f"🔒 **고정:** `{fixed_tags}`")
+                if banned_tags:
+                    t2.markdown(f"🚫 **금지:** `{banned_tags}`")
+
+            # 액션 버튼
+            b1, b2, b3, b4 = st.columns(4)
+
+            # 복사용 코드
+            b1.code(code["tags"], language=None)
+
+            # Suno 곡 생성에 적용
+            if b2.button("🎵 곡 생성에 적용", key=f"mc_apply_{idx}", use_container_width=True, type="primary"):
+                st.session_state["sg_money_code"] = code
+                codes[real_idx]["use_count"] = use_count + 1
+                _save_money_codes(codes)
+                st.session_state["nav_menu"] = "음악 만들기"
+                st.toast(f"✅ '{code['name']}' 적용! Suno 곡 생성 탭으로 이동합니다.")
+                st.rerun()
+
+            # 편집
+            if b3.button("✏️ 편집", key=f"mc_edit_{idx}", use_container_width=True):
+                st.session_state[f"mc_editing_{real_idx}"] = True
+
+            # 삭제
+            if b4.button("🗑️ 삭제", key=f"mc_del_{idx}", use_container_width=True):
+                st.session_state[f"mc_confirm_del_{real_idx}"] = True
+
+            # 편집 폼
+            if st.session_state.get(f"mc_editing_{real_idx}"):
+                with st.container(border=True):
+                    st.markdown("**✏️ 편집**")
+                    e_tags = st.text_area("스타일 태그", value=code["tags"], key=f"mc_e_tags_{real_idx}", height=80)
+                    e_desc = st.text_input("설명", value=code.get("description",""), key=f"mc_e_desc_{real_idx}")
+                    e_fixed  = st.text_input("고정 태그", value=code.get("fixed_tags",""), key=f"mc_e_fixed_{real_idx}")
+                    e_banned = st.text_input("금지 태그", value=code.get("banned_tags",""), key=f"mc_e_banned_{real_idx}")
+                    ec1, ec2 = st.columns(2)
+                    if ec1.button("💾 저장", key=f"mc_e_save_{real_idx}", use_container_width=True, type="primary"):
+                        codes[real_idx]["tags"]        = e_tags.strip()
+                        codes[real_idx]["description"] = e_desc.strip()
+                        codes[real_idx]["fixed_tags"]  = e_fixed.strip()
+                        codes[real_idx]["banned_tags"] = e_banned.strip()
+                        _save_money_codes(codes)
+                        st.session_state.pop(f"mc_editing_{real_idx}", None)
+                        st.success("저장 완료!")
+                        st.rerun()
+                    if ec2.button("취소", key=f"mc_e_cancel_{real_idx}", use_container_width=True):
+                        st.session_state.pop(f"mc_editing_{real_idx}", None)
+                        st.rerun()
+
+            # 삭제 확인
+            if st.session_state.get(f"mc_confirm_del_{real_idx}"):
+                st.warning(f"**'{code['name']}'** 을 삭제할까요?")
+                dc1, dc2 = st.columns(2)
+                if dc1.button("✅ 삭제 확인", key=f"mc_del_ok_{real_idx}", use_container_width=True, type="primary"):
+                    codes.pop(real_idx)
+                    _save_money_codes(codes)
+                    st.session_state.pop(f"mc_confirm_del_{real_idx}", None)
+                    st.rerun()
+                if dc2.button("취소", key=f"mc_del_cancel_{real_idx}", use_container_width=True):
+                    st.session_state.pop(f"mc_confirm_del_{real_idx}", None)
+                    st.rerun()
+
+    st.divider()
+
+    # ── 전체 내보내기/가져오기 ────────────────────────────────
+    col_ex, col_im = st.columns(2)
+    with col_ex:
+        st.download_button(
+            "📥 전체 머니코드 내보내기 (JSON)",
+            data=json.dumps(codes, ensure_ascii=False, indent=2).encode("utf-8"),
+            file_name=f"money_codes_{datetime.now():%Y%m%d}.json",
+            mime="application/json",
+            use_container_width=True,
+        )
+    with col_im:
+        up = st.file_uploader("📤 머니코드 JSON 가져오기", type="json", key="mc_import")
+        if up:
+            try:
+                imported = json.loads(up.read().decode("utf-8"))
+                existing_names = {c["name"] for c in codes}
+                added = 0
+                for ic in imported:
+                    if ic.get("name") and ic["name"] not in existing_names:
+                        codes.append(ic)
+                        added += 1
+                _save_money_codes(codes)
+                st.success(f"✅ {added}개 머니코드를 가져왔습니다!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"가져오기 실패: {e}")
+
+
 def render_suno_generator_tab() -> None:
     """Suno 곡 생성기 — 옵션 pills 선택 → AI가 10곡 가사+스타일 생성 → Suno 전송."""
 
@@ -7826,6 +8087,33 @@ def render_suno_generator_tab() -> None:
     openai_key = os.getenv("OPENAI_API_KEY") or SAVED_KEYS.get("openai", "")
     if not gemini_key and not openai_key:
         st.warning("🔑 Gemini 또는 OpenAI API 키가 필요합니다. 왼쪽 메뉴 **API 연결**에서 키를 등록하세요.")
+
+    # ── 머니코드 적용 배너 ────────────────────────────────────
+    mc_applied = st.session_state.get("sg_money_code")
+    if mc_applied:
+        with st.container(border=True):
+            st.markdown(
+                f'<div style="background:linear-gradient(90deg,#1a1200,#2a2000);'
+                f'border:1.5px solid #f0c040;border-radius:10px;padding:12px 16px;">'
+                f'<span style="color:#f0c040;font-size:16px;font-weight:900;">💰 머니코드 적용 중: {mc_applied["name"]}</span><br>'
+                f'<span style="color:#7fff7f;font-size:12px;font-family:monospace;">{mc_applied["tags"]}</span>'
+                + (f'<br><span style="color:#aaa;font-size:11px;">🔒 고정: {mc_applied["fixed_tags"]}</span>' if mc_applied.get("fixed_tags") else "")
+                + (f'&nbsp;&nbsp;<span style="color:#f88;font-size:11px;">🚫 금지: {mc_applied["banned_tags"]}</span>' if mc_applied.get("banned_tags") else "")
+                + f'</div>',
+                unsafe_allow_html=True,
+            )
+            if st.button("❌ 머니코드 해제", key="sg_mc_clear"):
+                st.session_state.pop("sg_money_code", None)
+                st.rerun()
+    else:
+        mc_codes = _load_money_codes()
+        if mc_codes:
+            mc_names = ["선택 안 함"] + [c["name"] for c in mc_codes]
+            mc_sel = st.selectbox("💰 머니코드 적용 (선택)", mc_names, key="sg_mc_select")
+            if mc_sel != "선택 안 함":
+                chosen = next(c for c in mc_codes if c["name"] == mc_sel)
+                st.session_state["sg_money_code"] = chosen
+                st.rerun()
 
     # ── 레퍼런스 채널 스타일 배너 ──────────────────────────────
     ref_channels = _load_ref_channels()
@@ -7973,6 +8261,15 @@ def render_suno_generator_tab() -> None:
             st.stop()
 
         bpm_str = sg_bpm or "보통 (90-110 BPM)"
+        mc = st.session_state.get("sg_money_code")
+        mc_block = ""
+        if mc:
+            mc_block = f"""
+머니코드 (반드시 스타일 태그에 통합할 것):
+- 기본 스타일 공식: {mc['tags']}
+{"- 고정 태그 (반드시 포함): " + mc['fixed_tags'] if mc.get('fixed_tags') else ""}
+{"- 금지 태그 (절대 사용 금지): " + mc['banned_tags'] if mc.get('banned_tags') else ""}
+"""
         prompt = f"""
 당신은 Suno AI 음악 전문 프롬프트 엔지니어입니다.
 아래 조건으로 서로 다른 **10곡**의 제목, Suno 스타일 태그, 가사를 JSON으로 작성하세요.
@@ -7988,7 +8285,7 @@ def render_suno_generator_tab() -> None:
 - 곡 길이: {mins}분 {secs:02d}초
 - 가사 내용: {sg_theme or '자유롭게'}
 - 악기 디테일: {sg_instrument or '자유롭게'}
-
+{mc_block}
 **각 곡의 스타일 태그는 Suno에 바로 붙여넣을 수 있는 영문 태그** (예: "trot, female vocal, upbeat, 90s retro, piano, emotional")
 
 JSON 스키마 (배열, 10개):
@@ -8722,8 +9019,9 @@ div[data-testid="stSidebarNav"] { display: none; }
     # 음악 만들기
     elif nav == "음악 만들기":
         st.title("🎵 음악 만들기")
-        tab_suno_gen, tab_plan, tab_story, tab_studio, tab_rev, tab_sync, tab_review = st.tabs([
+        tab_suno_gen, tab_money, tab_plan, tab_story, tab_studio, tab_rev, tab_sync, tab_review = st.tabs([
             "🎵 Suno 곡 생성",
+            "💰 머니코드",
             "🏗️ AI 채널 기획안",
             "✍️ AI 스토리텔링 & 가사 생성",
             "🎚️ Suno 프롬프트 스튜디오",
@@ -8732,6 +9030,7 @@ div[data-testid="stSidebarNav"] { display: none; }
             "🙋 검수 큐",
         ])
         with tab_suno_gen: render_suno_generator_tab()
+        with tab_money:   render_money_code_tab()
         with tab_plan:    render_channel_planning_tab()
         with tab_story:   render_storytelling_tab()
         with tab_studio:  render_suno_studio_tab()
