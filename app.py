@@ -8177,39 +8177,6 @@ def render_suno_generator_tab() -> None:
                 st.session_state.pop("sg_preset_tags", None)
                 st.rerun()
 
-    # ── Suno 5.5 K-Genre 프리셋 퀵셀렉터 ──────────────────────
-    with st.expander("🇰🇷 Suno 5.5 K-Genre 프리셋 (검증된 스타일 즉시 적용)", expanded=False):
-        st.caption("Suno AI 5.5 Prompt Cheatsheet Part 8 K-Genres — 클릭하면 스타일 태그에 자동 반영됩니다.")
-        _KGENRE_PRESETS = {
-            "🎵 남성 한국발라드": "korean male ballad with emotional piano, warm strings, and heartfelt vocals, dramatic, cinematic, and deeply expressive, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
-            "🎵 여성 한국발라드": "korean female ballad with gentle piano, lush strings, and soulful vocals, tender, emotional, and beautifully expressive, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
-            "🎬 K-OST 발라드": "cinematic korean ost-style ballad with emotional piano, lush strings, and heartfelt vocals, warm, dramatic, and touching, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
-            "🎸 K-인디 발라드": "korean indie ballad with warm acoustic guitar, gentle piano, and heartfelt vocals, intimate, melancholic, and emotionally resonant, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
-            "🎸 K-밴드 록": "korean band rock with powerful electric guitar, dynamic drums, and passionate vocals, energetic, emotional, and anthemic, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
-            "🎤 K-R&B": "korean r&b with smooth beats, soulful vocals, and emotional production, contemporary, sensual, and deeply expressive, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
-            "🎤 국산 힙합·트랩": "korean hip hop with hard-hitting trap beats, rapid-fire korean rap, and intense delivery, aggressive, confident, and authentically korean, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
-            "🎤 조선힙합": "joseon hip hop with traditional korean instruments haegeum gayageum, modern trap beats, and korean rap, fusion of ancient and contemporary, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
-            "💃 K-EDM": "korean edm with euphoric synths, powerful drops, and uplifting melodies, energetic, exhilarating, and anthemic, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
-            "🎷 K-소울": "korean soul with rich brass, warm organ, soulful korean vocals, groovy, emotional, and timeless, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
-            "🌙 이모힙합 (K)": "korean emo hip hop with melancholic piano, lo-fi beats, and emotional rap, introspective, vulnerable, and raw, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
-            "🎻 트로트 클래식": "trot with haegeum, accordion, and warm female vocals, nostalgic, joyful, and distinctly korean, 85 BPM, detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth",
-        }
-        preset_cols = st.columns(3)
-        for i, (name, tags) in enumerate(_KGENRE_PRESETS.items()):
-            with preset_cols[i % 3]:
-                if st.button(name, key=f"kgp_{i}", use_container_width=True):
-                    st.session_state["sg_preset_tags"] = tags
-                    st.toast(f"✅ {name} 프리셋 적용!")
-                    st.rerun()
-
-        preset_applied = st.session_state.get("sg_preset_tags")
-        if preset_applied:
-            st.success(f"**적용된 프리셋 태그:**")
-            st.code(preset_applied, language=None)
-            if st.button("❌ 프리셋 초기화", key="sg_preset_clear"):
-                st.session_state.pop("sg_preset_tags", None)
-                st.rerun()
-
     # ── 트로트 특화 기획 프리셋 ───────────────────────────────
     with st.expander("🚜 트로트 특화 기획 프리셋 (컨셉 통째로 적용)", expanded=False):
         st.caption("스타일 태그 + 가사 힌트 + BPM 설정까지 기획 컨셉 전체를 한번에 적용합니다.")
