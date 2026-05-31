@@ -8477,13 +8477,34 @@ div[data-testid="stSidebarNav"] { display: none; }
                 meta = k.replace("hotpli_results_", "")
                 parts = meta.split("_")
                 label = " · ".join(p for p in parts if p)
-                with st.expander(f"🔍 {label}  —  {len(df_h)}개 결과"):
+                with st.expander(f"🔍 {label}  —  {len(df_h)}개 결과", expanded=True):
                     if isinstance(df_h, pd.DataFrame) and not df_h.empty:
-                        st.dataframe(
-                            df_h[["video_title", "channel_title", "view_count", "published_at", "video_url"]],
-                            use_container_width=True, hide_index=True,
-                            column_config={"video_url": st.column_config.LinkColumn("링크")},
-                        )
+                        # 썸네일 카드 그리드 (3열)
+                        cols_per_row = 3
+                        rows = [df_h.iloc[i:i+cols_per_row] for i in range(0, len(df_h), cols_per_row)]
+                        for row_df in rows:
+                            card_cols = st.columns(cols_per_row)
+                            for col, (_, row) in zip(card_cols, row_df.iterrows()):
+                                with col:
+                                    thumb = row.get("thumbnail", "")
+                                    url   = row.get("video_url", "#")
+                                    title = row.get("video_title", "")
+                                    ch    = row.get("channel_title", "")
+                                    views = row.get("view_count", 0)
+                                    pub   = row.get("published_at", "")
+                                    if thumb:
+                                        st.markdown(
+                                            f'<a href="{url}" target="_blank">'
+                                            f'<img src="{thumb}" style="width:100%;border-radius:8px;margin-bottom:4px;">'
+                                            f'</a>',
+                                            unsafe_allow_html=True,
+                                        )
+                                    st.markdown(
+                                        f'<a href="{url}" target="_blank" style="font-size:13px;font-weight:600;color:#fff;text-decoration:none;">'
+                                        f'{title[:40]}{"…" if len(title)>40 else ""}</a>',
+                                        unsafe_allow_html=True,
+                                    )
+                                    st.caption(f"📺 {ch}  ·  👁 {int(views):,}  ·  {pub}")
         # 채널 분석 캐시
         if st.session_state.get("ca_result"):
             found = True
