@@ -2197,7 +2197,7 @@ _HOTPLI_COUNTRY: dict[str, tuple[str, str]] = {
 # 국가별 장르 목록 — 선택 국가에 따라 동적으로 바뀜
 _HOTPLI_COUNTRY_GENRES: dict[str, list[str]] = {
     "전체": ["전체 (믹스)", "Lo-fi", "재즈", "카페", "공부", "수면", "뉴에이지", "힙합", "클래식"],
-    "한국": ["한국 인기", "K-팝", "K-인디", "발라드", "트로트", "한국 R&B", "한국 힙합",
+    "한국": ["한국 인기", "K-팝", "K-인디", "발라드", "트로트", "한국 R&B", "조선힙합",
              "Lo-fi", "재즈", "카페", "공부", "수면", "뉴에이지"],
     "일본": ["일본 인기", "시티팝", "J-pop", "애니송", "J-rock",
              "Lo-fi", "재즈", "카페", "공부", "수면", "뉴에이지"],
@@ -2228,7 +2228,7 @@ _HOTPLI_GENRE_KEYWORDS: dict[str, list[str]] = {
     "발라드": ["한국 발라드", "Korean ballad playlist"],
     "트로트": ["트로트 모음", "트로트 플레이리스트"],
     "한국 R&B": ["한국 R&B", "Korean R&B playlist"],
-    "한국 힙합": ["한국 힙합 플레이리스트", "Korean hip hop"],
+    "조선힙합": ["조선힙합 플레이리스트", "조선힙합"],
     # 일본
     "일본 인기": ["日本 人気 音楽", "Japanese popular music playlist"],
     "시티팝": ["city pop playlist", "シティポップ"],
