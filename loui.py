@@ -590,44 +590,43 @@ if "ai_idea_show" not in st.session_state:
 # ───────────────────────────────────────────────
 results = st.session_state.results
 
-if results:
-    # 정렬 바
-    with st.container(border=True):
-        sb1, sb2, sb3, sb4, sb5 = st.columns([1, 1, 1, 4, 1])
-        with sb1:
-            st.markdown("<span style='color:#aaa;font-size:13px;line-height:2.2'>결과 정렬:</span>", unsafe_allow_html=True)
-        with sb2:
-            if st.button(
-                "조회수순",
-                key="sort_views",
-                type="primary" if st.session_state.sort_by == "조회수순" else "secondary",
-            ):
-                st.session_state.sort_by = "조회수순"
-                st.rerun()
-        with sb3:
-            if st.button(
-                "최신순",
-                key="sort_date",
-                type="primary" if st.session_state.sort_by == "최신순" else "secondary",
-            ):
-                st.session_state.sort_by = "최신순"
-                st.rerun()
-        with sb4:
-            cnt_text = f"검색 결과: {len(results)}개"
-            asc_icon = "↑" if st.session_state.sort_asc else "↓"
-            st.markdown(
-                f"<div style='text-align:right;color:#aaa;font-size:13px;padding-top:6px'>{cnt_text}</div>",
-                unsafe_allow_html=True,
-            )
-        with sb5:
-            if st.button(
-                "↑" if st.session_state.sort_asc else "↓",
-                key="sort_dir",
-                help="정렬 방향 전환",
-            ):
-                st.session_state.sort_asc = not st.session_state.sort_asc
-                st.rerun()
+# 정렬 바 — 항상 표시
+with st.container(border=True):
+    sb1, sb2, sb3, sb4, sb5 = st.columns([1, 1, 1, 4, 1])
+    with sb1:
+        st.markdown("<span style='color:#aaa;font-size:13px;line-height:2.2'>결과 정렬:</span>", unsafe_allow_html=True)
+    with sb2:
+        if st.button(
+            "조회수순",
+            key="sort_views",
+            type="primary" if st.session_state.sort_by == "조회수순" else "secondary",
+        ):
+            st.session_state.sort_by = "조회수순"
+            st.rerun()
+    with sb3:
+        if st.button(
+            "최신순",
+            key="sort_date",
+            type="primary" if st.session_state.sort_by == "최신순" else "secondary",
+        ):
+            st.session_state.sort_by = "최신순"
+            st.rerun()
+    with sb4:
+        cnt_text = f"검색 결과: {len(results)}개" if results else "대기 중..."
+        st.markdown(
+            f"<div style='text-align:right;color:#aaa;font-size:13px;padding-top:6px'>{cnt_text}</div>",
+            unsafe_allow_html=True,
+        )
+    with sb5:
+        if st.button(
+            "↑" if st.session_state.sort_asc else "↓",
+            key="sort_dir",
+            help="정렬 방향 전환",
+        ):
+            st.session_state.sort_asc = not st.session_state.sort_asc
+            st.rerun()
 
+if results:
     # 정렬 적용
     sorted_results = sorted(
         results,
