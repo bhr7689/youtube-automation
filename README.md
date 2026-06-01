@@ -349,3 +349,49 @@ python pipeline.py --watch --interval 30     # 데몬 모드 (폴더 상시 감�
 - **25MB 자동 압축** — Whisper API 업로드 한도를 넘으면 mono 64kbps 22kHz MP3 로 다운샘플 후 재시도
 - **언어 명시 옵션** — ko/en/ja/zh 또는 자동 감지. 명시하면 인식 정확도 ↑
 - **다운로드 + 인라인 미리보기** — `.srt` 파일은 CapCut "자막 → 자막 가져오기 (SRT)" 로 즉시 임포트 가능
+
+---
+
+## ☁️ Streamlit Cloud 배포 (역설계 단독 툴)
+
+`reverse_app.py`(곡 역설계 단독 툴)를 누구나 웹으로 접속할 수 있게 무료 배포하는 방법.
+
+### 1) 사전 준비 (이 저장소는 이미 완료됨)
+- `requirements.txt` 에 모든 파이썬 의존성 포함 ✓
+- `packages.txt` 에 시스템 패키지(`ffmpeg`, `libsndfile1`) 포함 ✓
+- `.streamlit/config.toml` 에 서버 설정 포함 ✓
+- 키 로드는 `st.secrets` 우선 + `.env` 폴백 — 어디서든 동작 ✓
+
+### 2) Streamlit Cloud 앱 생성
+1. https://share.streamlit.io 접속 → **Sign in with GitHub**
+2. 우측 상단 **"New app"** 클릭
+3. 다음과 같이 입력:
+   - **Repository**: `bhr7689/youtube-automation`
+   - **Branch**: `claude/youtube-discovery-dashboard-eqO5N`
+   - **Main file path**: **`reverse_app.py`**  ← (메인 대시보드는 `app.py`)
+   - **App URL** (선택): 원하는 서브도메인 (예: `my-reverse-engineering.streamlit.app`)
+4. **"Advanced settings"** → **Secrets** 에 아래 TOML 형식으로 입력:
+   ```toml
+   YOUTUBE_API_KEY = "AIza...당신의키"
+   GEMINI_API_KEY  = "AIza...당신의키"
+   # 선택 (Whisper 자막 받아쓰기 사용 시)
+   OPENAI_API_KEY  = "sk-...당신의키"
+   ```
+5. **"Deploy!"** 클릭 → 1~3분 후 배포 완료
+
+### 3) 두 앱 동시 배포(옵션)
+같은 저장소에서 메인 대시보드와 역설계 툴을 따로 띄우려면 위 절차를 두 번 수행:
+| 앱 | Main file path | 추천 URL 후보 |
+|---|---|---|
+| 메인 대시보드 | `app.py` | `youtube-discovery.streamlit.app` |
+| 역설계 툴 | `reverse_app.py` | `reverse-engineering.streamlit.app` |
+
+### 4) 업데이트 자동 반영
+이 브랜치(`claude/youtube-discovery-dashboard-eqO5N`)에 push 하면 Streamlit Cloud 가 자동으로
+재배포합니다(보통 30~60초). 별도 작업 불필요.
+
+### 5) 자주 묻는 것
+- **Q. `.env` 파일이 안 읽혀요** → Streamlit Cloud는 `.env` 를 무시합니다. 위 "Secrets" 에 입력하세요.
+- **Q. `librosa` 로드 에러** → `packages.txt` 의 `libsndfile1` 이 빠졌는지 확인.
+- **Q. yt-dlp 가 403 / IP 차단** → 무료 클라우드 IP 가 막힐 수 있습니다. 오디오 실측/Whisper 기능은 로컬 실행을 권장.
+- **Q. 도서관(`recipes.json`/`lyrics_library.json`)이 유지되나?** → 클라우드 컨테이너는 휘발성이라 재시작 시 초기화될 수 있습니다. 영속 보관은 로컬 실행이나 외부 저장소 연동이 필요합니다.

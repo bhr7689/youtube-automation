@@ -40,6 +40,20 @@ import transcript_probe
 COPY_HINT = "💡 결과 블록 우상단의 📋 아이콘으로 복사하거나, 텍스트를 드래그해 Ctrl+C 하세요."
 
 
+def _secret(key: str, default: str = "") -> str:
+    """키 로드: Streamlit Cloud Secrets 우선 → 로컬 .env(os.environ) 폴백.
+
+    Streamlit Cloud 는 .env 를 읽지 않고 share.streamlit.io 의 Secrets 입력란만
+    사용한다. 로컬에서는 .env(python-dotenv) 가 os.environ 에 주입한다.
+    """
+    try:
+        if hasattr(st, "secrets") and key in st.secrets:
+            return str(st.secrets[key])
+    except Exception:
+        pass
+    return os.getenv(key, default)
+
+
 DEFAULT_CATEGORIES = [
     "트로트", "발라드", "효도", "5070 댄스",
     "인스트루멘털", "가스펠", "동요", "기타",
@@ -993,11 +1007,11 @@ def main() -> None:
         st.header("🔑 키 / 설정")
         yt_key = st.text_input(
             "YouTube API Key", type="password",
-            value=os.getenv("YOUTUBE_API_KEY", ""),
+            value=_secret("YOUTUBE_API_KEY"),
         )
         gem_key = st.text_input(
             "Gemini API Key", type="password",
-            value=os.getenv("GEMINI_API_KEY", ""),
+            value=_secret("GEMINI_API_KEY"),
             help="곡 역설계 + 작사 분석에 사용됩니다.",
         )
         model = st.text_input("Gemini 모델", value=analyzer.DEFAULT_MODEL)
@@ -1012,7 +1026,7 @@ def main() -> None:
         st.caption("1차로 유튜브 자막을 시도합니다(무료). 실패 시 Whisper fallback 옵션.")
         oai_key = st.text_input(
             "OpenAI API Key (Whisper용, 선택)", type="password",
-            value=os.getenv("OPENAI_API_KEY", ""),
+            value=_secret("OPENAI_API_KEY"),
         )
         allow_whisper = st.checkbox(
             "🎙 자막 없을 때 Whisper API 로 받아쓰기",
