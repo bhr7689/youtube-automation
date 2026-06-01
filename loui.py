@@ -22,15 +22,16 @@ st.markdown("""
 .stApp { background-color: #1a1a2e; color: #e0e0e0; }
 .block-container { padding: 60px 0 0 0 !important; max-width: 100% !important; }
 
-/* 툴바 숨기기 */
-header { display: none !important; visibility: hidden !important; }
-header[data-testid="stHeader"] { display: none !important; }
+/* ── 툴바 완전 숨김 (모든 버전 대응) ── */
+header, header * { display: none !important; height: 0 !important; }
 [data-testid="stToolbar"] { display: none !important; }
+[data-testid="stAppToolbar"] { display: none !important; }
 [data-testid="stDecoration"] { display: none !important; }
 [data-testid="stStatusWidget"] { display: none !important; }
-#MainMenu { display: none !important; visibility: hidden !important; }
-footer { display: none !important; visibility: hidden !important; }
+#MainMenu, #MainMenu * { display: none !important; }
+footer, footer * { display: none !important; }
 .stDeployButton { display: none !important; }
+section[data-testid="stSidebar"] > div:first-child { padding-top: 0 !important; }
 
 /* 입력 요소 */
 div[data-testid="stSelectbox"] > div { background: #1e293b !important; border-color: #3a3a5e !important; color: #e0e0e0 !important; }
@@ -295,7 +296,34 @@ st.markdown("""<div style="padding:8px 0 12px 0;">
     <span style="font-size:26px;font-weight:700;color:#fff;">💧 루이의 떡상 채널 찾기</span><br>
     <span style="font-size:12px;color:#888;">무료판 | 검색 최대 200개 | 기본 분석용</span>
 </div>""", unsafe_allow_html=True)
-st.markdown("<hr style='border-color:#2a2a4e;margin:0 0 12px 0'>", unsafe_allow_html=True)
+
+# ── API Key 미설정 시 상단 배너 ──
+if not st.session_state.yt_api_key:
+    st.markdown("""<div style="background:#1e3a5f;border:2px solid #3b82f6;border-radius:12px;
+        padding:20px 24px;margin-bottom:16px;">
+        <div style="font-size:16px;font-weight:700;color:#fff;margin-bottom:12px;">
+            🔑 시작하기 — YouTube API Key를 입력해주세요
+        </div>
+        <div style="font-size:13px;color:#93c5fd;margin-bottom:6px;">
+            왼쪽 사이드바 ( ← 화살표 클릭) 또는 아래에서 바로 입력하세요
+        </div>
+    </div>""", unsafe_allow_html=True)
+    kb1, kb2, kb3 = st.columns([4, 1, 1])
+    with kb1:
+        inline_key = st.text_input("🔑 YouTube API Key 입력", placeholder="AIzaSy...",
+                                    type="password", key="inline_key_input")
+    with kb2:
+        if st.button("✅ 저장", use_container_width=True, type="primary"):
+            if inline_key:
+                st.session_state.yt_api_key = inline_key
+                st.success("저장됨!")
+                st.rerun()
+    with kb3:
+        st.markdown("<div style='font-size:11px;color:#888;padding-top:8px'>※ 새로고침해도 유지됩니다</div>",
+                    unsafe_allow_html=True)
+    st.markdown("<hr style='border-color:#2a2a4e;margin:8px 0 12px 0'>", unsafe_allow_html=True)
+else:
+    st.markdown("<hr style='border-color:#2a2a4e;margin:0 0 12px 0'>", unsafe_allow_html=True)
 
 # ── 필터 패널 ──
 with st.container(border=True):
