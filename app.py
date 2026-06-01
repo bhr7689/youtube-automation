@@ -1272,44 +1272,105 @@ def _prompt_opening(theme: str) -> str:
 """
 
 
-def _prompt_lyrics(theme: str) -> str:
-    return f"""당신은 따뜻한 위로를 전하는 한국어 노래 작사가입니다.
+def _prompt_lyrics(theme: str, opts: dict | None = None) -> str:
+    opts = opts or {}
+    genre      = opts.get("genre", "트로트")
+    structure  = opts.get("structure", "10섹션 Hook (Intro-V1-PC-Hook×3-Outro)")
+    lang       = opts.get("lang", "한국어")
+    vocal      = opts.get("vocal", "여자 솔로")
+    mood       = opts.get("mood", "따뜻한·위로")
+    exclaim    = opts.get("exclaim", "")
+    dialect    = opts.get("dialect", "")
+    viral      = opts.get("viral", False)
+    easy       = opts.get("easy", True)
+    syllable   = opts.get("syllable", "보통")
+    extra_kw   = opts.get("extra_kw", "")
+
+    # 구조 태그 매핑
+    struct_map = {
+        "10섹션 Hook (Intro-V1-PC-Hook×3-Outro)":
+            "[Intro] → [Verse 1] → [Pre-Chorus] → [Hook] → [Verse 2] → [Pre-Chorus] → [Hook] → [Bridge] → [Hook] → [Outro]",
+        "8섹션 (V1-PC1-C1-V2-PC2-C2-Br-C3)":
+            "[Verse 1] → [Pre-Chorus 1] → [Chorus 1] → [Verse 2] → [Pre-Chorus 2] → [Chorus 2] → [Bridge] → [Chorus 3]",
+        "6섹션 (V1-C1-V2-C2-Br-C3)":
+            "[Verse 1] → [Chorus 1] → [Verse 2] → [Chorus 2] → [Bridge] → [Chorus 3]",
+        "4섹션 (V1-C1-V2-C2)":
+            "[Verse 1] → [Chorus 1] → [Verse 2] → [Chorus 2]",
+    }
+    struct_str = struct_map.get(structure, struct_map["10섹션 Hook (Intro-V1-PC-Hook×3-Outro)"])
+    hook_note = ""
+    if "Hook" in structure:
+        hook_note = "⚠️ [Hook]은 3번 모두 동일한 가사 — 반복될수록 귀에 박힘. 4줄 이내, 처음 들어도 바로 따라 부를 수 있어야 함."
+
+    # 트로트 3대 원칙
+    easy_block = ""
+    if easy:
+        easy_block = """
+【트로트 가사 3대 원칙 — 절대 원칙】
+1. 쉬워야 한다: 초등학생도 이해하는 단어, 어려운 한자어·영어 금지
+2. 귀에 착착 들어와야 한다: 같은 음절 패턴 반복, 라임 맞추기, 받침 적게
+3. 따라 부르기 쉬워야 한다: 코러스/훅은 4마디 이내, 반복 구조, 음절 수 일정하게
+금지: 한 줄 12음절 초과, 추상적 표현, 억지 라임
+"""
+
+    # 감탄사 규칙
+    exclaim_block = ""
+    if exclaim:
+        exclaim_block = f"""
+【감탄사 반복구】지정: 「{exclaim}」
+- 감정이 터지는 지점(Hook/Chorus)에서 자연스럽게 배치, 억지 삽입 금지
+- 앞뒤 가사와 감정 흐름이 이어지도록 연결
+"""
+
+    # 사투리 규칙
+    dialect_block = ""
+    if dialect:
+        dialect_block = f"""
+【사투리】지정: {dialect}
+- 상황·감정과 100% 어울리는 표현만 선택, 1~2개로 충분
+- 전체를 사투리로 쓰지 말 것, 자연스럽게 녹아들게
+"""
+
+    # 숏폼 바이럴 규칙
+    viral_block = ""
+    if viral:
+        viral_block = """
+【숏폼 바이럴 훅 강화】
+- Hook/Chorus 첫 줄은 3초 안에 귀에 꽂히는 강렬한 한 줄
+- 틱톡/릴스 립싱크 챌린지가 될 만한 구간 1개 포함
+- "댓글에 ㅋㅋ 귀에서 안 떠남"이 달릴 만큼 중독성
+"""
+
+    syllable_note = {
+        "촘촘(빠른 랩핏)": "한 줄에 음절을 촘촘하게 채워 랩처럼 빠르게 흐르도록",
+        "보통": "자연스러운 멜로디 호흡",
+        "여유(긴 호흡 멜로디)": "한 줄을 여유롭게 늘여 긴 호흡의 멜로디라인 형성",
+    }.get(syllable, "자연스러운 멜로디 호흡")
+
+    extra_block = f"\n추가 키워드 반드시 포함: {extra_kw}" if extra_kw else ""
+
+    return f"""당신은 {genre} 전문 한국어 노래 작사가입니다.
 
 [채널의 주제 및 감정]
-{theme}
+{theme}{extra_block}
 
-{TONE_GUIDE}
+【가사 설정】
+- 장르/스타일: {genre}
+- 언어: {lang}
+- 보컬 타깃: {vocal}
+- 분위기: {mood}
+- 음절 밀도: {syllable_note}
 
-다음 구조로 **완벽하게 구조화된** 한국어 가사를 써주세요. 각 섹션 헤더([Verse 1] 등)는
-대괄호 그대로 출력하고, 헤더와 가사 사이는 한 줄 띄움.
+【가사 구조 — 반드시 이 순서로】
+{struct_str}
+{hook_note}
+{easy_block}{exclaim_block}{dialect_block}{viral_block}
+각 섹션 앞에 반드시 Suno 구조 태그를 붙이세요. 헤더와 가사 사이는 한 줄 띄움.
+한 섹션은 3~6줄로 간결하게. 어휘는 시적이지만 누구나 이해 가능하게.
+청취자의 마음(감정)과 몸의 컨디션을 묻는 한 줄을 가사 어딘가에 자연스럽게 포함.
 
-[Verse 1]
-…
-
-[Pre-Chorus]
-…
-
-[Chorus]
-…
-
-[Verse 2]
-…
-
-[Bridge]
-…
-
-[Outro]
-…
-
-조건:
-- 청취자의 마음(감정)과 육신(몸의 건강·컨디션)을 묻는 한 줄을 가사 어딘가에 자연스럽게 포함
-- 한 섹션은 3~6줄로 간결하게
-- 어휘는 시적이지만 누구나 이해 가능하게
-
-마지막 줄에 다음 정확한 형식으로 음악 스타일 태그를 영문 8~12개 제시 (Suno/Udio 호환):
-Style Prompts: tag1, tag2, tag3, ...
-
-예) Style Prompts: lo-fi, soft piano, warm pad, 70 BPM, breathy female vocal, healing, intimate, gentle reverb
+마지막 줄에 Suno v5.5 5단계 레이어 style_tags를 영문으로 제시:
+Style Prompts: [1단계:장르], [2단계:훅인트로], [3단계:악기조합], [4단계:보컬+BPM], [5단계:감정선+테마], detailed arrangement, dynamic build up, strong chorus impact, immersive sound design, polished mix, emotional depth
 
 가사 본문과 'Style Prompts: …' 한 줄 외에 다른 설명/마크다운은 포함하지 마세요.
 """
@@ -1450,6 +1511,7 @@ def generate_story_package(
     theme: str,
     *,
     model: str,
+    lyric_opts: dict | None = None,
 ) -> dict:
     """SEO · 오프닝 · 가사 3개를 순차 호출해 한 묶음으로 돌려준다."""
     seo_raw = call_llm(
@@ -1461,7 +1523,7 @@ def generate_story_package(
         provider, api_key, _prompt_opening(theme), model=model, response_json=False
     )
     lyrics = call_llm(
-        provider, api_key, _prompt_lyrics(theme), model=model, response_json=False
+        provider, api_key, _prompt_lyrics(theme, lyric_opts or {}), model=model, response_json=False
     )
     return {"seo": seo, "opening": opening, "lyrics": lyrics}
 
@@ -2881,6 +2943,142 @@ def render_storytelling_tab() -> None:
         help="구체적일수록 결과가 풍부해집니다. 누구를 위해, 어떤 시간/장소/감정인지 함께 적어보세요.",
     )
 
+    # ── Suno 가사 작성 지시사항 가이드 ────────────────────────
+    with st.expander("📖 Suno 가사 작성 지시사항 (클릭해서 보기)", expanded=False):
+        st.markdown("""
+### 🎵 Suno v5.5 가사 작성 핵심 규칙
+
+#### 1️⃣ 구조 태그 필수 (Suno가 구조를 인식)
+```
+[Intro]       — 보컬 없는 분위기 설정, 2~4줄 또는 허밍
+[Verse 1]     — 구체적 장면 묘사, 이야기 시작 (4~6줄)
+[Pre-Chorus]  — 긴장 고조, Hook 직전 감정 폭발 직전 (2~4줄)
+[Hook]        — ★핵심★ 4줄 이내, 3번 동일 가사 반복 (중독성 극대화)
+[Verse 2]     — 다른 장면·감정, 이야기 전개
+[Bridge]      — 조용히 감정 반전, 멜로디 변화 (3~4줄)
+[Outro]       — 여운·마무리, Hook 마지막 라인 반복 가능
+```
+
+#### 2️⃣ Suno 5.5 Lyrics 창 최상단 구조 태그 (선택)
+```
+[Tempo: 137 BPM] [Instruments: accordion, brass, techno bass]
+[Vocal Style: powerful female trot vocal] [Mixing: reverb, warm, punchy]
+```
+
+#### 3️⃣ Hook 작성 원칙 (가장 중요)
+- **3번 모두 동일한 가사** — 반복될수록 귀에 박힘
+- **음절 수 고정** — 7·5 또는 8·6 패턴 추천
+- **라임 필수** — 끝 음절을 맞춰야 멜로디가 살아남
+- 처음 들어도 바로 따라 부를 수 있어야 함
+
+#### 4️⃣ 트로트 3대 원칙
+| 원칙 | 설명 | 금지 |
+|------|------|------|
+| 쉬워야 한다 | 초등학생도 이해하는 단어 | 한자어, 영어 |
+| 귀에 착착 | 같은 음절 패턴 반복, 라임 | 받침 많은 단어 |
+| 따라부르기 쉽게 | 4마디 이내, 음절 수 일정 | 12음절 초과 줄 |
+
+#### 5️⃣ 감탄사·사투리 사용 규칙
+- **감탄사**: 감정이 터지는 순간에만 → 그 자리에 없으면 어색할 때만
+- **사투리**: 상황·감정과 100% 어울리는 표현 1~2개 → 억지 삽입 금지
+
+#### 6️⃣ Style Prompts (Suno 5.5 5단계 레이어)
+```
+[1단계:장르/시대배경], [2단계:훅인트로 묘사], [3단계:악기조합],
+[4단계:보컬톤+BPM], [5단계:감정선+테마],
+detailed arrangement, dynamic build up, strong chorus impact,
+immersive sound design, polished mix, emotional depth
+```
+""")
+
+    # ── 가사 유형 옵션 ────────────────────────────────────────
+    with st.container(border=True):
+        st.markdown("**🎼 가사 유형 설정**")
+        ly_c1, ly_c2, ly_c3 = st.columns(3)
+
+        with ly_c1:
+            st.markdown("**장르/스타일**")
+            lyric_genre = st.pills(
+                "장르",
+                ["트로트", "발라드", "K-팝", "K-인디", "포크/어쿠스틱", "R&B/소울",
+                 "힙합/랩", "뉴에이지/명상", "CCM/복음성가", "동요/동화풍", "자유"],
+                selection_mode="single", default="트로트", key="ly_genre",
+            )
+            st.markdown("**구조**")
+            lyric_structure = st.pills(
+                "구조",
+                ["10섹션 Hook (Intro-V1-PC-Hook×3-Outro)",
+                 "8섹션 (V1-PC1-C1-V2-PC2-C2-Br-C3)",
+                 "6섹션 (V1-C1-V2-C2-Br-C3)",
+                 "4섹션 (V1-C1-V2-C2)"],
+                selection_mode="single",
+                default="10섹션 Hook (Intro-V1-PC-Hook×3-Outro)",
+                key="ly_structure",
+            )
+
+        with ly_c2:
+            st.markdown("**언어**")
+            lyric_lang = st.pills(
+                "언어",
+                ["한국어", "한+영 혼합", "English", "일본어"],
+                selection_mode="single", default="한국어", key="ly_lang",
+            )
+            st.markdown("**보컬 타깃**")
+            lyric_vocal = st.pills(
+                "보컬",
+                ["여자 솔로", "남자 솔로", "남녀 듀엣", "그룹/합창", "랩+노래 혼합"],
+                selection_mode="single", default="여자 솔로", key="ly_vocal",
+            )
+            st.markdown("**분위기**")
+            lyric_mood = st.pills(
+                "분위기",
+                ["따뜻한·위로", "신나고 흥겨운", "슬프고 그리운", "청량하고 밝은",
+                 "웅장하고 감동적인", "코믹·유머러스", "로맨틱·설렘", "강렬·파워풀"],
+                selection_mode="single", default="따뜻한·위로", key="ly_mood",
+            )
+
+        with ly_c3:
+            st.markdown("**트로트 특화**")
+            ly_exclaim = st.pills(
+                "감탄사·추임새",
+                ["없음", "얼씨구 얼씨구", "좋다 좋아", "예뻐 예뻐",
+                 "아이고 아이고", "직접 입력"],
+                selection_mode="single", default="없음", key="ly_exclaim",
+            )
+            if ly_exclaim == "직접 입력":
+                ly_exclaim = st.text_input("감탄사 직접 입력", key="ly_exclaim_custom",
+                                           placeholder="예: 흥이야 흥")
+            elif ly_exclaim == "없음":
+                ly_exclaim = ""
+
+            ly_dialect = st.pills(
+                "사투리",
+                ["없음(표준어)", "경상도", "전라도", "충청도", "제주도"],
+                selection_mode="single", default="없음(표준어)", key="ly_dialect",
+            )
+            if ly_dialect == "없음(표준어)":
+                ly_dialect = ""
+
+            ly_viral = st.toggle("🔥 숏폼 바이럴 훅 강화", value=False, key="ly_viral",
+                                  help="코러스 첫 줄 3초 훅, 립싱크 챌린지 구간")
+            ly_easy = st.toggle("✅ 트로트 3대 원칙 적용", value=True, key="ly_easy",
+                                 help="쉽고·귀에착착·따라부르기쉽게")
+
+        # 음절 수 / 한 줄 길이
+        ly_c4, ly_c5 = st.columns(2)
+        with ly_c4:
+            lyric_syllable = st.pills(
+                "음절 밀도",
+                ["촘촘(빠른 랩핏)", "보통", "여유(긴 호흡 멜로디)"],
+                selection_mode="single", default="보통", key="ly_syllable",
+            )
+        with ly_c5:
+            lyric_theme_extra = st.text_input(
+                "추가 가사 키워드 (선택)",
+                placeholder="예: 고향, 엄마, 소주 한 잔, 트랙터, 봄꽃...",
+                key="ly_theme_extra",
+            )
+
     col_btn, col_clear = st.columns([1, 1])
     with col_btn:
         run = st.button(
@@ -2899,6 +3097,21 @@ def render_storytelling_tab() -> None:
     if clear:
         st.session_state.pop("story_package", None)
         st.session_state.pop("story_theme_used", None)
+
+    # 가사 유형 옵션 수집
+    _lyric_opts = {
+        "genre":    st.session_state.get("ly_genre", "트로트"),
+        "structure":st.session_state.get("ly_structure", "10섹션 Hook (Intro-V1-PC-Hook×3-Outro)"),
+        "lang":     st.session_state.get("ly_lang", "한국어"),
+        "vocal":    st.session_state.get("ly_vocal", "여자 솔로"),
+        "mood":     st.session_state.get("ly_mood", "따뜻한·위로"),
+        "exclaim":  st.session_state.get("ly_exclaim_custom", "") if st.session_state.get("ly_exclaim") == "직접 입력" else (st.session_state.get("ly_exclaim","") if st.session_state.get("ly_exclaim","") != "없음" else ""),
+        "dialect":  "" if st.session_state.get("ly_dialect","") in ("없음(표준어)", "") else st.session_state.get("ly_dialect",""),
+        "viral":    st.session_state.get("ly_viral", False),
+        "easy":     st.session_state.get("ly_easy", True),
+        "syllable": st.session_state.get("ly_syllable", "보통"),
+        "extra_kw": st.session_state.get("ly_theme_extra", ""),
+    }
 
     _GEMINI_BLOCKED_HINTS = ("API_KEY_SERVICE_BLOCKED", "blocked", "403", "PERMISSION_DENIED", "404", "no longer available")
 
@@ -2920,7 +3133,7 @@ def render_storytelling_tab() -> None:
                             try:
                                 gem_pkg = generate_story_package(
                                     "gemini", gemini_key_cmp.strip(), theme.strip(),
-                                    model=DEFAULT_MODELS["gemini"]
+                                    model=DEFAULT_MODELS["gemini"], lyric_opts=_lyric_opts
                                 )
                                 st.success("🔵 Gemini 완료!")
                             except Exception as e:
@@ -2935,7 +3148,7 @@ def render_storytelling_tab() -> None:
                             try:
                                 oai_pkg = generate_story_package(
                                     "openai", openai_key_cmp.strip(), theme.strip(),
-                                    model=DEFAULT_MODELS["openai"]
+                                    model=DEFAULT_MODELS["openai"], lyric_opts=_lyric_opts
                                 )
                                 st.success("🟢 OpenAI 완료!")
                             except Exception as e:
@@ -2959,7 +3172,7 @@ def render_storytelling_tab() -> None:
                 _openai_key = os.getenv("OPENAI_API_KEY") or SAVED_KEYS.get("openai", "")
                 try:
                     with st.spinner(f"{provider_label} 호출 중 — SEO → 오프닝 대본 → 가사 순으로 생성합니다..."):
-                        pkg = generate_story_package(provider, api_key.strip(), theme.strip(), model=model_final)
+                        pkg = generate_story_package(provider, api_key.strip(), theme.strip(), model=model_final, lyric_opts=_lyric_opts)
                     st.session_state.story_package = pkg
                     st.session_state.story_theme_used = theme.strip()
                     st.session_state.pop("story_compare_result", None)
@@ -2971,7 +3184,7 @@ def render_storytelling_tab() -> None:
                         st.warning("⚠️ Gemini API가 차단됐습니다. OpenAI로 자동 전환합니다...")
                         try:
                             with st.spinner("OpenAI로 재시도 중..."):
-                                pkg = generate_story_package("openai", _openai_key, theme.strip(), model=DEFAULT_MODELS["openai"])
+                                pkg = generate_story_package("openai", _openai_key, theme.strip(), model=DEFAULT_MODELS["openai"], lyric_opts=_lyric_opts)
                             st.session_state.story_package = pkg
                             st.session_state.story_theme_used = theme.strip()
                             st.success("✅ OpenAI로 생성 완료!")
