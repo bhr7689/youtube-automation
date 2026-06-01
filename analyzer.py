@@ -42,16 +42,43 @@ def build_prompt(meta: dict, vocab: dict, *, preset_hint: str | None = None) -> 
     if comments:
         joined = "\n".join(f"  · {c}" for c in comments[:20])
         meta_lines.append(f"- 상위 댓글:\n{joined}")
+
+    audio = meta.get("audio_features") or {}
+    if audio:
+        audio_bits: list[str] = []
+        if audio.get("tempo_bpm"):
+            audio_bits.append(f"BPM≈{audio['tempo_bpm']:.0f}")
+        if audio.get("key_label"):
+            audio_bits.append(f"키={audio['key_label']}")
+        if audio.get("duration_sec"):
+            audio_bits.append(f"길이={int(audio['duration_sec'])}초")
+        if audio.get("rms_mean") is not None:
+            audio_bits.append(f"평균에너지={audio['rms_mean']:.3f}")
+        if audio.get("spectral_centroid_mean") is not None:
+            audio_bits.append(f"스펙트럴센트로이드={audio['spectral_centroid_mean']:.0f}Hz")
+        if audio.get("onset_rate") is not None:
+            audio_bits.append(f"어택밀도={audio['onset_rate']}/초")
+        if audio_bits:
+            meta_lines.append("- 실측 오디오 특성: " + ", ".join(audio_bits))
+
+    lyrics_excerpt = (meta.get("lyrics_excerpt") or "").strip()
+    if lyrics_excerpt:
+        meta_lines.append(f"- 가사 일부:\n  {lyrics_excerpt[:600]}")
+
     meta_block = "\n".join(meta_lines)
 
     allowed_block = json.dumps(
         {"mood": moods, "presets": presets, **allowed}, ensure_ascii=False, indent=2
     )
 
+    audio_note = (
+        "\n* 실측 BPM/키가 주어졌으면 picks 의 bpm 은 그 값을 따르고, rhythm/mood 는 "
+        "BPM 범위와 모드(major/minor)에 부합하는 어휘를 골라주세요."
+    ) if audio else ""
+
     return f"""당신은 한국 5070 시니어 트로트 음악을 분석하는 음악 기획자입니다.
-아래 유튜브 영상 메타데이터만 보고, 이 곡의 음악 스타일을 추정해 Suno 프롬프트
-빌딩블록으로 변환하세요. 실제 소리는 들을 수 없으니, 제목·태그·설명·댓글의 단서로
-합리적으로 추정합니다.
+아래 유튜브 영상 메타데이터(그리고 가능한 경우 실측 오디오 특성·가사 일부)를 보고,
+이 곡의 음악 스타일을 추정해 Suno 프롬프트 빌딩블록으로 변환하세요.{audio_note}
 
 [메타데이터]
 {meta_block}

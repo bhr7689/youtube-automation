@@ -29,6 +29,7 @@ except Exception:
     pass
 
 import analyzer
+import audio_probe
 import lyrics_analyzer
 import lyrics_library
 import recipes
@@ -152,6 +153,7 @@ def _load_vocab_cached() -> dict:
 def render_analyze_tab(
     vocab: dict, yt_key: str, gem_key: str, oai_key: str, model: str,
     preset_key: str, max_comments: int, allow_whisper: bool,
+    allow_audio_probe: bool = False,
 ) -> None:
     st.subheader("🔎 좋은 곡 → 곡 프롬프트 + 작사가 프롬프트 동시 추출")
     st.caption(
@@ -219,6 +221,7 @@ def render_analyze_tab(
                 st.session_state["rv_transcript"] = tr.as_dict()
                 st.session_state.pop("rv_song_result", None)
                 st.session_state.pop("rv_lyrics_result", None)
+                st.session_state.pop("rv_audio", None)
 
                 if tr.ok:
                     src_label = {
@@ -231,6 +234,18 @@ def render_analyze_tab(
                         f"메타 수집은 완료. 가사는 못 가져왔습니다 → {tr.error or '사용 가능한 자막 없음'}. "
                         "사이드바에서 Whisper fallback 을 켜면 다시 시도할 수 있습니다."
                     )
+
+                if allow_audio_probe:
+                    with st.spinner("오디오 다운로드 + librosa 실측 분석 중… (30초~2분 소요)"):
+                        feats = audio_probe.probe_video(vid)
+                    st.session_state["rv_audio"] = feats.as_dict()
+                    if feats.ok:
+                        st.success(f"오디오 실측 완료: {feats.summary()}")
+                    else:
+                        st.warning(
+                            f"오디오 실측 실패 → {feats.error or '알 수 없음'}. "
+                            "메타·가사만으로 분석을 진행합니다."
+                        )
             except Exception as e:
                 st.error(f"수집 실패: {type(e).__name__}: {e}")
 
@@ -257,6 +272,26 @@ def render_analyze_tab(
                     st.markdown(f"**상위 댓글 {len(meta['comments'])}개**")
                     for c in meta["comments"][:10]:
                         st.markdown(f"- {c}")
+
+    # --- 오디오 실측 결과 카드 ---
+    audio_dict: dict[str, Any] | None = st.session_state.get("rv_audio")
+    if audio_dict and not audio_dict.get("error"):
+        with st.container(border=True):
+            st.markdown("**🎧 오디오 실측 (librosa)**")
+            metrics = st.columns(4)
+            metrics[0].metric("BPM", f"{audio_dict.get('tempo_bpm') or 0:.0f}")
+            metrics[1].metric("키", audio_dict.get("key_label") or "-")
+            dur = audio_dict.get("duration_sec") or 0
+            metrics[2].metric("길이", f"{int(dur)//60}:{int(dur)%60:02d}" if dur else "-")
+            metrics[3].metric("평균 에너지",
+                              f"{audio_dict.get('rms_mean') or 0:.3f}")
+            with st.expander("스펙트럼/리듬 세부 지표"):
+                st.json({
+                    k: audio_dict.get(k) for k in [
+                        "spectral_centroid_mean", "zero_crossing_rate_mean",
+                        "onset_rate", "rms_peak", "key_confidence", "sample_rate",
+                    ]
+                })
 
     # --- 가사 미리보기 + 편집 ---
     if tr_dict:
@@ -287,11 +322,23 @@ def render_analyze_tab(
         elif not gem_key.strip():
             st.error("Gemini API 키가 필요합니다. (사이드바)")
         else:
-            # 곡 picks (메타데이터 기반)
+            # 곡 picks: 메타 + (있으면) 오디오 실측 + 가사 일부를 모두 주입
+            enriched_meta = dict(meta)
+            audio = st.session_state.get("rv_audio") or {}
+            if audio and not audio.get("error"):
+                enriched_meta["audio_features"] = {
+                    k: audio.get(k) for k in [
+                        "tempo_bpm", "key_label", "duration_sec", "rms_mean",
+                        "spectral_centroid_mean", "onset_rate",
+                    ]
+                }
+            lyrics_text = (st.session_state.get("rv_transcript") or {}).get("text") or ""
+            if lyrics_text.strip():
+                enriched_meta["lyrics_excerpt"] = lyrics_text[:600]
             try:
                 with st.spinner("Gemini 역설계 분석 중 (곡 picks)…"):
                     song_result = analyzer.analyze_metadata(
-                        meta, vocab,
+                        enriched_meta, vocab,
                         preset_hint=preset_key,
                         api_key=gem_key.strip(),
                         model=model.strip() or analyzer.DEFAULT_MODEL,
@@ -708,6 +755,17 @@ def main() -> None:
                  "본인 권리·CC 라이선스 영상에만 사용하세요.",
         )
         st.divider()
+        st.markdown("**오디오 실측 (librosa)**")
+        st.caption(
+            "yt-dlp 로 오디오를 받아 BPM·키·에너지·리듬 밀도를 직접 측정합니다. "
+            "곡당 30초~2분 소요. 추출된 실측치는 Gemini 분석에 단서로 주입됩니다."
+        )
+        allow_audio_probe = st.checkbox(
+            "🎧 오디오 실측 분석 활성화 (BPM/키/에너지)",
+            value=False,
+            help="본인 권리·CC 라이선스 영상에만 사용하세요.",
+        )
+        st.divider()
         st.caption(
             f"저장소: `recipes.json` ({len(recipes.list_recipes())}개)  ·  "
             f"`lyrics_library.json` ({len(lyrics_library.list_entries())}개)"
@@ -719,7 +777,7 @@ def main() -> None:
     with tab_analyze:
         render_analyze_tab(
             vocab, yt_key, gem_key, oai_key, model, preset_key,
-            max_comments, allow_whisper,
+            max_comments, allow_whisper, allow_audio_probe,
         )
     with tab_song:
         render_song_library_tab(vocab)

@@ -116,6 +116,13 @@ python pipeline.py --init                              # 파이프라인 폴더 
     `lyrics_library.json`; 같은 장르 곡들 종합한 **통합 페르소나** 생성 기능).
   - 의존성 추가: `youtube-transcript-api`, `yt-dlp`.
   - 실행: `streamlit run reverse_app.py`. 곡 제작은 Suno 에서 사용자가 직접.
+- [x] 🎧 **오디오 실측 분석** 통합(2026-06-01, sleepy-fermat-76R13):
+  `audio_probe.py` 신규 모듈 — yt-dlp 로 오디오 추출 + librosa 로
+  BPM/키(Krumhansl-Schmuckler)/길이/RMS 에너지/스펙트럴센트로이드/어택밀도 실측.
+  옵트인 토글(사이드바 "🎧 오디오 실측 분석 활성화"). 본인 권리·CC 영상 한정.
+  `analyzer.build_prompt` 가 `meta["audio_features"]` 와 `meta["lyrics_excerpt"]` 를
+  받아 Gemini 프롬프트에 실측 단서로 주입 — 추정 정확도 격상.
+  의존성 추가: `librosa>=0.10.1`.
 - [ ] 실제 API 키로 end-to-end 점검(collect→score→검수→역설계→pipeline) — 키 필요해 미수행
 - [ ] `automation.py`(laughing-hawking) cron 레이어를 통합할지 결정
 - [ ] sleepy-fermat-76R13 의 reverse_app.py 를 default 브랜치(eqO5N)로 머지해야 사용자 화면에 반영됨
