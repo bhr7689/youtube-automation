@@ -54,6 +54,8 @@ def save_recipe(
     bpm: int | None = None,
     hook: str = "",
     source_video_id: str | None = None,
+    source_url: str = "",
+    category: str = "",
     notes: str = "",
     path: str | Path = RECIPES_PATH,
 ) -> dict:
@@ -64,16 +66,40 @@ def save_recipe(
         "id": _new_id(),
         "name": name.strip() or "이름없는 레시피",
         "preset": preset,
+        "category": (category or "").strip(),
         "picks": clean_picks,
         "bpm": int(bpm) if bpm else None,
         "hook": hook.strip(),
         "source_video_id": source_video_id,
+        "source_url": source_url.strip(),
         "notes": notes.strip(),
         "created_at": _now_iso(),
     }
     data["recipes"].append(recipe)
     _write(data, path)
     return recipe
+
+
+def update_recipe(
+    recipe_id: str, *, path: str | Path = RECIPES_PATH, **fields,
+) -> dict | None:
+    """레시피 일부 필드 수정(예: category, name, notes). 알려진 필드만 반영."""
+    allowed = {"name", "category", "notes", "hook", "source_url", "bpm"}
+    data = load_recipes(path)
+    for r in data["recipes"]:
+        if r["id"] == recipe_id:
+            for k, v in fields.items():
+                if k in allowed:
+                    r[k] = v
+            _write(data, path)
+            return r
+    return None
+
+
+def distinct_categories(path: str | Path = RECIPES_PATH) -> list[str]:
+    """저장된 레시피의 카테고리 목록(중복 제거, 정렬). 빈값은 제외."""
+    seen = {(r.get("category") or "").strip() for r in load_recipes(path)["recipes"]}
+    return sorted(c for c in seen if c)
 
 
 def list_recipes(path: str | Path = RECIPES_PATH) -> list[dict]:

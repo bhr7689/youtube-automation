@@ -1,4 +1,7 @@
-"""🔎 곡 역설계 단독 툴 — URL 한 줄로 Suno 프롬프트 카드까지.
+"""🔎 곡 역설계 단독 툴 — 카테고리별 "내 프롬프트 도서관" 구축기.
+
+스코프: **좋은 곡 링크 → 프롬프트 역설계 → 카테고리별 저장**. 곡 제작은 Suno 에서
+사용자가 직접 하므로, 이 툴은 데이터화(컬렉션 구축)에만 집중한다.
 
 별도 Streamlit 앱이다. app.py(메인 대시보드)와 독립적으로 켤 수 있다.
 
@@ -6,16 +9,12 @@
     streamlit run reverse_app.py
 
 흐름:
-    유튜브 URL/ID 입력
-        ↓ YouTube Data API (snippet+statistics+commentThreads)
-    제목/채널/태그/설명/상위 댓글 자동 수집
-        ↓ analyzer.analyze_metadata (Gemini, vocab.json 통제어휘 안)
-    Suno picks + mood + bpm + 새 어휘 후보
-        ↓ suno_studio.picks_to_prompt
-    완성된 Suno 프롬프트 문자열
-        ↓ (옵션) 레시피 저장 / 파이프라인 inbox 투입
+    🔎 분석 탭        ── 카테고리 선택 → URL 붙여넣기 → 메타 자동 수집 → Gemini 역설계
+                       → Suno 프롬프트 카드 → 마음에 들면 도서관에 저장
+    📚 도서관 탭     ── 카테고리별로 저장된 프롬프트 카드 열람·복사·삭제·메모
 
-키: YOUTUBE_API_KEY(필수), GEMINI_API_KEY(필수). 둘 다 .env 로드 우선.
+키: YOUTUBE_API_KEY(필수), GEMINI_API_KEY(필수). .env 자동 로드.
+저장소: recipes.json (app.py 의 스튜디오와 공유. category/source_url 필드 추가).
 """
 
 from __future__ import annotations
@@ -23,8 +22,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import time
-from pathlib import Path
 from typing import Any
 
 import streamlit as st
@@ -38,6 +35,13 @@ except Exception:
 import analyzer
 import recipes
 import suno_studio
+
+
+# 기본 카테고리(사용자가 새로 추가하면 도서관에 자동 누적됨).
+DEFAULT_CATEGORIES = [
+    "트로트", "발라드", "효도", "5070 댄스",
+    "인스트루멘털", "가스펠", "동요", "기타",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -66,11 +70,10 @@ def extract_video_id(raw: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# YouTube Data API 호출 (collect.py 와 같은 방식)
+# YouTube Data API
 # ---------------------------------------------------------------------------
 
 def fetch_video_metadata(api_key: str, video_id: str, *, max_comments: int = 20) -> dict:
-    """단일 영상의 snippet/statistics + 상위 댓글을 한 번에 가져온다."""
     from googleapiclient.discovery import build
 
     youtube = build("youtube", "v3", developerKey=api_key, cache_discovery=False)
@@ -86,23 +89,24 @@ def fetch_video_metadata(api_key: str, video_id: str, *, max_comments: int = 20)
     stats = v.get("statistics", {}) or {}
 
     comments: list[str] = []
-    try:
-        c_resp = youtube.commentThreads().list(
-            part="snippet", videoId=video_id,
-            maxResults=min(100, max_comments), order="relevance",
-            textFormat="plainText",
-        ).execute()
-        for it in c_resp.get("items", []):
-            text = (
-                it.get("snippet", {})
-                .get("topLevelComment", {})
-                .get("snippet", {})
-                .get("textDisplay")
-            )
-            if text:
-                comments.append(text)
-    except Exception:
-        pass
+    if max_comments > 0:
+        try:
+            c_resp = youtube.commentThreads().list(
+                part="snippet", videoId=video_id,
+                maxResults=min(100, max_comments), order="relevance",
+                textFormat="plainText",
+            ).execute()
+            for it in c_resp.get("items", []):
+                text = (
+                    it.get("snippet", {})
+                    .get("topLevelComment", {})
+                    .get("snippet", {})
+                    .get("textDisplay")
+                )
+                if text:
+                    comments.append(text)
+        except Exception:
+            pass
 
     return {
         "video_id": video_id,
@@ -121,50 +125,25 @@ def fetch_video_metadata(api_key: str, video_id: str, *, max_comments: int = 20)
 
 
 # ---------------------------------------------------------------------------
-# 파이프라인 inbox 잡 생성 (mp3 없이 메타만 — 사람이 mp3 떨굴 자리)
+# 카테고리 헬퍼
 # ---------------------------------------------------------------------------
 
-def write_pipeline_stub(
-    *, root: str | os.PathLike, title: str, prompt: str,
-    picks: dict, meta: dict,
-) -> Path:
-    """inbox/<job_id>/ 폴더와 job.json + style.txt 만 만들어둔다.
+def all_categories() -> list[str]:
+    """기본 카테고리 + 저장된 레시피에서 발견된 카테고리(중복 제거, 순서 유지)."""
+    found = recipes.distinct_categories()
+    merged: list[str] = []
+    for c in DEFAULT_CATEGORIES + found:
+        if c and c not in merged:
+            merged.append(c)
+    return merged
 
-    오디오·배경은 사람이 Suno 결과를 떨굴 자리. pipeline.py 가 자동 합성한다.
-    """
-    job_id = f"reverse_{int(time.time())}_{(meta.get('video_id') or 'x')[:8]}"
-    inbox = Path(root) / "inbox" / job_id
-    inbox.mkdir(parents=True, exist_ok=True)
 
-    job = {
-        "title": title or meta.get("title") or "역설계 자동 잡",
-        "background_color": "0x101418",
-        "resolution": "1920x1080",
-        "audio_bitrate": "192k",
-        "crf": 22,
-        "_source": {
-            "kind": "reverse_engineering",
-            "video_id": meta.get("video_id"),
-            "url": f"https://www.youtube.com/watch?v={meta.get('video_id')}",
-            "channel": meta.get("channel"),
-            "picks": picks,
-            "suno_prompt": prompt,
-        },
-    }
-    (inbox / "job.json").write_text(
-        json.dumps(job, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    (inbox / "style.txt").write_text(prompt, encoding="utf-8")
-    (inbox / "README.txt").write_text(
-        "이 폴더에 Suno mp3 를 떨구면 pipeline.py 가 자동으로 MP4 를 만듭니다.\n"
-        "배경 이미지(png/jpg)를 함께 두면 그걸 배경으로 씁니다(없으면 단색).\n",
-        encoding="utf-8",
-    )
-    return inbox
+def youtube_url(video_id: str | None) -> str:
+    return f"https://www.youtube.com/watch?v={video_id}" if video_id else ""
 
 
 # ---------------------------------------------------------------------------
-# Streamlit UI
+# UI
 # ---------------------------------------------------------------------------
 
 def _load_vocab_cached() -> dict:
@@ -173,48 +152,46 @@ def _load_vocab_cached() -> dict:
     return st.session_state["_vocab"]
 
 
-def main() -> None:
-    st.set_page_config(page_title="곡 역설계 — Suno 프롬프트 추출", page_icon="🔎", layout="wide")
-    st.title("🔎 곡 역설계 단독 툴")
+def render_analyze_tab(vocab: dict, yt_key: str, gem_key: str, model: str,
+                      preset_key: str, max_comments: int) -> None:
+    st.subheader("🔎 좋은 곡을 프롬프트로 역설계")
     st.caption(
-        "유튜브 링크 한 줄 → 메타데이터 자동 수집 → Gemini 역설계 → Suno 프롬프트 카드. "
-        "오디오는 받지 않음(ToS 안전). vocab.json 통제 어휘로 정렬됨."
+        "마음에 든 유튜브 곡을 카테고리에 담아 분석합니다. "
+        "오디오는 받지 않고(ToS 안전) 제목·태그·설명·댓글만으로 추정합니다."
     )
 
-    vocab = _load_vocab_cached()
-    presets = suno_studio.list_presets(vocab)
+    cats = all_categories()
 
-    # --- 사이드바: 키 / 설정 ---
-    with st.sidebar:
-        st.header("🔑 키 / 설정")
-        yt_key = st.text_input(
-            "YouTube API Key", type="password",
-            value=os.getenv("YOUTUBE_API_KEY", ""),
-            help="영상 메타데이터/댓글 수집에 필요합니다.",
+    # --- 카테고리: 기존에서 고르거나 직접 입력 (직접 입력값 우선) ---
+    st.markdown("**카테고리 / 장르**  · 기존에서 고르거나 오른쪽에 직접 입력하세요 (직접 입력이 우선)")
+    cat_cols = st.columns([2, 2])
+    with cat_cols[0]:
+        picked = st.selectbox(
+            "기존 카테고리에서 선택",
+            options=["(선택 안 함)"] + cats,
+            key="rv_cat_select",
+            label_visibility="collapsed",
         )
-        gem_key = st.text_input(
-            "Gemini API Key", type="password",
-            value=os.getenv("GEMINI_API_KEY", ""),
-            help="역설계(스타일 추정)에 필요합니다.",
+    with cat_cols[1]:
+        typed = st.text_input(
+            "직접 입력",
+            key="rv_cat_typed",
+            placeholder="예: 시티팝 / 90년대 발라드 / 보사노바",
+            label_visibility="collapsed",
         )
-        model = st.text_input("Gemini 모델", value=analyzer.DEFAULT_MODEL)
-        preset_key = st.selectbox(
-            "프리셋(나라/장르 힌트)",
-            options=[k for k, _ in presets],
-            format_func=lambda k: dict(presets)[k],
-        )
-        max_comments = st.slider("수집 댓글 수", 0, 50, 20)
-        st.divider()
-        pipe_root = st.text_input(
-            "파이프라인 루트",
-            value=os.getenv("PIPELINE_ROOT", "./pipeline_data"),
-            help="inbox 투입 시 사용할 폴더. pipeline.py 와 동일 경로여야 합니다.",
-        )
+    typed_clean = (typed or "").strip()
+    if typed_clean:
+        category = typed_clean
+    elif picked and picked != "(선택 안 함)":
+        category = picked
+    else:
+        category = ""
+    if category:
+        st.caption(f"→ 저장 카테고리: **{category}**")
 
-    # --- 입력 ---
     url = st.text_input(
         "유튜브 URL 또는 video_id",
-        placeholder="https://www.youtube.com/watch?v=XXXXXXXXXXX  또는  XXXXXXXXXXX",
+        placeholder="https://www.youtube.com/watch?v=XXXXXXXXXXX",
         key="rv_url",
     )
 
@@ -232,7 +209,9 @@ def main() -> None:
         else:
             try:
                 with st.spinner(f"메타데이터 수집 중… ({vid})"):
-                    meta = fetch_video_metadata(yt_key.strip(), vid, max_comments=max_comments)
+                    meta = fetch_video_metadata(
+                        yt_key.strip(), vid, max_comments=max_comments,
+                    )
                 st.session_state["rv_meta"] = meta
                 st.session_state.pop("rv_result", None)
                 st.success(f"수집 완료: {meta['title']}")
@@ -241,7 +220,6 @@ def main() -> None:
 
     meta: dict[str, Any] | None = st.session_state.get("rv_meta")
 
-    # --- 메타 미리보기 ---
     if meta:
         with st.container(border=True):
             top = st.columns([1, 3])
@@ -255,7 +233,8 @@ def main() -> None:
             if meta.get("tags"):
                 top[1].markdown("**태그:** " + ", ".join(meta["tags"][:20]))
             with st.expander("설명 / 댓글 보기"):
-                st.text_area("설명", value=meta.get("description", ""), height=120, disabled=True)
+                st.text_area("설명", value=meta.get("description", ""),
+                             height=120, disabled=True, key="rv_meta_desc")
                 if meta.get("comments"):
                     st.markdown(f"**상위 댓글 {len(meta['comments'])}개**")
                     for c in meta["comments"][:10]:
@@ -282,11 +261,13 @@ def main() -> None:
 
     result = st.session_state.get("rv_result")
 
-    # --- 결과 카드 ---
+    # --- 결과 카드 + 저장 ---
     if result and meta:
         st.divider()
         st.subheader("🎚️ Suno 프롬프트 카드")
-        prompt_text = suno_studio.picks_to_prompt(vocab, result["preset"], result["picks"])
+        prompt_text = suno_studio.picks_to_prompt(
+            vocab, result["preset"], result["picks"]
+        )
 
         mcols = st.columns(3)
         mcols[0].metric("무드", result.get("mood") or "-")
@@ -295,6 +276,7 @@ def main() -> None:
         if result.get("rationale"):
             st.caption(f"💡 근거: {result['rationale']}")
 
+        st.markdown("**Suno 에 그대로 붙여넣을 프롬프트:**")
         st.code(prompt_text, language=None)
 
         with st.expander("picks (차원별 원본)"):
@@ -302,59 +284,203 @@ def main() -> None:
 
         new_terms = result.get("new_terms") or {}
         if new_terms:
-            st.markdown("**🧩 새 어휘 후보 (vocab.json 보완용)**")
-            st.json(new_terms)
+            with st.expander("🧩 새 어휘 후보 (vocab.json 보완용)"):
+                st.json(new_terms)
 
         st.divider()
-        st.subheader("📦 다음 단계")
-        save_col, send_col = st.columns(2)
-
-        with save_col:
-            st.markdown("**레시피로 저장**")
+        st.subheader("📥 도서관에 저장")
+        if not category:
+            st.warning("저장하려면 위에서 카테고리를 선택하거나 새로 만드세요.")
+        else:
+            st.caption(f"카테고리: **{category}**")
             rname = st.text_input(
-                "레시피 이름",
-                value=meta["title"][:40] or "역설계 레시피",
-                key="rv_rname",
+                "프롬프트 이름 (기억하기 쉬운 라벨)",
+                value=meta["title"][:50] or "역설계 프롬프트",
+                key="rv_save_name",
             )
-            if st.button("💾 recipes.json 에 저장", use_container_width=True):
+            note = st.text_area(
+                "메모 (선택) — 이 곡이 좋은 이유, Suno 에서 시도한 변형 등",
+                key="rv_save_note", height=70,
+            )
+            if st.button("💾 도서관에 저장", type="primary", use_container_width=True):
                 try:
                     rec = recipes.save_recipe(
-                        rname or meta["title"] or "역설계 레시피",
+                        rname or meta["title"] or "역설계 프롬프트",
                         result["preset"], result["picks"],
                         bpm=result.get("bpm"),
                         source_video_id=meta.get("video_id"),
-                        notes=result.get("rationale", ""),
+                        source_url=youtube_url(meta.get("video_id")),
+                        category=category,
+                        notes=(note.strip() or result.get("rationale", "")),
                     )
-                    st.success(f"저장됨: {rec['name']}")
+                    st.success(f"저장됨: **{rec['name']}**  ({category})")
+                    st.session_state.pop("rv_result", None)
+                    st.session_state.pop("rv_meta", None)
                 except Exception as e:
                     st.error(f"저장 실패: {type(e).__name__}: {e}")
 
-        with send_col:
-            st.markdown("**파이프라인 inbox 로 보내기 (mp3 자리 만들기)**")
-            st.caption(
-                "프롬프트와 메타가 담긴 잡 폴더를 만들어둡니다. "
-                "Suno 에서 받은 mp3 를 그 폴더에 떨구면 pipeline.py 가 MP4 로 합성합니다."
-            )
-            if st.button("📥 inbox 폴더 만들기", use_container_width=True):
-                try:
-                    job_dir = write_pipeline_stub(
-                        root=pipe_root,
-                        title=meta["title"],
-                        prompt=prompt_text,
-                        picks=result["picks"],
-                        meta=meta,
-                    )
-                    st.success(f"생성: `{job_dir}`")
-                    st.caption("이 폴더에 mp3 (그리고 선택 배경 이미지) 를 넣고 "
-                               "`python pipeline.py --once` 실행.")
-                except Exception as e:
-                    st.error(f"폴더 생성 실패: {type(e).__name__}: {e}")
-
     elif not meta:
         st.info(
-            "👆 위에 URL 을 넣고 **① 메타 가져오기** → **② 역설계 분석** 순서로 진행하세요. "
-            "키는 사이드바에 있습니다."
+            "👆 카테고리 선택 → URL 붙여넣기 → **① 메타 가져오기** → **② 역설계 분석** 순서로 진행하세요."
         )
+
+
+def render_library_tab(vocab: dict) -> None:
+    st.subheader("📚 내 프롬프트 도서관")
+    st.caption("카테고리별로 모은 역설계 프롬프트. Suno 에 붙여넣을 텍스트가 카드마다 들어있습니다.")
+
+    all_recipes = recipes.list_recipes()
+    if not all_recipes:
+        st.info("아직 모은 프롬프트가 없습니다. 🔎 분석 탭에서 첫 곡을 역설계하세요.")
+        return
+
+    # 카테고리별 그룹화 (빈 카테고리는 '미분류' 로)
+    grouped: dict[str, list[dict]] = {}
+    for r in all_recipes:
+        c = (r.get("category") or "").strip() or "미분류"
+        grouped.setdefault(c, []).append(r)
+
+    # 필터
+    filt_cols = st.columns([2, 1, 1])
+    cats_in_lib = sorted(grouped.keys())
+    selected = filt_cols[0].multiselect(
+        "카테고리 필터 (비우면 전체)", options=cats_in_lib, default=[],
+        key="rv_lib_cat_filter",
+    )
+    sort_mode = filt_cols[1].selectbox(
+        "정렬", ["최신순", "이름순"], key="rv_lib_sort",
+    )
+    filt_cols[2].metric("총 개수", len(all_recipes))
+
+    shown_cats = selected if selected else cats_in_lib
+
+    for cat in shown_cats:
+        items = list(grouped.get(cat, []))
+        if not items:
+            continue
+        if sort_mode == "최신순":
+            items.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+        else:
+            items.sort(key=lambda r: r.get("name", ""))
+
+        st.markdown(f"## {cat}  ·  {len(items)}개")
+        for r in items:
+            render_recipe_card(r, vocab)
+
+
+def render_recipe_card(r: dict, vocab: dict) -> None:
+    rid = r["id"]
+    confirm_key = f"rv_del_confirm_{rid}"
+    edit_key = f"rv_edit_open_{rid}"
+
+    with st.container(border=True):
+        head = st.columns([5, 1])
+        head[0].markdown(f"### {r.get('name', '(이름없음)')}")
+        head[0].caption(
+            f"카테고리: **{r.get('category') or '미분류'}**  ·  "
+            f"프리셋: {r.get('preset', '')}  ·  "
+            f"BPM: {r.get('bpm') or '-'}  ·  "
+            f"저장: {(r.get('created_at') or '')[:10]}"
+        )
+        if r.get("source_url"):
+            head[1].link_button("🔗 원본", r["source_url"], use_container_width=True)
+
+        try:
+            prompt = suno_studio.picks_to_prompt(
+                vocab, r.get("preset") or "kr_trot", r.get("picks") or {}
+            )
+        except Exception:
+            prompt = "(프롬프트 재구성 실패)"
+        st.code(prompt, language=None)
+
+        if r.get("notes"):
+            st.caption(f"📝 {r['notes']}")
+
+        with st.expander("picks / 메타 보기"):
+            st.json({k: v for k, v in r.items() if k not in {"picks"}})
+            st.json(r.get("picks") or {})
+
+        action_cols = st.columns([1, 1, 1, 3])
+        if action_cols[0].button("✏️ 카테고리 수정", key=f"rv_edit_{rid}"):
+            st.session_state[edit_key] = not st.session_state.get(edit_key, False)
+
+        if action_cols[1].button("🗑 삭제", key=f"rv_del_{rid}"):
+            st.session_state[confirm_key] = True
+
+        if st.session_state.get(confirm_key):
+            st.warning(f"정말 '{r.get('name')}' 을(를) 삭제할까요? 되돌릴 수 없습니다.")
+            yn = st.columns([1, 1, 4])
+            if yn[0].button("✅ 예, 삭제", key=f"rv_del_yes_{rid}", type="primary"):
+                recipes.delete_recipe(rid)
+                st.session_state.pop(confirm_key, None)
+                st.success("삭제되었습니다.")
+                st.rerun()
+            if yn[1].button("취소", key=f"rv_del_no_{rid}"):
+                st.session_state.pop(confirm_key, None)
+                st.rerun()
+
+        if st.session_state.get(edit_key):
+            cats = all_categories() + ["미분류"]
+            cur = r.get("category") or "미분류"
+            new_cat = st.selectbox(
+                "카테고리 변경", options=cats,
+                index=cats.index(cur) if cur in cats else 0,
+                key=f"rv_edit_sel_{rid}",
+            )
+            if st.button("저장", key=f"rv_edit_save_{rid}"):
+                recipes.update_recipe(
+                    rid, category=("" if new_cat == "미분류" else new_cat),
+                )
+                st.session_state.pop(edit_key, None)
+                st.success("수정되었습니다.")
+                st.rerun()
+
+
+def main() -> None:
+    st.set_page_config(
+        page_title="곡 역설계 — 내 프롬프트 도서관",
+        page_icon="🔎", layout="wide",
+    )
+    st.title("🔎 곡 역설계 → 📚 내 프롬프트 도서관")
+    st.caption(
+        "좋은 곡 링크 → Suno 프롬프트 역설계 → 카테고리별 저장. "
+        "곡 제작은 Suno 에서 직접 하시고, 여기는 데이터화에 집중합니다."
+    )
+
+    vocab = _load_vocab_cached()
+    presets = suno_studio.list_presets(vocab)
+
+    with st.sidebar:
+        st.header("🔑 키 / 설정")
+        yt_key = st.text_input(
+            "YouTube API Key", type="password",
+            value=os.getenv("YOUTUBE_API_KEY", ""),
+            help="영상 메타데이터/댓글 수집에 필요합니다.",
+        )
+        gem_key = st.text_input(
+            "Gemini API Key", type="password",
+            value=os.getenv("GEMINI_API_KEY", ""),
+            help="역설계(스타일 추정)에 필요합니다.",
+        )
+        model = st.text_input("Gemini 모델", value=analyzer.DEFAULT_MODEL)
+        preset_key = st.selectbox(
+            "프리셋(나라/장르 힌트)",
+            options=[k for k, _ in presets],
+            format_func=lambda k: dict(presets)[k],
+        )
+        max_comments = st.slider("수집 댓글 수", 0, 50, 20)
+        st.divider()
+        st.caption(
+            f"저장소: `recipes.json` ({len(recipes.list_recipes())}개 보관 중)"
+        )
+
+    tab_analyze, tab_library = st.tabs(["🔎 분석", "📚 도서관"])
+    with tab_analyze:
+        render_analyze_tab(
+            vocab, yt_key, gem_key, model, preset_key, max_comments,
+        )
+    with tab_library:
+        render_library_tab(vocab)
 
 
 if __name__ == "__main__":
