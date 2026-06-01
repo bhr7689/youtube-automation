@@ -8,8 +8,10 @@ DB : radar.db (SQLite, 자동 생성)
 
 from __future__ import annotations
 
+import collections
 import hashlib
 import os
+import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -193,6 +195,19 @@ CREATE TABLE IF NOT EXISTS notes (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS video_tags (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    video_id     TEXT NOT NULL,
+    channel_id   TEXT,
+    channel_title TEXT,
+    tag          TEXT NOT NULL,
+    view_count   INTEGER DEFAULT 0,
+    like_count   INTEGER DEFAULT 0,
+    comment_count INTEGER DEFAULT 0,
+    published_at TEXT,
+    fetched_at   TEXT NOT NULL,
+    UNIQUE(video_id, tag)
+);
 """
 
 
@@ -299,6 +314,8 @@ def fetch_channel_videos(api_key: str, channel_id: str, max_results: int = 20) -
                 "comment_count": int(s.get("commentCount", 0)),
                 "published_at": it["snippet"]["publishedAt"],
                 "thumbnail_url": it["snippet"]["thumbnails"].get("medium", {}).get("url", ""),
+                "tags": it["snippet"].get("tags", []),          # ← 태그 추가
+                "description": it["snippet"].get("description", ""),
             })
         return out
     except Exception:
@@ -410,7 +427,8 @@ def refresh_all_subscribers(api_key: str, group: str):
         pass
 
 # ── 영상 ──
-def save_videos(channel_id: str, videos: list[dict]):
+def save_videos(channel_id: str, videos: list[dict], channel_title: str = ""):
+    now = _now()
     with _conn() as c:
         for v in videos:
             c.execute("""
@@ -420,8 +438,21 @@ def save_videos(channel_id: str, videos: list[dict]):
                 VALUES(?,?,?,?,?,?,?,?,?)
             """, (channel_id, v["video_id"], v["title"],
                   v.get("view_count",0), v.get("like_count",0), v.get("comment_count",0),
-                  v.get("published_at",""), v.get("thumbnail_url",""), _now()))
-        c.execute("UPDATE channels SET last_fetched_at=? WHERE channel_id=?", (_now(), channel_id))
+                  v.get("published_at",""), v.get("thumbnail_url",""), now))
+            # 태그 저장
+            for tag in v.get("tags", []):
+                tag = tag.strip()
+                if not tag:
+                    continue
+                c.execute("""
+                    INSERT OR IGNORE INTO video_tags
+                    (video_id,channel_id,channel_title,tag,view_count,like_count,
+                     comment_count,published_at,fetched_at)
+                    VALUES(?,?,?,?,?,?,?,?,?)
+                """, (v["video_id"], channel_id, channel_title, tag,
+                      v.get("view_count",0), v.get("like_count",0),
+                      v.get("comment_count",0), v.get("published_at",""), now))
+        c.execute("UPDATE channels SET last_fetched_at=? WHERE channel_id=?", (now, channel_id))
 
 def get_group_videos(group: str, sort: str = "view_count", limit: int = 50) -> list[dict]:
     sort_col = {"조회수순":"view_count","최신순":"published_at",
@@ -493,6 +524,101 @@ def save_thumbnail_analysis(video_id: str, analysis: str, mj: str, dalle: str):
             UPDATE thumbnails SET ai_analysis=?,mj_prompt=?,dalle_prompt=?
             WHERE video_id=?
         """, (analysis, mj, dalle, video_id))
+
+# ── 태그 분석 ──
+
+def get_tag_stats(group: str, limit: int = 200) -> pd.DataFrame:
+    """그룹 채널들의 태그 통계 — 빈도·평균조회수·총조회수."""
+    chs = list_channels(group)
+    ids = [c["channel_id"] for c in chs]
+    if not ids:
+        return pd.DataFrame()
+    ph = ",".join("?" * len(ids))
+    with _conn() as c:
+        rows = c.execute(f"""
+            SELECT tag,
+                   COUNT(*)            AS video_count,
+                   SUM(view_count)     AS total_views,
+                   AVG(view_count)     AS avg_views,
+                   AVG(like_count)     AS avg_likes,
+                   AVG(comment_count)  AS avg_comments,
+                   MAX(fetched_at)     AS last_seen
+            FROM video_tags
+            WHERE channel_id IN ({ph})
+            GROUP BY tag
+            ORDER BY total_views DESC
+            LIMIT ?
+        """, (*ids, limit)).fetchall()
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame([dict(r) for r in rows])
+
+
+def get_tag_trend(group: str, days: int = 30) -> pd.DataFrame:
+    """최근 N일 내 태그별 등장 추이 (날짜×태그 매트릭스)."""
+    chs = list_channels(group)
+    ids = [c["channel_id"] for c in chs]
+    if not ids:
+        return pd.DataFrame()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    ph = ",".join("?" * len(ids))
+    with _conn() as c:
+        rows = c.execute(f"""
+            SELECT tag, published_at, view_count
+            FROM video_tags
+            WHERE channel_id IN ({ph}) AND published_at >= ?
+            ORDER BY published_at
+        """, (*ids, cutoff)).fetchall()
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame([dict(r) for r in rows])
+    df["week"] = pd.to_datetime(df["published_at"], utc=True, errors="coerce").dt.to_period("W").astype(str)
+    pivot = df.groupby(["week","tag"])["view_count"].sum().unstack(fill_value=0)
+    return pivot
+
+
+def get_tags_by_channel(channel_id: str, limit: int = 100) -> pd.DataFrame:
+    """채널 단위 태그 통계."""
+    with _conn() as c:
+        rows = c.execute("""
+            SELECT tag, COUNT(*) AS cnt, SUM(view_count) AS total_views,
+                   AVG(view_count) AS avg_views
+            FROM video_tags WHERE channel_id=?
+            GROUP BY tag ORDER BY total_views DESC LIMIT ?
+        """, (channel_id, limit)).fetchall()
+    return pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
+
+
+def extract_title_keywords(group: str, top_n: int = 50) -> list[tuple[str, int]]:
+    """영상 제목에서 키워드 추출 (불용어 제거)."""
+    chs = list_channels(group)
+    ids = [c["channel_id"] for c in chs]
+    if not ids:
+        return []
+    ph = ",".join("?" * len(ids))
+    with _conn() as c:
+        rows = c.execute(
+            f"SELECT title, view_count FROM videos WHERE channel_id IN ({ph})", (*ids,)
+        ).fetchall()
+
+    STOPWORDS = {"의","을","를","이","가","은","는","에","도","와","과","로","으로",
+                 "한","하는","하고","하면","하여","있는","없는","때","그","이런","저런",
+                 "더","다","또","및","등","들","것","수","위한","대한","통해","about",
+                 "the","is","in","of","a","an","and","or","to","for","with","that"}
+
+    counter: dict[str, int] = collections.defaultdict(int)
+    view_sum: dict[str, int] = collections.defaultdict(int)
+    for r in rows:
+        words = re.findall(r"[가-힣a-zA-Z0-9]+", r["title"])
+        for w in words:
+            if len(w) >= 2 and w not in STOPWORDS:
+                counter[w] += 1
+                view_sum[w] += r["view_count"] or 0
+
+    # 빈도×조회수 합산 점수로 정렬
+    scored = sorted(counter.items(), key=lambda x: view_sum[x[0]], reverse=True)
+    return scored[:top_n]
+
 
 # ── 메모 ──
 def list_notes() -> list[dict]:
@@ -659,6 +785,107 @@ def ai_thumbnail_trend(gemini_key: str, group: str) -> str:
 ## 4. 내 채널 추천 썸네일 전략""")
 
 
+def ai_tag_recommendation(gemini_key: str, group: str,
+                           top_tags: list[dict], top_keywords: list[tuple],
+                           genre_hint: str = "") -> str:
+    """장르별 떡상 태그 추천 — 실제 데이터 기반."""
+    tag_lines = "\n".join(
+        f"- `{r['tag']}` (영상 {r['video_count']}개, 총 조회수 {fmt_num(int(r['total_views']))})"
+        for r in top_tags[:30]
+    ) if top_tags else "데이터 없음"
+
+    kw_lines = "\n".join(
+        f"- `{kw}` (조회수 기여도 {fmt_num(sc)})"
+        for kw, sc in top_keywords[:20]
+    ) if top_keywords else "데이터 없음"
+
+    genre_str = f"\n분야/장르 힌트: **{genre_hint}**" if genre_hint else ""
+
+    return call_gemini(gemini_key, f"""당신은 유튜브 SEO 전문가입니다.{genre_str}
+
+아래는 경쟁 채널 그룹 '{group}'에서 실제 수집된 데이터입니다.
+
+## 현재 자주 쓰이는 태그 TOP 30
+{tag_lines}
+
+## 제목에서 추출한 고조회수 키워드 TOP 20
+{kw_lines}
+
+---
+
+다음을 분석·추천해 주세요:
+
+## 1. 현재 이 분야에서 통하는 태그 패턴 분석
+- 어떤 태그가 조회수와 상관관계가 높은가
+- 숏폼/롱폼/시리즈 태그 구분
+- 브랜드 태그 vs 일반 검색 태그 비율
+
+## 2. 즉시 사용 가능한 태그 세트 (3가지 포맷)
+
+### 🔥 바이럴 극대화 세트 (조회수 폭발 목적)
+```
+[VIRAL SET]
+태그1, 태그2, 태그3, ... (15~20개)
+```
+
+### 📈 SEO 장기 유입 세트 (꾸준한 검색 유입)
+```
+[SEO SET]
+태그1, 태그2, 태그3, ... (15~20개)
+```
+
+### 🎯 틈새 공략 세트 (경쟁 낮고 타겟 정확)
+```
+[NICHE SET]
+태그1, 태그2, 태그3, ... (15~20개)
+```
+
+## 3. 지금 당장 써야 할 떡상 가능성 높은 태그 TOP 10
+각 태그마다: 추천 이유 + 예상 효과 1줄
+
+## 4. 절대 쓰지 말아야 할 태그
+경쟁이 너무 치열하거나 노출 알고리즘에 불리한 태그
+
+## 5. 이 채널 분야에서 아직 아무도 안 쓰는 블루오션 태그 5개""")
+
+
+def ai_tag_trend_analysis(gemini_key: str, group: str, trend_df: pd.DataFrame) -> str:
+    """태그 주간 트렌드 변화 AI 분석."""
+    if trend_df.empty:
+        return "트렌드 데이터가 없습니다."
+
+    # 최근 4주 데이터 요약
+    weeks = trend_df.index.tolist()[-4:] if len(trend_df) >= 4 else trend_df.index.tolist()
+    rising, falling = [], []
+
+    for col in trend_df.columns:
+        vals = trend_df[col].tolist()
+        if len(vals) >= 2:
+            recent = sum(vals[-2:]) / 2
+            older  = sum(vals[:2]) / 2 if len(vals) >= 4 else vals[0]
+            if older > 0 and recent / older >= 1.5:
+                rising.append((col, recent))
+            elif recent == 0 and older > 0:
+                falling.append(col)
+
+    rising_str  = "\n".join(f"- `{t}` (최근 조회수 {fmt_num(int(v))})" for t, v in sorted(rising, key=lambda x: -x[1])[:10])
+    falling_str = ", ".join(f"`{t}`" for t in falling[:10])
+
+    return call_gemini(gemini_key, f"""경쟁 채널 그룹 '{group}'의 태그 트렌드 변화 분석:
+
+## 급상승 태그 (최근 2주 기준 1.5배 이상 증가)
+{rising_str or '없음'}
+
+## 급감 태그 (최근 사라지는 추세)
+{falling_str or '없음'}
+
+분석해 주세요:
+## 1. 급상승 태그가 뜨는 이유 (시사 이슈, 계절성, 트렌드 등)
+## 2. 지금 당장 올라타야 할 태그 3개 + 이유
+## 3. 이 트렌드가 얼마나 지속될지 예측
+## 4. 다음 달에 뜰 것으로 예상되는 태그 5개""")
+
+
 def ai_thumbnail_kit(gemini_key: str, channel_id: str, channel_title: str) -> str:
     with _conn() as c:
         rows = c.execute(
@@ -793,12 +1020,13 @@ for k, v in [("sel_group", None), ("sel_channel", None),
 # 7. 탭
 # ─────────────────────────────────────────────────────────────────────────────
 
-TAB_RADAR, TAB_TREND, TAB_COMMENT, TAB_AI, TAB_THUMB, TAB_CANVAS = st.tabs([
+TAB_RADAR, TAB_TREND, TAB_COMMENT, TAB_AI, TAB_THUMB, TAB_TAGS, TAB_CANVAS = st.tabs([
     "📡 경쟁 레이더",
     "⚡ 트렌드 포착",
     "💬 시청자 욕구 분석",
     "🎯 포지셔닝 전략",
     "🖼️ 썸네일 분석",
+    "🏷️ 태그 분석",
     "💡 아이디어 캔버스",
 ])
 
@@ -955,7 +1183,7 @@ with TAB_TREND:
                     for i, ch in enumerate(chs):
                         with st.spinner(f"수집 중: {ch.get('channel_title','')}…"):
                             videos = fetch_channel_videos(YT_KEY, ch["channel_id"], 20)
-                            save_videos(ch["channel_id"], videos)
+                            save_videos(ch["channel_id"], videos, ch.get("channel_title",""))
                         prog.progress((i+1)/len(chs))
                     st.success(f"✅ {len(chs)}개 채널 수집 완료")
                     st.rerun()
@@ -1266,7 +1494,191 @@ with TAB_THUMB:
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# 탭 6: 아이디어 캔버스
+# 탭 6: 태그 분석
+# ════════════════════════════════════════════════════════════════════════════
+with TAB_TAGS:
+    st.subheader("🏷️ 태그 분석 — 장르별 떡상 태그 추천")
+    st.caption("경쟁 채널 영상의 태그·제목 키워드를 분석해 지금 당장 써야 할 태그 세트를 AI가 추천합니다.")
+
+    group = st.session_state.sel_group
+    if not group:
+        st.info("📡 경쟁 레이더 탭에서 그룹을 먼저 선택하세요.")
+    else:
+        # ── 상단 컨트롤 ──────────────────────────────────────────────────────
+        ctrl1, ctrl2, ctrl3 = st.columns([2, 1, 1])
+        with ctrl1:
+            st.markdown(f"**그룹: {group}** — 영상 수집 후 태그가 자동으로 분석됩니다.")
+            st.caption("태그는 '트렌드 포착' 탭의 영상 수집 시 함께 저장됩니다.")
+        with ctrl2:
+            genre_hint = st.text_input("분야/장르 힌트 (선택)", placeholder="예: 경제, 먹방, 트로트", key="tag_genre")
+        with ctrl3:
+            tag_limit = st.selectbox("분석 태그 수", [50, 100, 200], index=1, key="tag_limit")
+
+        # ── 통계 카드 ─────────────────────────────────────────────────────────
+        tag_df = get_tag_stats(group, limit=int(tag_limit))
+        kw_list = extract_title_keywords(group, top_n=50)
+
+        col_a, col_b, col_c, col_d = st.columns(4)
+        with col_a:
+            st.metric("수집된 고유 태그", f"{len(tag_df):,}개" if not tag_df.empty else "0개")
+        with col_b:
+            if not tag_df.empty:
+                top_tag = tag_df.iloc[0]["tag"]
+                st.metric("최다 사용 태그", f"`{top_tag}`")
+            else:
+                st.metric("최다 사용 태그", "—")
+        with col_c:
+            if not tag_df.empty:
+                top_view_tag = tag_df.sort_values("avg_views", ascending=False).iloc[0]["tag"]
+                st.metric("평균 조회수 1위 태그", f"`{top_view_tag}`")
+            else:
+                st.metric("평균 조회수 1위 태그", "—")
+        with col_d:
+            st.metric("제목 키워드 수", f"{len(kw_list):,}개")
+
+        st.divider()
+
+        # ── 2열 레이아웃: 태그 테이블 + 키워드 바 차트 ───────────────────────
+        left_col, right_col = st.columns([3, 2], gap="large")
+
+        with left_col:
+            st.markdown("#### 📊 태그 성과 테이블")
+            if not tag_df.empty:
+                view_tab, sort_tab = st.tabs(["조회수 기준", "빈도 기준"])
+
+                def _render_tag_table(df_sorted: pd.DataFrame):
+                    display = df_sorted.copy()
+                    display["avg_views"]   = display["avg_views"].apply(lambda x: fmt_num(int(x)))
+                    display["total_views"] = display["total_views"].apply(lambda x: fmt_num(int(x)))
+                    display["avg_likes"]   = display["avg_likes"].apply(lambda x: f"{int(x):,}")
+                    display = display.rename(columns={
+                        "tag": "태그", "video_count": "영상수",
+                        "total_views": "총 조회수", "avg_views": "평균 조회수",
+                        "avg_likes": "평균 좋아요",
+                    })
+                    st.dataframe(
+                        display[["태그","영상수","총 조회수","평균 조회수","평균 좋아요"]],
+                        use_container_width=True, height=380
+                    )
+
+                with view_tab:
+                    _render_tag_table(tag_df.sort_values("avg_views", ascending=False).head(50))
+                with sort_tab:
+                    _render_tag_table(tag_df.sort_values("video_count", ascending=False).head(50))
+            else:
+                st.info("영상을 수집하면 태그 데이터가 여기에 표시됩니다.")
+
+        with right_col:
+            st.markdown("#### 🔑 제목 키워드 TOP 20")
+            if kw_list:
+                kw_df = pd.DataFrame(kw_list[:20], columns=["키워드", "조회수 기여"])
+                kw_df = kw_df.sort_values("조회수 기여", ascending=True)
+                st.bar_chart(kw_df.set_index("키워드")["조회수 기여"], height=380)
+            else:
+                st.info("영상을 수집하면 제목 키워드 분석이 표시됩니다.")
+
+        st.divider()
+
+        # ── 채널별 태그 비교 ─────────────────────────────────────────────────
+        st.markdown("#### 🔍 채널별 태그 전략 비교")
+        chs = list_channels(group)
+        if chs:
+            ch_cols = st.columns(min(len(chs), 3))
+            for ch, col in zip(chs[:3], ch_cols):
+                with col:
+                    ch_tag_df = get_tags_by_channel(ch["channel_id"], limit=15)
+                    st.markdown(f"**{ch.get('channel_title','')[:14]}**")
+                    if not ch_tag_df.empty:
+                        ch_tag_df["avg_views"] = ch_tag_df["avg_views"].apply(lambda x: fmt_num(int(x)))
+                        st.dataframe(
+                            ch_tag_df[["tag","cnt","avg_views"]].rename(
+                                columns={"tag":"태그","cnt":"횟수","avg_views":"평균조회수"}
+                            ),
+                            use_container_width=True, height=280
+                        )
+                    else:
+                        st.caption("데이터 없음")
+
+        st.divider()
+
+        # ── 트렌드 추이 ──────────────────────────────────────────────────────
+        st.markdown("#### 📈 태그 주간 트렌드 (조회수 기반)")
+        trend_days = st.selectbox("기간", [14, 30, 60, 90], index=1, key="trend_days")
+        trend_df = get_tag_trend(group, days=int(trend_days))
+
+        if not trend_df.empty and len(trend_df.columns) > 0:
+            # 상위 태그만 표시
+            top_cols = tag_df.sort_values("total_views", ascending=False)["tag"].tolist()[:10] \
+                if not tag_df.empty else trend_df.columns.tolist()[:10]
+            show_cols = [c for c in top_cols if c in trend_df.columns][:10]
+            if show_cols:
+                st.line_chart(trend_df[show_cols], height=220)
+                st.caption("주간 누적 조회수 기준. 상위 10개 태그만 표시.")
+
+            # AI 트렌드 분석
+            if st.button("🤖 태그 트렌드 AI 분석", use_container_width=True, key="ai_trend_btn"):
+                with st.spinner("Gemini가 트렌드 변화를 분석 중…"):
+                    trend_result = ai_tag_trend_analysis(GEM_KEY, group, trend_df)
+                st.session_state["tag_trend_result"] = trend_result
+
+            if st.session_state.get("tag_trend_result"):
+                st.markdown("---")
+                st.markdown(st.session_state["tag_trend_result"])
+                if st.button("💾 저장", key="save_tag_trend"):
+                    save_note(f"[태그 트렌드] {group}", st.session_state["tag_trend_result"], "태그,트렌드")
+                    st.success("아이디어 캔버스에 저장됨")
+        else:
+            st.info(f"최근 {trend_days}일 내 태그 데이터가 없습니다.")
+
+        st.divider()
+
+        # ── AI 태그 추천 (메인 기능) ─────────────────────────────────────────
+        st.markdown("#### 🚀 AI 떡상 태그 추천")
+
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.button("🏷️ 떡상 태그 세트 3종 생성", type="primary", use_container_width=True):
+                if tag_df.empty and not kw_list:
+                    st.error("먼저 영상을 수집하세요 (트렌드 포착 탭).")
+                else:
+                    top_tags_raw = tag_df.to_dict("records") if not tag_df.empty else []
+                    with st.spinner("Gemini가 태그 전략을 분석 중…"):
+                        result = ai_tag_recommendation(GEM_KEY, group, top_tags_raw, kw_list, genre_hint)
+                    st.session_state["tag_rec_result"] = result
+
+        with col_btn2:
+            st.caption("바이럴 세트 · SEO 세트 · 틈새 세트 + 블루오션 태그까지 한 번에")
+
+        if st.session_state.get("tag_rec_result"):
+            result_text = st.session_state["tag_rec_result"]
+            st.markdown("---")
+            st.markdown(result_text)
+
+            # 세트별 복사 버튼
+            cp1, cp2, cp3 = st.columns(3)
+            for label, key_str, col in [
+                ("🔥 바이럴 세트 복사", "[VIRAL SET]", cp1),
+                ("📈 SEO 세트 복사",    "[SEO SET]",   cp2),
+                ("🎯 틈새 세트 복사",   "[NICHE SET]", cp3),
+            ]:
+                with col:
+                    if key_str in result_text:
+                        try:
+                            extracted = result_text.split(key_str)[1].split("```")[0].strip()
+                            st.code(extracted, language="text")
+                        except Exception:
+                            pass
+
+            if st.button("💾 아이디어 캔버스에 저장", key="save_tag_rec"):
+                save_note(
+                    f"[태그 추천] {group}" + (f" — {genre_hint}" if genre_hint else ""),
+                    result_text, "태그,추천,SEO"
+                )
+                st.success("저장됨")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# 탭 7: 아이디어 캔버스
 # ════════════════════════════════════════════════════════════════════════════
 with TAB_CANVAS:
     st.subheader("💡 아이디어 캔버스")
