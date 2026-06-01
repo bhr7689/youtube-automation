@@ -481,38 +481,62 @@ def results_to_csv(results: list[dict]) -> str:
 
 
 # ───────────────────────────────────────────────
-# 헤더 — Streamlit 컬럼으로 항상 표시
+# 사이드바 — API Key 설정
+# ───────────────────────────────────────────────
+with st.sidebar:
+    st.markdown("## 💧 루이의 떡상 채널 찾기")
+    st.markdown("<div style='font-size:12px;color:#888;margin-bottom:16px'>무료판 | 검색 50개 | 기본 분석용</div>", unsafe_allow_html=True)
+    st.markdown("---")
+    st.markdown("### 🔑 YouTube API Key")
+    key_input = st.text_input(
+        "YouTube API Key",
+        value=st.session_state.yt_api_key,
+        type="password",
+        label_visibility="collapsed",
+        placeholder="AIza...",
+        key="key_input_field",
+    )
+    sc1, sc2 = st.columns(2)
+    with sc1:
+        if st.button("💾 저장", use_container_width=True):
+            st.session_state.yt_api_key = key_input
+            st.success("저장됨!")
+    with sc2:
+        if st.button("🗑️ 초기화", use_container_width=True):
+            st.session_state.yt_api_key = ""
+            st.session_state.results = []
+            st.rerun()
+
+    if st.session_state.yt_api_key:
+        st.success("✅ API Key 등록됨")
+    else:
+        st.warning("⚠️ API Key를 입력해주세요")
+
+    st.markdown("---")
+    st.markdown("### 🤖 Gemini API Key (AI 아이디어용)")
+    gemini_input = st.text_input(
+        "Gemini API Key",
+        value=st.session_state.ai_key,
+        type="password",
+        label_visibility="collapsed",
+        placeholder="AIza...",
+        key="gemini_input_field",
+    )
+    if st.button("💾 Gemini Key 저장", use_container_width=True):
+        st.session_state.ai_key = gemini_input
+        st.success("저장됨!")
+
+# ───────────────────────────────────────────────
+# 메인 타이틀
 # ───────────────────────────────────────────────
 st.markdown(
-    """<div style="background:#0f0f1a;padding:16px 24px 12px 24px;
-        border-bottom:1px solid #2a2a4e;margin-bottom:16px;">
-        <span style="font-size:22px;font-weight:700;color:#fff;">💧 루이의 떡상 채널 찾기</span><br>
+    """<div style="padding:8px 0 16px 0;">
+        <span style="font-size:26px;font-weight:700;color:#fff;">💧 루이의 떡상 채널 찾기</span><br>
         <span style="font-size:12px;color:#888;">무료판 | 검색 50개 | 기본 분석용</span>
     </div>""",
     unsafe_allow_html=True,
 )
-
-hc1, hc2, hc3, hc4 = st.columns([5, 3, 1, 1])
-with hc2:
-    key_input = st.text_input(
-        "API Key",
-        value=st.session_state.yt_api_key,
-        type="password",
-        label_visibility="collapsed",
-        placeholder="YouTube API Key 입력",
-        key="key_input_field",
-    )
-with hc3:
-    if st.button("Key 저장", use_container_width=True):
-        st.session_state.yt_api_key = key_input
-        st.success("저장됨")
-with hc4:
-    if st.button("초기화", use_container_width=True):
-        st.session_state.yt_api_key = ""
-        st.session_state.results = []
-        st.rerun()
-
-st.markdown("<hr style='border-color:#2a2a4e;margin:4px 0 16px 0'>", unsafe_allow_html=True)
+st.markdown("<hr style='border-color:#2a2a4e;margin:0 0 16px 0'>", unsafe_allow_html=True)
 
 # ───────────────────────────────────────────────
 # 필터 패널
