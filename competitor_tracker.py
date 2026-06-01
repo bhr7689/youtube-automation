@@ -871,9 +871,10 @@ def render_tab():
     </style>
     """, unsafe_allow_html=True)
 
-    # API 키 로드
-    api_key = os.getenv("YOUTUBE_API_KEY", "")
-    gemini_key = os.getenv("GEMINI_API_KEY", "")
+    # API 키 로드 (로컬 .env + Streamlit Cloud secrets 모두 지원)
+    import os as _os
+    api_key = _os.getenv("YOUTUBE_API_KEY", "")
+    gemini_key = _os.getenv("GEMINI_API_KEY", "")
 
     # 세션 상태 초기화
     if "ct_selected_group" not in st.session_state:

@@ -45,6 +45,15 @@ import competitor_tracker as _ct_module
 
 load_dotenv()
 
+# Streamlit Cloud: secrets → os.environ 동기화
+try:
+    import streamlit as _st_secrets
+    for _k, _v in _st_secrets.secrets.items():
+        if isinstance(_v, str) and _k not in os.environ:
+            os.environ[_k] = _v
+except Exception:
+    pass
+
 # ---------------------------------------------------------------------------
 # Persistent local key store — .streamlit/keys.json (gitignored).
 # UI 에서 한 번 저장하면 해지 버튼을 누르기 전까지 모든 세션에서 자동으로 불러온다.

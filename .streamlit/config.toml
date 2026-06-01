@@ -1,3 +1,18 @@
-# 1시간 분량 MP3 + 배경 영상도 업로드할 수 있도록 한도를 키운다.
+# Streamlit 서버 설정
+
 [server]
-maxUploadSize = 1024  # MB
+maxUploadSize = 1024        # MB — MP3 + 배경 영상 업로드 허용
+enableCORS = false
+enableXsrfProtection = true
+headless = true             # 클라우드/서버 배포 시 브라우저 자동 실행 방지
+
+[browser]
+gatherUsageStats = false    # 사용 통계 수집 비활성화
+
+[theme]
+base = "dark"
+primaryColor = "#6ee7b7"
+backgroundColor = "#0e1117"
+secondaryBackgroundColor = "#1e2130"
+textColor = "#e0e0e0"
+font = "sans serif"
