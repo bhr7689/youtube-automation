@@ -41,6 +41,7 @@ import recipes
 import analyzer
 import store
 import score as scorer
+import competitor_tracker as _ct_module
 
 load_dotenv()
 
@@ -9455,6 +9456,7 @@ div[data-testid="stSidebarNav"] { display: none; }
         ("🎵", "음악 만들기"),
         ("🎬", "영상 만들기"),
         ("🗂️", "메타데이터"),
+        ("🛰️", "경쟁 레이더"),
     ]
     for icon, label in _TOOLS:
         is_active = st.session_state["nav_menu"] == label
@@ -9721,6 +9723,11 @@ div[data-testid="stSidebarNav"] { display: none; }
     elif nav == "메타데이터":
         st.title("🗂️ 메타데이터")
         render_title_lab_tab()
+
+    # 경쟁 채널 인텔리전스 레이더
+    elif nav == "경쟁 레이더":
+        st.title("🛰️ 경쟁 채널 인텔리전스 레이더")
+        _ct_module.render_tab()
 
 
 if __name__ == "__main__":
