@@ -23,6 +23,6 @@ echo  [3/3] Finder 시작 중... (창을 닫으면 종료됩니다)
 echo.
 
 :: 포트 8502 사용 (기존 app.py와 충돌 방지)
-streamlit run 루이.py --server.port 8502 --server.headless false
+streamlit run loui.py --server.port 8502 --server.headless false
 
 pause
