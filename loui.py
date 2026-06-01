@@ -17,6 +17,7 @@ st.set_page_config(
     page_title="루이의 떡상 채널 찾기",
     page_icon="💧",
     layout="wide",
+    menu_items={},
 )
 
 # ───────────────────────────────────────────────
@@ -29,10 +30,16 @@ st.markdown("""
 .block-container { padding: 60px 0 0 0 !important; max-width: 100% !important; }
 
 /* Streamlit 상단 툴바 완전 숨기기 */
+header { display: none !important; visibility: hidden !important; }
 header[data-testid="stHeader"] { display: none !important; }
-#MainMenu { display: none !important; }
-footer { display: none !important; }
+[data-testid="stToolbar"] { display: none !important; }
+[data-testid="stDecoration"] { display: none !important; }
+[data-testid="stStatusWidget"] { display: none !important; }
+#MainMenu { display: none !important; visibility: hidden !important; }
+footer { display: none !important; visibility: hidden !important; }
 .stDeployButton { display: none !important; }
+.viewerBadge_container__r5tak { display: none !important; }
+.styles_viewerBadge__CvC9N { display: none !important; }
 
 /* 헤더 */
 .header-bar {
