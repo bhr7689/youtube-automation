@@ -592,7 +592,7 @@ results = st.session_state.results
 
 # 정렬 바 — 항상 표시
 with st.container(border=True):
-    sb1, sb2, sb3, sb4, sb5 = st.columns([1, 1, 1, 4, 1])
+    sb1, sb2, sb3, sb4, sb5, sb6, sb7 = st.columns([1.2, 1, 1, 0.4, 1, 1, 2])
     with sb1:
         st.markdown("<span style='color:#aaa;font-size:13px;line-height:2.2'>결과 정렬:</span>", unsafe_allow_html=True)
     with sb2:
@@ -612,19 +612,29 @@ with st.container(border=True):
             st.session_state.sort_by = "최신순"
             st.rerun()
     with sb4:
+        st.markdown("<span style='color:#444;font-size:18px;line-height:2.0'>|</span>", unsafe_allow_html=True)
+    with sb5:
+        if st.button(
+            "↓ 내림차순",
+            key="sort_desc",
+            type="primary" if not st.session_state.sort_asc else "secondary",
+        ):
+            st.session_state.sort_asc = False
+            st.rerun()
+    with sb6:
+        if st.button(
+            "↑ 오름차순",
+            key="sort_asc_btn",
+            type="primary" if st.session_state.sort_asc else "secondary",
+        ):
+            st.session_state.sort_asc = True
+            st.rerun()
+    with sb7:
         cnt_text = f"검색 결과: {len(results)}개" if results else "대기 중..."
         st.markdown(
             f"<div style='text-align:right;color:#aaa;font-size:13px;padding-top:6px'>{cnt_text}</div>",
             unsafe_allow_html=True,
         )
-    with sb5:
-        if st.button(
-            "↑" if st.session_state.sort_asc else "↓",
-            key="sort_dir",
-            help="정렬 방향 전환",
-        ):
-            st.session_state.sort_asc = not st.session_state.sort_asc
-            st.rerun()
 
 if results:
     # 정렬 적용
