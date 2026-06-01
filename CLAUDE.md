@@ -107,7 +107,34 @@ python pipeline.py --init                              # 파이프라인 폴더 
   셀프테스트 + CLI + 실제 ffmpeg 인코딩(inbox→MP4) + app.py import. **코드 버그 없음.**
 - [x] 사라졌던 UI 기능 전체 복원(2026-05-26): eGtMR 기반 9탭 합본. 제목 Lab·인코딩 잡·
   인터랙티브 자막 편집기·영상합성 고급모드·보컬분리·키 영속저장 복원 + 자동화 3탭 유지.
+- [x] 🔎 곡 역설계를 **단독 Streamlit 툴**로 분리(2026-06-01, sleepy-fermat-76R13):
+  `reverse_app.py`. URL 한 줄 → YouTube API 메타 + 자막(가사) 자동 수집 →
+  Gemini 가 **곡 picks(Suno) + 작사 패턴(writer_prompt)** 동시 추출 → 두 도서관에
+  장르별로 누적. 탭 3개: 🔎 분석 / 🎚️ 곡 도서관 / ✍️ 작사가 도서관.
+  - 신규 모듈: `transcript_probe.py` (youtube-transcript-api + Whisper API fallback),
+    `lyrics_analyzer.py` (가사→작사 패턴 Gemini), `lyrics_library.py` (장르별 가사 저장소
+    `lyrics_library.json`; 같은 장르 곡들 종합한 **통합 페르소나** 생성 기능).
+  - 의존성 추가: `youtube-transcript-api`, `yt-dlp`.
+  - 실행: `streamlit run reverse_app.py`. 곡 제작은 Suno 에서 사용자가 직접.
+- [x] 🎧 **오디오 실측 분석** 통합(2026-06-01, sleepy-fermat-76R13):
+  `audio_probe.py` 신규 모듈 — yt-dlp 로 오디오 추출 + librosa 로
+  BPM/키(Krumhansl-Schmuckler)/길이/RMS 에너지/스펙트럴센트로이드/어택밀도 실측.
+  옵트인 토글(사이드바 "🎧 오디오 실측 분석 활성화"). 본인 권리·CC 영상 한정.
+  `analyzer.build_prompt` 가 `meta["audio_features"]` 와 `meta["lyrics_excerpt"]` 를
+  받아 Gemini 프롬프트에 실측 단서로 주입 — 추정 정확도 격상.
+  의존성 추가: `librosa>=0.10.1`.
+- [x] ✨ **생성 단계 통합**(2026-06-01, sleepy-fermat-76R13): 데이터 수집→생성으로
+  최종 흐름 연결. reverse_app.py 가 5탭 구조로 확장.
+  - 🎚️→✨ **곡 프롬프트 변주 탭**: 도서관 베이스(단일/다중 블렌딩) +
+    변주 강도(약/중/강 — lock dim 차등) → `suno_studio.generate_variations`
+    재사용으로 N개 변주. 마음에 드는 변주는 도서관에 저장.
+  - ✍️→✨ **가사 생성 탭**: 신규 모듈 `lyrics_generator.py`. 페르소나(단일/장르
+    통합/직접 입력) + 곡 길이(2분30초~6분, 7개 프리셋) → 절·후렴·브릿지 구조
+    자동 매핑 → Gemini 가 N개 가사 변주. 각 카드에 📋 복사 블록 + .txt 다운로드.
+  - 모든 결과 출력은 `st.code()` 블록으로 통일(우상단 📋 아이콘 복사). 통합
+    페르소나·가사 본문도 텍스트 영역에서 코드 블록으로 교체. 각 탭 상단에
+    복사 안내 캡션 1회 노출.
 - [ ] 실제 API 키로 end-to-end 점검(collect→score→검수→역설계→pipeline) — 키 필요해 미수행
 - [ ] `automation.py`(laughing-hawking) cron 레이어를 통합할지 결정
-- [ ] practical-mendel 의 app.py 복원본을 default 브랜치(eqO5N)로도 머지할지 결정
+- [ ] sleepy-fermat-76R13 의 reverse_app.py 를 default 브랜치(eqO5N)로 머지해야 사용자 화면에 반영됨
 - (작업하며 갱신할 것)

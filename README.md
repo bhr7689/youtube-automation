@@ -31,6 +31,9 @@ cp .env.example .env
 
 # 대시보드 실행
 streamlit run app.py
+
+# 곡 역설계 단독 툴 (URL → Suno 프롬프트)
+streamlit run reverse_app.py
 ```
 
 브라우저에서 자동으로 `http://localhost:8501` 이 열립니다.

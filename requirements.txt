@@ -11,3 +11,6 @@ google-generativeai>=0.7.0
 google-genai>=2.0.0
 openai>=1.30.0
 matplotlib>=3.8.0
+youtube-transcript-api>=0.6.2
+yt-dlp>=2024.04.09
+librosa>=0.10.1
