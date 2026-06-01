@@ -1,25 +1,21 @@
-"""🔎 곡 역설계 단독 툴 — 카테고리별 "내 프롬프트 도서관" 구축기.
+"""🔎 곡 역설계 단독 툴 — Suno 프롬프트 + 작사가 프롬프트 동시 데이터화.
 
-스코프: **좋은 곡 링크 → 프롬프트 역설계 → 카테고리별 저장**. 곡 제작은 Suno 에서
-사용자가 직접 하므로, 이 툴은 데이터화(컬렉션 구축)에만 집중한다.
+스코프: 좋은 곡 링크 한 번 입력 → 메타+가사 자동 수집 → Gemini 가
+       곡 picks(Suno 프롬프트)와 가사 패턴(작사가 프롬프트)을 동시 추출
+       → 두 도서관(곡 프롬프트 / 작사가 프롬프트)에 장르별로 누적.
 
-별도 Streamlit 앱이다. app.py(메인 대시보드)와 독립적으로 켤 수 있다.
+곡 제작은 Suno 에서 사용자가 직접. 본 툴은 데이터화 전담.
 
-실행:
-    streamlit run reverse_app.py
+탭 구조:
+    🔎 분석                — URL 한 번 → 두 자산 동시 추출 → 저장
+    🎚️ 곡 프롬프트 도서관  — Suno 에 붙여넣을 프롬프트 카테고리별 컬렉션
+    ✍️ 작사가 프롬프트 도서관 — 장르별 가사 본문 + 작사 패턴 + writer_prompt
 
-흐름:
-    🔎 분석 탭        ── 카테고리 선택 → URL 붙여넣기 → 메타 자동 수집 → Gemini 역설계
-                       → Suno 프롬프트 카드 → 마음에 들면 도서관에 저장
-    📚 도서관 탭     ── 카테고리별로 저장된 프롬프트 카드 열람·복사·삭제·메모
-
-키: YOUTUBE_API_KEY(필수), GEMINI_API_KEY(필수). .env 자동 로드.
-저장소: recipes.json (app.py 의 스튜디오와 공유. category/source_url 필드 추가).
+실행: streamlit run reverse_app.py
 """
 
 from __future__ import annotations
 
-import json
 import os
 import re
 from typing import Any
@@ -33,11 +29,13 @@ except Exception:
     pass
 
 import analyzer
+import lyrics_analyzer
+import lyrics_library
 import recipes
 import suno_studio
+import transcript_probe
 
 
-# 기본 카테고리(사용자가 새로 추가하면 도서관에 자동 누적됨).
 DEFAULT_CATEGORIES = [
     "트로트", "발라드", "효도", "5070 댄스",
     "인스트루멘털", "가스펠", "동요", "기타",
@@ -45,7 +43,7 @@ DEFAULT_CATEGORIES = [
 
 
 # ---------------------------------------------------------------------------
-# 유튜브 URL → video_id 추출
+# URL 파서
 # ---------------------------------------------------------------------------
 
 _VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
@@ -67,6 +65,10 @@ def extract_video_id(raw: str) -> str | None:
         if m:
             return m.group(1)
     return None
+
+
+def youtube_url(video_id: str | None) -> str:
+    return f"https://www.youtube.com/watch?v={video_id}" if video_id else ""
 
 
 # ---------------------------------------------------------------------------
@@ -125,12 +127,11 @@ def fetch_video_metadata(api_key: str, video_id: str, *, max_comments: int = 20)
 
 
 # ---------------------------------------------------------------------------
-# 카테고리 헬퍼
+# 카테고리/장르 헬퍼
 # ---------------------------------------------------------------------------
 
 def all_categories() -> list[str]:
-    """기본 카테고리 + 저장된 레시피에서 발견된 카테고리(중복 제거, 순서 유지)."""
-    found = recipes.distinct_categories()
+    found = list(recipes.distinct_categories()) + list(lyrics_library.distinct_genres())
     merged: list[str] = []
     for c in DEFAULT_CATEGORIES + found:
         if c and c not in merged:
@@ -138,44 +139,39 @@ def all_categories() -> list[str]:
     return merged
 
 
-def youtube_url(video_id: str | None) -> str:
-    return f"https://www.youtube.com/watch?v={video_id}" if video_id else ""
-
-
-# ---------------------------------------------------------------------------
-# UI
-# ---------------------------------------------------------------------------
-
 def _load_vocab_cached() -> dict:
     if "_vocab" not in st.session_state:
         st.session_state["_vocab"] = suno_studio.load_vocab()
     return st.session_state["_vocab"]
 
 
-def render_analyze_tab(vocab: dict, yt_key: str, gem_key: str, model: str,
-                      preset_key: str, max_comments: int) -> None:
-    st.subheader("🔎 좋은 곡을 프롬프트로 역설계")
+# ---------------------------------------------------------------------------
+# 탭 1: 분석
+# ---------------------------------------------------------------------------
+
+def render_analyze_tab(
+    vocab: dict, yt_key: str, gem_key: str, oai_key: str, model: str,
+    preset_key: str, max_comments: int, allow_whisper: bool,
+) -> None:
+    st.subheader("🔎 좋은 곡 → 곡 프롬프트 + 작사가 프롬프트 동시 추출")
     st.caption(
-        "마음에 든 유튜브 곡을 카테고리에 담아 분석합니다. "
-        "오디오는 받지 않고(ToS 안전) 제목·태그·설명·댓글만으로 추정합니다."
+        "URL 한 번에 메타데이터 + 가사를 가져와 Gemini 가 두 자산을 동시에 만듭니다. "
+        "곡은 Suno 에서 직접 만드시고, 여기에는 데이터만 누적됩니다."
     )
 
     cats = all_categories()
 
-    # --- 카테고리: 기존에서 고르거나 직접 입력 (직접 입력값 우선) ---
-    st.markdown("**카테고리 / 장르**  · 기존에서 고르거나 오른쪽에 직접 입력하세요 (직접 입력이 우선)")
+    st.markdown("**카테고리 / 장르**  · 기존에서 고르거나 오른쪽에 직접 입력 (직접 입력이 우선)")
     cat_cols = st.columns([2, 2])
     with cat_cols[0]:
         picked = st.selectbox(
             "기존 카테고리에서 선택",
             options=["(선택 안 함)"] + cats,
-            key="rv_cat_select",
-            label_visibility="collapsed",
+            key="rv_cat_select", label_visibility="collapsed",
         )
     with cat_cols[1]:
         typed = st.text_input(
-            "직접 입력",
-            key="rv_cat_typed",
+            "직접 입력", key="rv_cat_typed",
             placeholder="예: 시티팝 / 90년대 발라드 / 보사노바",
             label_visibility="collapsed",
         )
@@ -187,7 +183,7 @@ def render_analyze_tab(vocab: dict, yt_key: str, gem_key: str, model: str,
     else:
         category = ""
     if category:
-        st.caption(f"→ 저장 카테고리: **{category}**")
+        st.caption(f"→ 저장 카테고리/장르: **{category}**")
 
     url = st.text_input(
         "유튜브 URL 또는 video_id",
@@ -196,10 +192,10 @@ def render_analyze_tab(vocab: dict, yt_key: str, gem_key: str, model: str,
     )
 
     cols = st.columns([1, 1, 4])
-    fetch_btn = cols[0].button("① 메타 가져오기", use_container_width=True)
-    analyze_btn = cols[1].button("② 역설계 분석", type="primary", use_container_width=True)
+    fetch_btn = cols[0].button("① 메타 + 가사 가져오기", use_container_width=True)
+    analyze_btn = cols[1].button("② 분석", type="primary", use_container_width=True)
 
-    # --- 1단계: 메타 수집 ---
+    # --- 1단계: 메타 + 가사 수집 ---
     if fetch_btn:
         vid = extract_video_id(url)
         if not vid:
@@ -213,13 +209,35 @@ def render_analyze_tab(vocab: dict, yt_key: str, gem_key: str, model: str,
                         yt_key.strip(), vid, max_comments=max_comments,
                     )
                 st.session_state["rv_meta"] = meta
-                st.session_state.pop("rv_result", None)
-                st.success(f"수집 완료: {meta['title']}")
+
+                with st.spinner("자막에서 가사 추출 중…"):
+                    tr = transcript_probe.get_lyrics(
+                        vid,
+                        openai_key=oai_key.strip() or None,
+                        allow_whisper=allow_whisper,
+                    )
+                st.session_state["rv_transcript"] = tr.as_dict()
+                st.session_state.pop("rv_song_result", None)
+                st.session_state.pop("rv_lyrics_result", None)
+
+                if tr.ok:
+                    src_label = {
+                        "manual": "수동 자막", "auto": "자동 자막",
+                        "translated": "번역 자막", "whisper": "Whisper 받아쓰기",
+                    }.get(tr.source, tr.source)
+                    st.success(f"수집 완료: {meta['title']}  ·  가사 소스: {src_label}")
+                else:
+                    st.warning(
+                        f"메타 수집은 완료. 가사는 못 가져왔습니다 → {tr.error or '사용 가능한 자막 없음'}. "
+                        "사이드바에서 Whisper fallback 을 켜면 다시 시도할 수 있습니다."
+                    )
             except Exception as e:
                 st.error(f"수집 실패: {type(e).__name__}: {e}")
 
     meta: dict[str, Any] | None = st.session_state.get("rv_meta")
+    tr_dict: dict[str, Any] | None = st.session_state.get("rv_transcript")
 
+    # --- 메타 미리보기 ---
     if meta:
         with st.container(border=True):
             top = st.columns([1, 3])
@@ -240,107 +258,197 @@ def render_analyze_tab(vocab: dict, yt_key: str, gem_key: str, model: str,
                     for c in meta["comments"][:10]:
                         st.markdown(f"- {c}")
 
-    # --- 2단계: 역설계 ---
+    # --- 가사 미리보기 + 편집 ---
+    if tr_dict:
+        with st.container(border=True):
+            src_label = {
+                "manual": "수동 자막 (정확)", "auto": "자동 자막 (오인식 가능)",
+                "translated": "번역된 자막", "whisper": "Whisper 받아쓰기",
+            }.get(tr_dict.get("source"), "없음")
+            st.markdown(f"**📝 가사 / 자막**  ·  소스: {src_label}")
+            if tr_dict.get("error"):
+                st.caption(tr_dict["error"])
+            edited = st.text_area(
+                "가사 본문 (오타·중복은 직접 수정 후 분석하세요)",
+                value=tr_dict.get("text", ""),
+                height=200, key="rv_lyrics_edited",
+            )
+            # 편집 결과를 다시 세션에 반영
+            st.session_state["rv_transcript"]["text"] = edited
+            if edited.strip() != (tr_dict.get("text") or "").strip():
+                st.session_state["rv_transcript"]["source"] = (
+                    (tr_dict.get("source") or "") + "+edit"
+                ).strip("+")
+
+    # --- 2단계: 분석 ---
     if analyze_btn:
         if not meta:
-            st.warning("먼저 ① 메타 가져오기를 누르세요.")
+            st.warning("먼저 ① 메타 + 가사 가져오기를 누르세요.")
         elif not gem_key.strip():
             st.error("Gemini API 키가 필요합니다. (사이드바)")
         else:
+            # 곡 picks (메타데이터 기반)
             try:
-                with st.spinner("Gemini 역설계 분석 중…"):
-                    result = analyzer.analyze_metadata(
+                with st.spinner("Gemini 역설계 분석 중 (곡 picks)…"):
+                    song_result = analyzer.analyze_metadata(
                         meta, vocab,
                         preset_hint=preset_key,
                         api_key=gem_key.strip(),
                         model=model.strip() or analyzer.DEFAULT_MODEL,
                     )
-                st.session_state["rv_result"] = result
+                st.session_state["rv_song_result"] = song_result
             except Exception as e:
-                st.error(f"분석 실패: {type(e).__name__}: {e}")
+                st.error(f"곡 분석 실패: {type(e).__name__}: {e}")
+                st.session_state.pop("rv_song_result", None)
 
-    result = st.session_state.get("rv_result")
+            # 가사 패턴 (가사가 있을 때만)
+            lyrics_text = (st.session_state.get("rv_transcript") or {}).get("text") or ""
+            if lyrics_text.strip():
+                try:
+                    with st.spinner("Gemini 작사 패턴 분석 중…"):
+                        lyr_result = lyrics_analyzer.analyze_lyrics(
+                            lyrics_text, title=meta.get("title", ""), genre=category,
+                            api_key=gem_key.strip(),
+                            model=model.strip() or lyrics_analyzer.DEFAULT_MODEL,
+                        )
+                    st.session_state["rv_lyrics_result"] = lyr_result
+                except Exception as e:
+                    st.error(f"작사 분석 실패: {type(e).__name__}: {e}")
+                    st.session_state.pop("rv_lyrics_result", None)
+            else:
+                st.info("가사가 없어 작사 분석은 건너뛰었습니다. 곡 분석만 진행합니다.")
+                st.session_state.pop("rv_lyrics_result", None)
 
-    # --- 결과 카드 + 저장 ---
-    if result and meta:
+    song_result = st.session_state.get("rv_song_result")
+    lyr_result = st.session_state.get("rv_lyrics_result")
+
+    # --- 결과: 곡 카드 ---
+    if song_result and meta:
         st.divider()
-        st.subheader("🎚️ Suno 프롬프트 카드")
+        st.subheader("🎚️ 곡 프롬프트 카드 (Suno 용)")
         prompt_text = suno_studio.picks_to_prompt(
-            vocab, result["preset"], result["picks"]
+            vocab, song_result["preset"], song_result["picks"]
         )
-
         mcols = st.columns(3)
-        mcols[0].metric("무드", result.get("mood") or "-")
-        mcols[1].metric("BPM", result.get("bpm") or "-")
-        mcols[2].metric("프리셋", result["preset"])
-        if result.get("rationale"):
-            st.caption(f"💡 근거: {result['rationale']}")
-
-        st.markdown("**Suno 에 그대로 붙여넣을 프롬프트:**")
+        mcols[0].metric("무드", song_result.get("mood") or "-")
+        mcols[1].metric("BPM", song_result.get("bpm") or "-")
+        mcols[2].metric("프리셋", song_result["preset"])
+        if song_result.get("rationale"):
+            st.caption(f"💡 {song_result['rationale']}")
         st.code(prompt_text, language=None)
 
         with st.expander("picks (차원별 원본)"):
-            st.json(result["picks"])
+            st.json(song_result["picks"])
 
-        new_terms = result.get("new_terms") or {}
+        new_terms = song_result.get("new_terms") or {}
         if new_terms:
             with st.expander("🧩 새 어휘 후보 (vocab.json 보완용)"):
                 st.json(new_terms)
 
-        st.divider()
-        st.subheader("📥 도서관에 저장")
-        if not category:
-            st.warning("저장하려면 위에서 카테고리를 선택하거나 새로 만드세요.")
-        else:
-            st.caption(f"카테고리: **{category}**")
-            rname = st.text_input(
-                "프롬프트 이름 (기억하기 쉬운 라벨)",
-                value=meta["title"][:50] or "역설계 프롬프트",
-                key="rv_save_name",
-            )
-            note = st.text_area(
-                "메모 (선택) — 이 곡이 좋은 이유, Suno 에서 시도한 변형 등",
-                key="rv_save_note", height=70,
-            )
-            if st.button("💾 도서관에 저장", type="primary", use_container_width=True):
-                try:
-                    rec = recipes.save_recipe(
-                        rname or meta["title"] or "역설계 프롬프트",
-                        result["preset"], result["picks"],
-                        bpm=result.get("bpm"),
-                        source_video_id=meta.get("video_id"),
-                        source_url=youtube_url(meta.get("video_id")),
-                        category=category,
-                        notes=(note.strip() or result.get("rationale", "")),
-                    )
-                    st.success(f"저장됨: **{rec['name']}**  ({category})")
-                    st.session_state.pop("rv_result", None)
-                    st.session_state.pop("rv_meta", None)
-                except Exception as e:
-                    st.error(f"저장 실패: {type(e).__name__}: {e}")
+        # 저장
+        with st.container(border=True):
+            st.markdown("**📥 곡 프롬프트 도서관에 저장**")
+            if not category:
+                st.warning("저장하려면 위에서 카테고리를 선택하거나 직접 입력하세요.")
+            else:
+                rname = st.text_input(
+                    "프롬프트 이름",
+                    value=meta["title"][:50] or "역설계 프롬프트",
+                    key="rv_song_save_name",
+                )
+                note = st.text_area(
+                    "메모 (선택)", key="rv_song_save_note", height=60,
+                )
+                if st.button("💾 곡 도서관에 저장", type="primary",
+                             key="rv_song_save", use_container_width=True):
+                    try:
+                        rec = recipes.save_recipe(
+                            rname or meta["title"] or "역설계 프롬프트",
+                            song_result["preset"], song_result["picks"],
+                            bpm=song_result.get("bpm"),
+                            source_video_id=meta.get("video_id"),
+                            source_url=youtube_url(meta.get("video_id")),
+                            category=category,
+                            notes=(note.strip() or song_result.get("rationale", "")),
+                        )
+                        st.success(f"저장: **{rec['name']}** ({category})")
+                    except Exception as e:
+                        st.error(f"저장 실패: {type(e).__name__}: {e}")
 
-    elif not meta:
+    # --- 결과: 작사가 카드 ---
+    if lyr_result and meta:
+        st.divider()
+        st.subheader("✍️ 작사가 프롬프트 카드")
+        st.caption(f"한 줄 요약: {lyr_result.get('summary', '')}")
+        if lyr_result.get("rationale"):
+            st.caption(f"💡 {lyr_result['rationale']}")
+
+        st.markdown("**AI 작사가에게 줄 페르소나·지시문 (이대로 복사해서 사용):**")
+        st.code(lyr_result.get("writer_prompt", ""), language=None)
+
+        with st.expander("작사 패턴 (차원별)"):
+            st.json(lyr_result.get("patterns") or {})
+
+        with st.container(border=True):
+            st.markdown("**📥 작사가 도서관에 저장**")
+            if not category:
+                st.warning("저장하려면 카테고리/장르를 지정하세요.")
+            else:
+                lname = st.text_input(
+                    "이름 (이 가사를 부르는 라벨)",
+                    value=meta["title"][:50] or "작사 패턴",
+                    key="rv_lyr_save_name",
+                )
+                lnote = st.text_area(
+                    "메모 (선택)", key="rv_lyr_save_note", height=60,
+                )
+                if st.button("💾 작사가 도서관에 저장", type="primary",
+                             key="rv_lyr_save", use_container_width=True):
+                    try:
+                        lyrics_full = (st.session_state.get("rv_transcript") or {}).get("text") or ""
+                        src = (st.session_state.get("rv_transcript") or {}).get("source") or ""
+                        ent = lyrics_library.save_entry(
+                            name=lname or meta["title"] or "작사 패턴",
+                            genre=category,
+                            lyrics_text=lyrics_full,
+                            patterns=lyr_result.get("patterns") or {},
+                            writer_prompt=lyr_result.get("writer_prompt", ""),
+                            summary=lyr_result.get("summary", ""),
+                            rationale=lyr_result.get("rationale", ""),
+                            transcript_source=src,
+                            source_video_id=meta.get("video_id"),
+                            source_url=youtube_url(meta.get("video_id")),
+                            notes=lnote,
+                        )
+                        st.success(f"저장: **{ent['name']}** ({category})")
+                    except Exception as e:
+                        st.error(f"저장 실패: {type(e).__name__}: {e}")
+
+    if not meta and not song_result:
         st.info(
-            "👆 카테고리 선택 → URL 붙여넣기 → **① 메타 가져오기** → **② 역설계 분석** 순서로 진행하세요."
+            "👆 카테고리/장르 지정 → URL 붙여넣기 → **① 메타 + 가사 가져오기** → "
+            "**② 분석** 순서로 진행하세요."
         )
 
 
-def render_library_tab(vocab: dict) -> None:
-    st.subheader("📚 내 프롬프트 도서관")
-    st.caption("카테고리별로 모은 역설계 프롬프트. Suno 에 붙여넣을 텍스트가 카드마다 들어있습니다.")
+# ---------------------------------------------------------------------------
+# 탭 2: 곡 프롬프트 도서관
+# ---------------------------------------------------------------------------
+
+def render_song_library_tab(vocab: dict) -> None:
+    st.subheader("🎚️ 곡 프롬프트 도서관")
+    st.caption("카테고리별 Suno 프롬프트 컬렉션. 카드의 텍스트를 Suno 에 붙여넣으세요.")
 
     all_recipes = recipes.list_recipes()
     if not all_recipes:
-        st.info("아직 모은 프롬프트가 없습니다. 🔎 분석 탭에서 첫 곡을 역설계하세요.")
+        st.info("아직 모은 곡 프롬프트가 없습니다. 🔎 분석 탭에서 첫 곡을 역설계하세요.")
         return
 
-    # 카테고리별 그룹화 (빈 카테고리는 '미분류' 로)
     grouped: dict[str, list[dict]] = {}
     for r in all_recipes:
         c = (r.get("category") or "").strip() or "미분류"
         grouped.setdefault(c, []).append(r)
 
-    # 필터
     filt_cols = st.columns([2, 1, 1])
     cats_in_lib = sorted(grouped.keys())
     selected = filt_cols[0].multiselect(
@@ -353,7 +461,6 @@ def render_library_tab(vocab: dict) -> None:
     filt_cols[2].metric("총 개수", len(all_recipes))
 
     shown_cats = selected if selected else cats_in_lib
-
     for cat in shown_cats:
         items = list(grouped.get(cat, []))
         if not items:
@@ -362,17 +469,15 @@ def render_library_tab(vocab: dict) -> None:
             items.sort(key=lambda r: r.get("created_at", ""), reverse=True)
         else:
             items.sort(key=lambda r: r.get("name", ""))
-
         st.markdown(f"## {cat}  ·  {len(items)}개")
         for r in items:
-            render_recipe_card(r, vocab)
+            render_song_card(r, vocab)
 
 
-def render_recipe_card(r: dict, vocab: dict) -> None:
+def render_song_card(r: dict, vocab: dict) -> None:
     rid = r["id"]
     confirm_key = f"rv_del_confirm_{rid}"
     edit_key = f"rv_edit_open_{rid}"
-
     with st.container(border=True):
         head = st.columns([5, 1])
         head[0].markdown(f"### {r.get('name', '(이름없음)')}")
@@ -384,7 +489,6 @@ def render_recipe_card(r: dict, vocab: dict) -> None:
         )
         if r.get("source_url"):
             head[1].link_button("🔗 원본", r["source_url"], use_container_width=True)
-
         try:
             prompt = suno_studio.picks_to_prompt(
                 vocab, r.get("preset") or "kr_trot", r.get("picks") or {}
@@ -392,28 +496,21 @@ def render_recipe_card(r: dict, vocab: dict) -> None:
         except Exception:
             prompt = "(프롬프트 재구성 실패)"
         st.code(prompt, language=None)
-
         if r.get("notes"):
             st.caption(f"📝 {r['notes']}")
 
-        with st.expander("picks / 메타 보기"):
-            st.json({k: v for k, v in r.items() if k not in {"picks"}})
-            st.json(r.get("picks") or {})
-
         action_cols = st.columns([1, 1, 1, 3])
-        if action_cols[0].button("✏️ 카테고리 수정", key=f"rv_edit_{rid}"):
+        if action_cols[0].button("✏️ 카테고리", key=f"rv_edit_{rid}"):
             st.session_state[edit_key] = not st.session_state.get(edit_key, False)
-
         if action_cols[1].button("🗑 삭제", key=f"rv_del_{rid}"):
             st.session_state[confirm_key] = True
 
         if st.session_state.get(confirm_key):
-            st.warning(f"정말 '{r.get('name')}' 을(를) 삭제할까요? 되돌릴 수 없습니다.")
+            st.warning(f"정말 '{r.get('name')}' 을(를) 삭제할까요?")
             yn = st.columns([1, 1, 4])
-            if yn[0].button("✅ 예, 삭제", key=f"rv_del_yes_{rid}", type="primary"):
+            if yn[0].button("✅ 예", key=f"rv_del_yes_{rid}", type="primary"):
                 recipes.delete_recipe(rid)
                 st.session_state.pop(confirm_key, None)
-                st.success("삭제되었습니다.")
                 st.rerun()
             if yn[1].button("취소", key=f"rv_del_no_{rid}"):
                 st.session_state.pop(confirm_key, None)
@@ -432,19 +529,148 @@ def render_recipe_card(r: dict, vocab: dict) -> None:
                     rid, category=("" if new_cat == "미분류" else new_cat),
                 )
                 st.session_state.pop(edit_key, None)
-                st.success("수정되었습니다.")
                 st.rerun()
 
 
+# ---------------------------------------------------------------------------
+# 탭 3: 작사가 프롬프트 도서관
+# ---------------------------------------------------------------------------
+
+def render_lyrics_library_tab() -> None:
+    st.subheader("✍️ 작사가 프롬프트 도서관")
+    st.caption(
+        "장르별 가사 본문 + 작사 패턴 + writer_prompt. 같은 장르의 곡들을 합쳐서 "
+        "'그 장르 작사가 통합 페르소나'도 자동 생성합니다."
+    )
+
+    entries = lyrics_library.list_entries()
+    if not entries:
+        st.info("아직 모은 작사 데이터가 없습니다. 🔎 분석 탭에서 가사 있는 곡을 분석하세요.")
+        return
+
+    grouped: dict[str, list[dict]] = {}
+    for e in entries:
+        g = (e.get("genre") or "").strip() or "미분류"
+        grouped.setdefault(g, []).append(e)
+
+    filt_cols = st.columns([2, 1, 1])
+    genres = sorted(grouped.keys())
+    selected = filt_cols[0].multiselect(
+        "장르 필터 (비우면 전체)", options=genres, default=[],
+        key="rv_lyr_filter",
+    )
+    sort_mode = filt_cols[1].selectbox(
+        "정렬", ["최신순", "이름순"], key="rv_lyr_sort",
+    )
+    filt_cols[2].metric("총 개수", len(entries))
+
+    shown = selected if selected else genres
+
+    for g in shown:
+        items = list(grouped.get(g, []))
+        if not items:
+            continue
+        if sort_mode == "최신순":
+            items.sort(key=lambda e: e.get("created_at", ""), reverse=True)
+        else:
+            items.sort(key=lambda e: e.get("name", ""))
+
+        head_cols = st.columns([4, 1])
+        head_cols[0].markdown(f"## {g}  ·  {len(items)}개")
+        if head_cols[1].button(f"🧬 {g} 통합 페르소나", key=f"rv_merge_{g}",
+                               use_container_width=True):
+            st.session_state[f"rv_merge_show_{g}"] = True
+
+        if st.session_state.get(f"rv_merge_show_{g}"):
+            merged = lyrics_library.merged_writer_prompt(g)
+            with st.container(border=True):
+                st.markdown(f"### 🧬 {g} 작사가 통합 페르소나 (곡 {len(items)}개 합성)")
+                st.caption("AI 에게 통째로 줘서 이 장르 톤으로 새 가사를 받을 수 있습니다.")
+                st.text_area("merged_writer_prompt", value=merged,
+                             height=300, key=f"rv_merge_text_{g}")
+                if st.button("닫기", key=f"rv_merge_close_{g}"):
+                    st.session_state.pop(f"rv_merge_show_{g}", None)
+                    st.rerun()
+
+        for e in items:
+            render_lyrics_card(e)
+
+
+def render_lyrics_card(e: dict) -> None:
+    eid = e["id"]
+    confirm_key = f"rv_lyr_del_confirm_{eid}"
+    edit_key = f"rv_lyr_edit_open_{eid}"
+
+    with st.container(border=True):
+        head = st.columns([5, 1])
+        head[0].markdown(f"### {e.get('name', '(이름없음)')}")
+        src = e.get("transcript_source") or ""
+        head[0].caption(
+            f"장르: **{e.get('genre') or '미분류'}**  ·  "
+            f"가사 소스: {src or '-'}  ·  "
+            f"저장: {(e.get('created_at') or '')[:10]}"
+        )
+        if e.get("source_url"):
+            head[1].link_button("🔗 원본", e["source_url"], use_container_width=True)
+
+        if e.get("summary"):
+            st.markdown(f"**요약:** {e['summary']}")
+
+        st.markdown("**작사가 프롬프트 (그대로 AI 에 붙여넣기):**")
+        st.code(e.get("writer_prompt", ""), language=None)
+
+        with st.expander("📝 가사 본문 보기"):
+            st.text_area("가사", value=e.get("lyrics_text", ""),
+                         height=180, disabled=True, key=f"rv_lyr_view_{eid}")
+        with st.expander("작사 패턴 (차원별)"):
+            st.json(e.get("patterns") or {})
+
+        action_cols = st.columns([1, 1, 1, 3])
+        if action_cols[0].button("✏️ 장르 변경", key=f"rv_lyr_edit_{eid}"):
+            st.session_state[edit_key] = not st.session_state.get(edit_key, False)
+        if action_cols[1].button("🗑 삭제", key=f"rv_lyr_del_{eid}"):
+            st.session_state[confirm_key] = True
+
+        if st.session_state.get(confirm_key):
+            st.warning(f"정말 '{e.get('name')}' 을(를) 삭제할까요?")
+            yn = st.columns([1, 1, 4])
+            if yn[0].button("✅ 예", key=f"rv_lyr_del_yes_{eid}", type="primary"):
+                lyrics_library.delete_entry(eid)
+                st.session_state.pop(confirm_key, None)
+                st.rerun()
+            if yn[1].button("취소", key=f"rv_lyr_del_no_{eid}"):
+                st.session_state.pop(confirm_key, None)
+                st.rerun()
+
+        if st.session_state.get(edit_key):
+            gs = all_categories() + ["미분류"]
+            cur = e.get("genre") or "미분류"
+            new_g = st.selectbox(
+                "장르 변경", options=gs,
+                index=gs.index(cur) if cur in gs else 0,
+                key=f"rv_lyr_edit_sel_{eid}",
+            )
+            if st.button("저장", key=f"rv_lyr_edit_save_{eid}"):
+                lyrics_library.update_entry(
+                    eid, genre=("" if new_g == "미분류" else new_g),
+                )
+                st.session_state.pop(edit_key, None)
+                st.rerun()
+
+
+# ---------------------------------------------------------------------------
+# 메인
+# ---------------------------------------------------------------------------
+
 def main() -> None:
     st.set_page_config(
-        page_title="곡 역설계 — 내 프롬프트 도서관",
+        page_title="곡 역설계 — 곡·작사가 프롬프트 도서관",
         page_icon="🔎", layout="wide",
     )
-    st.title("🔎 곡 역설계 → 📚 내 프롬프트 도서관")
+    st.title("🔎 곡 역설계 → 🎚️ 곡 + ✍️ 작사가 프롬프트 도서관")
     st.caption(
-        "좋은 곡 링크 → Suno 프롬프트 역설계 → 카테고리별 저장. "
-        "곡 제작은 Suno 에서 직접 하시고, 여기는 데이터화에 집중합니다."
+        "URL 한 번에 메타데이터·가사를 모아 두 자산을 동시에 만들고, 장르별로 누적합니다. "
+        "곡 제작은 Suno 에서 직접 하시면 됩니다."
     )
 
     vocab = _load_vocab_cached()
@@ -455,32 +681,50 @@ def main() -> None:
         yt_key = st.text_input(
             "YouTube API Key", type="password",
             value=os.getenv("YOUTUBE_API_KEY", ""),
-            help="영상 메타데이터/댓글 수집에 필요합니다.",
         )
         gem_key = st.text_input(
             "Gemini API Key", type="password",
             value=os.getenv("GEMINI_API_KEY", ""),
-            help="역설계(스타일 추정)에 필요합니다.",
+            help="곡 역설계 + 작사 분석에 사용됩니다.",
         )
         model = st.text_input("Gemini 모델", value=analyzer.DEFAULT_MODEL)
         preset_key = st.selectbox(
-            "프리셋(나라/장르 힌트)",
+            "프리셋(나라/장르 힌트, 곡 picks 용)",
             options=[k for k, _ in presets],
             format_func=lambda k: dict(presets)[k],
         )
         max_comments = st.slider("수집 댓글 수", 0, 50, 20)
         st.divider()
+        st.markdown("**가사 추출 설정**")
+        st.caption("1차로 유튜브 자막을 시도합니다(무료). 실패 시 Whisper fallback 옵션.")
+        oai_key = st.text_input(
+            "OpenAI API Key (Whisper용, 선택)", type="password",
+            value=os.getenv("OPENAI_API_KEY", ""),
+        )
+        allow_whisper = st.checkbox(
+            "🎙 자막 없을 때 Whisper API 로 받아쓰기",
+            value=False,
+            help="yt-dlp 로 오디오를 추출해 OpenAI Whisper 에 전송합니다. "
+                 "본인 권리·CC 라이선스 영상에만 사용하세요.",
+        )
+        st.divider()
         st.caption(
-            f"저장소: `recipes.json` ({len(recipes.list_recipes())}개 보관 중)"
+            f"저장소: `recipes.json` ({len(recipes.list_recipes())}개)  ·  "
+            f"`lyrics_library.json` ({len(lyrics_library.list_entries())}개)"
         )
 
-    tab_analyze, tab_library = st.tabs(["🔎 분석", "📚 도서관"])
+    tab_analyze, tab_song, tab_lyrics = st.tabs(
+        ["🔎 분석", "🎚️ 곡 프롬프트 도서관", "✍️ 작사가 프롬프트 도서관"]
+    )
     with tab_analyze:
         render_analyze_tab(
-            vocab, yt_key, gem_key, model, preset_key, max_comments,
+            vocab, yt_key, gem_key, oai_key, model, preset_key,
+            max_comments, allow_whisper,
         )
-    with tab_library:
-        render_library_tab(vocab)
+    with tab_song:
+        render_song_library_tab(vocab)
+    with tab_lyrics:
+        render_lyrics_library_tab()
 
 
 if __name__ == "__main__":

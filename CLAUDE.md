@@ -108,10 +108,14 @@ python pipeline.py --init                              # 파이프라인 폴더 
 - [x] 사라졌던 UI 기능 전체 복원(2026-05-26): eGtMR 기반 9탭 합본. 제목 Lab·인코딩 잡·
   인터랙티브 자막 편집기·영상합성 고급모드·보컬분리·키 영속저장 복원 + 자동화 3탭 유지.
 - [x] 🔎 곡 역설계를 **단독 Streamlit 툴**로 분리(2026-06-01, sleepy-fermat-76R13):
-  `reverse_app.py`. URL 한 줄 → YouTube API 메타 자동 수집 → Gemini 역설계 →
-  Suno picks/프롬프트 카드 → 레시피 저장 or 파이프라인 inbox 잡 폴더 생성까지.
-  실행: `streamlit run reverse_app.py`. analyzer.py / vocab.json / recipes.py /
-  suno_studio.py 를 app.py 와 공용으로 import (코드 중복 없음).
+  `reverse_app.py`. URL 한 줄 → YouTube API 메타 + 자막(가사) 자동 수집 →
+  Gemini 가 **곡 picks(Suno) + 작사 패턴(writer_prompt)** 동시 추출 → 두 도서관에
+  장르별로 누적. 탭 3개: 🔎 분석 / 🎚️ 곡 도서관 / ✍️ 작사가 도서관.
+  - 신규 모듈: `transcript_probe.py` (youtube-transcript-api + Whisper API fallback),
+    `lyrics_analyzer.py` (가사→작사 패턴 Gemini), `lyrics_library.py` (장르별 가사 저장소
+    `lyrics_library.json`; 같은 장르 곡들 종합한 **통합 페르소나** 생성 기능).
+  - 의존성 추가: `youtube-transcript-api`, `yt-dlp`.
+  - 실행: `streamlit run reverse_app.py`. 곡 제작은 Suno 에서 사용자가 직접.
 - [ ] 실제 API 키로 end-to-end 점검(collect→score→검수→역설계→pipeline) — 키 필요해 미수행
 - [ ] `automation.py`(laughing-hawking) cron 레이어를 통합할지 결정
 - [ ] sleepy-fermat-76R13 의 reverse_app.py 를 default 브랜치(eqO5N)로 머지해야 사용자 화면에 반영됨
