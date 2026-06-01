@@ -23,14 +23,16 @@ st.markdown("""
 .block-container { padding: 60px 0 0 0 !important; max-width: 100% !important; }
 
 /* ── 툴바 완전 숨김 (모든 버전 대응) ── */
-header, header * { display: none !important; height: 0 !important; }
+header, header * { display: none !important; height: 0 !important; visibility: hidden !important; }
 [data-testid="stToolbar"] { display: none !important; }
 [data-testid="stAppToolbar"] { display: none !important; }
 [data-testid="stDecoration"] { display: none !important; }
 [data-testid="stStatusWidget"] { display: none !important; }
-#MainMenu, #MainMenu * { display: none !important; }
-footer, footer * { display: none !important; }
+#MainMenu, #MainMenu * { display: none !important; visibility: hidden !important; }
+footer, footer * { display: none !important; visibility: hidden !important; }
 .stDeployButton { display: none !important; }
+.stApp > header { display: none !important; }
+div[data-testid="collapsedControl"] { display: none !important; }
 section[data-testid="stSidebar"] > div:first-child { padding-top: 0 !important; }
 
 /* 입력 요소 */
@@ -290,6 +292,30 @@ with st.sidebar:
         st.session_state.ai_key = gemini_input
         st.success("저장됨!")
     st.success("✅ 등록됨") if st.session_state.ai_key else st.info("ℹ️ AI 기능에 필요")
+
+# ── JS로 툴바 강제 제거 ──
+st.markdown("""
+<script>
+(function hideToolbar() {
+    const selectors = [
+        'header', '[data-testid="stToolbar"]', '[data-testid="stAppToolbar"]',
+        '[data-testid="stDecoration"]', '#MainMenu', 'footer'
+    ];
+    function remove() {
+        selectors.forEach(s => {
+            document.querySelectorAll(s).forEach(el => {
+                el.style.display = 'none';
+                el.style.visibility = 'hidden';
+                el.style.height = '0';
+            });
+        });
+    }
+    remove();
+    const observer = new MutationObserver(remove);
+    observer.observe(document.body, { childList: true, subtree: true });
+})();
+</script>
+""", unsafe_allow_html=True)
 
 # ── 메인 타이틀 ──
 st.markdown("""<div style="padding:8px 0 12px 0;">
