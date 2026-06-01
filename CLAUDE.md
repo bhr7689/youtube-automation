@@ -123,6 +123,17 @@ python pipeline.py --init                              # 파이프라인 폴더 
   `analyzer.build_prompt` 가 `meta["audio_features"]` 와 `meta["lyrics_excerpt"]` 를
   받아 Gemini 프롬프트에 실측 단서로 주입 — 추정 정확도 격상.
   의존성 추가: `librosa>=0.10.1`.
+- [x] ✨ **생성 단계 통합**(2026-06-01, sleepy-fermat-76R13): 데이터 수집→생성으로
+  최종 흐름 연결. reverse_app.py 가 5탭 구조로 확장.
+  - 🎚️→✨ **곡 프롬프트 변주 탭**: 도서관 베이스(단일/다중 블렌딩) +
+    변주 강도(약/중/강 — lock dim 차등) → `suno_studio.generate_variations`
+    재사용으로 N개 변주. 마음에 드는 변주는 도서관에 저장.
+  - ✍️→✨ **가사 생성 탭**: 신규 모듈 `lyrics_generator.py`. 페르소나(단일/장르
+    통합/직접 입력) + 곡 길이(2분30초~6분, 7개 프리셋) → 절·후렴·브릿지 구조
+    자동 매핑 → Gemini 가 N개 가사 변주. 각 카드에 📋 복사 블록 + .txt 다운로드.
+  - 모든 결과 출력은 `st.code()` 블록으로 통일(우상단 📋 아이콘 복사). 통합
+    페르소나·가사 본문도 텍스트 영역에서 코드 블록으로 교체. 각 탭 상단에
+    복사 안내 캡션 1회 노출.
 - [ ] 실제 API 키로 end-to-end 점검(collect→score→검수→역설계→pipeline) — 키 필요해 미수행
 - [ ] `automation.py`(laughing-hawking) cron 레이어를 통합할지 결정
 - [ ] sleepy-fermat-76R13 의 reverse_app.py 를 default 브랜치(eqO5N)로 머지해야 사용자 화면에 반영됨

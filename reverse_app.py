@@ -31,10 +31,13 @@ except Exception:
 import analyzer
 import audio_probe
 import lyrics_analyzer
+import lyrics_generator
 import lyrics_library
 import recipes
 import suno_studio
 import transcript_probe
+
+COPY_HINT = "💡 결과 블록 우상단의 📋 아이콘으로 복사하거나, 텍스트를 드래그해 Ctrl+C 하세요."
 
 
 DEFAULT_CATEGORIES = [
@@ -160,6 +163,7 @@ def render_analyze_tab(
         "URL 한 번에 메타데이터 + 가사를 가져와 Gemini 가 두 자산을 동시에 만듭니다. "
         "곡은 Suno 에서 직접 만드시고, 여기에는 데이터만 누적됩니다."
     )
+    st.caption(COPY_HINT)
 
     cats = all_categories()
 
@@ -485,6 +489,7 @@ def render_analyze_tab(
 def render_song_library_tab(vocab: dict) -> None:
     st.subheader("🎚️ 곡 프롬프트 도서관")
     st.caption("카테고리별 Suno 프롬프트 컬렉션. 카드의 텍스트를 Suno 에 붙여넣으세요.")
+    st.caption(COPY_HINT)
 
     all_recipes = recipes.list_recipes()
     if not all_recipes:
@@ -589,6 +594,7 @@ def render_lyrics_library_tab() -> None:
         "장르별 가사 본문 + 작사 패턴 + writer_prompt. 같은 장르의 곡들을 합쳐서 "
         "'그 장르 작사가 통합 페르소나'도 자동 생성합니다."
     )
+    st.caption(COPY_HINT)
 
     entries = lyrics_library.list_entries()
     if not entries:
@@ -632,10 +638,16 @@ def render_lyrics_library_tab() -> None:
             merged = lyrics_library.merged_writer_prompt(g)
             with st.container(border=True):
                 st.markdown(f"### 🧬 {g} 작사가 통합 페르소나 (곡 {len(items)}개 합성)")
-                st.caption("AI 에게 통째로 줘서 이 장르 톤으로 새 가사를 받을 수 있습니다.")
-                st.text_area("merged_writer_prompt", value=merged,
-                             height=300, key=f"rv_merge_text_{g}")
-                if st.button("닫기", key=f"rv_merge_close_{g}"):
+                st.caption("💡 블록 우상단의 📋 아이콘으로 클립보드 복사, 또는 ⬇ .txt 다운로드.")
+                st.code(merged, language="markdown")
+                dl_cols = st.columns([1, 1, 4])
+                dl_cols[0].download_button(
+                    "⬇ .txt 다운로드", data=merged.encode("utf-8"),
+                    file_name=f"persona_{g}.txt", mime="text/plain",
+                    key=f"rv_merge_dl_{g}", use_container_width=True,
+                )
+                if dl_cols[1].button("닫기", key=f"rv_merge_close_{g}",
+                                     use_container_width=True):
                     st.session_state.pop(f"rv_merge_show_{g}", None)
                     st.rerun()
 
@@ -666,9 +678,8 @@ def render_lyrics_card(e: dict) -> None:
         st.markdown("**작사가 프롬프트 (그대로 AI 에 붙여넣기):**")
         st.code(e.get("writer_prompt", ""), language=None)
 
-        with st.expander("📝 가사 본문 보기"):
-            st.text_area("가사", value=e.get("lyrics_text", ""),
-                         height=180, disabled=True, key=f"rv_lyr_view_{eid}")
+        with st.expander("📝 가사 본문 보기 (복사 가능)"):
+            st.code(e.get("lyrics_text", "") or "(없음)", language=None)
         with st.expander("작사 패턴 (차원별)"):
             st.json(e.get("patterns") or {})
 
@@ -703,6 +714,261 @@ def render_lyrics_card(e: dict) -> None:
                 )
                 st.session_state.pop(edit_key, None)
                 st.rerun()
+
+
+# ---------------------------------------------------------------------------
+# 탭 4: 곡 프롬프트 변주 (도서관 항목 → 같은 듯 다른 N개)
+# ---------------------------------------------------------------------------
+
+_STRENGTH_LOCKS = {
+    "약 (정체성 최대 보존)": {"mood", "vocal_gender", "vocal_register", "vocal_ensemble", "production"},
+    "중 (권장)": {"mood", "vocal_gender"},
+    "강 (대담한 변주)": set(),
+}
+
+
+def render_song_variation_tab(vocab: dict) -> None:
+    st.subheader("✨ 곡 프롬프트 변주")
+    st.caption(
+        "도서관에서 베이스 곡을 골라 같은 무드·정체성으로 변주된 Suno 프롬프트를 N개 생성합니다. "
+        "여러 곡을 고르면 블렌딩되어 더 풍부한 베이스로 시작합니다."
+    )
+    st.caption(COPY_HINT)
+
+    all_recipes = recipes.list_recipes()
+    if not all_recipes:
+        st.info("아직 곡 도서관이 비어 있습니다. 🔎 분석 탭에서 먼저 곡을 모으세요.")
+        return
+
+    by_label: dict[str, dict] = {}
+    for r in all_recipes:
+        label = f"[{r.get('category') or '미분류'}] {r.get('name','')} ({(r.get('created_at') or '')[:10]})"
+        by_label[label] = r
+
+    cols = st.columns([3, 1, 1])
+    selected_labels = cols[0].multiselect(
+        "베이스 곡 선택 (여러 개 고르면 블렌딩)",
+        options=list(by_label.keys()),
+        key="rv_var_select",
+    )
+    strength = cols[1].selectbox(
+        "변주 강도",
+        options=list(_STRENGTH_LOCKS.keys()), index=1,
+        key="rv_var_strength",
+    )
+    n = cols[2].number_input("개수", min_value=1, max_value=20, value=5, key="rv_var_n")
+
+    seed_cols = st.columns([1, 3])
+    seed_str = seed_cols[0].text_input("랜덤 시드 (선택)", key="rv_var_seed",
+                                       placeholder="비우면 매번 다른 결과")
+
+    if st.button("✨ 변주 생성", type="primary", key="rv_var_run"):
+        if not selected_labels:
+            st.warning("최소 1개 이상의 베이스 곡을 선택하세요.")
+        else:
+            chosen = [by_label[l] for l in selected_labels]
+            preset_key = chosen[0].get("preset") or "kr_trot"
+            try:
+                if len(chosen) == 1:
+                    base_picks = dict(chosen[0].get("picks") or {})
+                else:
+                    preset_key, base_picks = recipes.blend_recipes(chosen, preset=preset_key)
+                seed = int(seed_str) if seed_str.strip().isdigit() else None
+                variants = suno_studio.generate_variations(
+                    vocab, preset_key, base_picks,
+                    n=int(n), lock=_STRENGTH_LOCKS[strength], seed=seed,
+                )
+                st.session_state["rv_var_results"] = {
+                    "variants": variants, "preset": preset_key,
+                    "base_names": [c.get("name","") for c in chosen],
+                }
+            except Exception as e:
+                st.error(f"변주 실패: {type(e).__name__}: {e}")
+
+    res = st.session_state.get("rv_var_results")
+    if res:
+        st.divider()
+        st.markdown(
+            f"### 결과 {len(res['variants'])}개  ·  베이스: {', '.join(res['base_names'])}"
+        )
+        for i, var in enumerate(res["variants"], 1):
+            with st.container(border=True):
+                prompt = suno_studio.picks_to_prompt(vocab, res["preset"], var)
+                bpm = (var.get("_bpm") or ["-"])[0]
+                mood = (var.get("mood") or ["-"])[0]
+                st.markdown(f"**변주 #{i}**  ·  무드 {mood}  ·  BPM {bpm}")
+                st.code(prompt, language=None)
+                with st.expander("picks (차원별)"):
+                    st.json(var)
+                save_cols = st.columns([2, 1, 3])
+                name_input = save_cols[0].text_input(
+                    "저장할 이름",
+                    value=f"변주 #{i} ({res['base_names'][0] if res['base_names'] else '베이스'})",
+                    key=f"rv_var_name_{i}",
+                )
+                cat_input = save_cols[1].text_input(
+                    "카테고리",
+                    value=(recipes.get_recipe(
+                        next(iter([r['id'] for r in all_recipes
+                                   if r.get('name') == res['base_names'][0]]), ""),
+                    ) or {}).get("category") or "",
+                    key=f"rv_var_cat_{i}",
+                )
+                if save_cols[2].button(f"💾 도서관에 저장 #{i}",
+                                       key=f"rv_var_save_{i}",
+                                       use_container_width=True):
+                    try:
+                        clean_picks = {k: list(v) for k, v in var.items()
+                                       if not k.startswith("_") and v}
+                        bpm_int = int(bpm) if str(bpm).isdigit() else None
+                        recipes.save_recipe(
+                            name_input or f"변주 #{i}",
+                            res["preset"], clean_picks,
+                            bpm=bpm_int,
+                            category=cat_input,
+                            notes=f"변주(강도: {strength}) — 베이스: {', '.join(res['base_names'])}",
+                        )
+                        st.success(f"저장됨: {name_input}")
+                    except Exception as e:
+                        st.error(f"저장 실패: {type(e).__name__}: {e}")
+
+
+# ---------------------------------------------------------------------------
+# 탭 5: 가사 생성 (작사가 페르소나 → N개 가사 변주)
+# ---------------------------------------------------------------------------
+
+_DURATION_OPTIONS = list(lyrics_generator.DURATION_PRESETS.items())
+
+
+def render_lyrics_generation_tab(gem_key: str, model: str) -> None:
+    st.subheader("✨ 가사 생성")
+    st.caption(
+        "작사가 도서관의 페르소나(단일/장르 통합/직접 입력)를 기반으로 새 가사를 N개 생성합니다. "
+        "곡 길이를 늘리면 절·후렴 구조가 자동 확장됩니다."
+    )
+    st.caption(COPY_HINT)
+
+    entries = lyrics_library.list_entries()
+    genres = lyrics_library.distinct_genres()
+
+    persona_mode = st.radio(
+        "페르소나 소스",
+        options=["단일 항목 선택", "장르 통합 페르소나", "직접 입력"],
+        horizontal=True, key="rv_gen_mode",
+    )
+
+    persona_text = ""
+    used_genre = ""
+
+    if persona_mode == "단일 항목 선택":
+        if not entries:
+            st.info("작사가 도서관이 비어 있습니다. 🔎 분석 탭에서 가사 있는 곡을 분석하세요.")
+            return
+        by_label = {f"[{e.get('genre') or '미분류'}] {e.get('name','')}": e for e in entries}
+        picked_label = st.selectbox("페르소나 항목", options=list(by_label.keys()),
+                                    key="rv_gen_entry")
+        if picked_label:
+            e = by_label[picked_label]
+            persona_text = e.get("writer_prompt", "") or ""
+            used_genre = e.get("genre") or ""
+            with st.expander("선택된 페르소나 미리보기"):
+                st.code(persona_text, language=None)
+    elif persona_mode == "장르 통합 페르소나":
+        if not genres:
+            st.info("등록된 장르가 없습니다. 먼저 가사 데이터를 누적하세요.")
+            return
+        used_genre = st.selectbox("장르", options=genres, key="rv_gen_genre")
+        if used_genre:
+            persona_text = lyrics_library.merged_writer_prompt(used_genre)
+            with st.expander(f"{used_genre} 통합 페르소나 미리보기"):
+                st.code(persona_text, language="markdown")
+    else:
+        used_genre = st.text_input("장르 라벨(선택)", key="rv_gen_genre_free")
+        persona_text = st.text_area(
+            "페르소나 직접 입력",
+            placeholder="예: 당신은 회상·그리움 톤의 트로트 작사가입니다…",
+            height=150, key="rv_gen_persona_free",
+        )
+
+    st.divider()
+    p = st.columns([2, 2, 1, 1])
+    duration_label = p[0].selectbox(
+        "곡 길이 / 구조",
+        options=[v["label"] for _, v in _DURATION_OPTIONS],
+        index=3, key="rv_gen_dur",  # 기본: 4분
+    )
+    duration_sec = next(k for k, v in _DURATION_OPTIONS if v["label"] == duration_label)
+    n = p[1].number_input("가사 변주 개수", min_value=1, max_value=10, value=3,
+                          key="rv_gen_n")
+    structure = lyrics_generator.pick_structure(duration_sec)
+    p[2].metric("벌스", structure["verses"])
+    p[3].metric("후렴 반복", structure["chorus_reps"])
+
+    theme = st.text_input(
+        "주제 힌트 (선택) — 비우면 페르소나가 자유롭게",
+        placeholder="예: 늦가을 어머니 산소 가는 길",
+        key="rv_gen_theme",
+    )
+
+    if st.button("✨ 가사 생성", type="primary", key="rv_gen_run"):
+        if not persona_text.strip():
+            st.warning("페르소나가 비어 있습니다.")
+        elif not gem_key.strip():
+            st.error("Gemini API 키가 필요합니다. (사이드바)")
+        else:
+            try:
+                with st.spinner(f"Gemini 가사 생성 중… ({n}개)"):
+                    results = lyrics_generator.generate_lyrics(
+                        persona=persona_text,
+                        duration_sec=duration_sec,
+                        n=int(n), theme=theme, genre=used_genre,
+                        api_key=gem_key.strip(),
+                        model=model.strip() or lyrics_generator.DEFAULT_MODEL,
+                    )
+                st.session_state["rv_gen_results"] = {
+                    "variants": results, "genre": used_genre,
+                    "duration_sec": duration_sec,
+                }
+                if not results:
+                    st.warning("결과가 비어 있습니다. 다시 시도해 주세요.")
+            except Exception as e:
+                st.error(f"가사 생성 실패: {type(e).__name__}: {e}")
+
+    res = st.session_state.get("rv_gen_results")
+    if res and res.get("variants"):
+        st.divider()
+        st.markdown(f"### 결과 {len(res['variants'])}개")
+        for i, v in enumerate(res["variants"], 1):
+            with st.container(border=True):
+                st.markdown(f"### 변주 #{i} — {v.get('title','(제목없음)')}")
+                if v.get("theme"):
+                    st.caption(f"주제: {v['theme']}")
+                st.code(v["lyrics_text"], language=None)
+
+                act = st.columns([2, 1, 1, 2])
+                act[0].download_button(
+                    "⬇ .txt 다운로드",
+                    data=v["lyrics_text"].encode("utf-8"),
+                    file_name=f"lyrics_{i}_{v.get('title','untitled')}.txt",
+                    mime="text/plain",
+                    key=f"rv_gen_dl_{i}", use_container_width=True,
+                )
+                if act[1].button(f"💾 도서관에 저장", key=f"rv_gen_save_{i}",
+                                 use_container_width=True):
+                    try:
+                        lyrics_library.save_entry(
+                            name=v.get("title") or f"생성 변주 #{i}",
+                            genre=res.get("genre") or "",
+                            lyrics_text=v["lyrics_text"],
+                            patterns={},  # 생성물은 패턴 재추출 안 함
+                            writer_prompt="",
+                            summary=v.get("theme", ""),
+                            transcript_source="generated",
+                            notes=f"가사 생성기 변주 (목표 {res['duration_sec']}초)",
+                        )
+                        st.success(f"저장됨: {v.get('title')}")
+                    except Exception as e:
+                        st.error(f"저장 실패: {type(e).__name__}: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -771,9 +1037,13 @@ def main() -> None:
             f"`lyrics_library.json` ({len(lyrics_library.list_entries())}개)"
         )
 
-    tab_analyze, tab_song, tab_lyrics = st.tabs(
-        ["🔎 분석", "🎚️ 곡 프롬프트 도서관", "✍️ 작사가 프롬프트 도서관"]
-    )
+    tab_analyze, tab_song, tab_var, tab_lyrics, tab_gen = st.tabs([
+        "🔎 분석",
+        "🎚️ 곡 프롬프트 도서관",
+        "✨ 곡 프롬프트 변주",
+        "✍️ 작사가 프롬프트 도서관",
+        "✨ 가사 생성",
+    ])
     with tab_analyze:
         render_analyze_tab(
             vocab, yt_key, gem_key, oai_key, model, preset_key,
@@ -781,8 +1051,12 @@ def main() -> None:
         )
     with tab_song:
         render_song_library_tab(vocab)
+    with tab_var:
+        render_song_variation_tab(vocab)
     with tab_lyrics:
         render_lyrics_library_tab()
+    with tab_gen:
+        render_lyrics_generation_tab(gem_key, model)
 
 
 if __name__ == "__main__":
