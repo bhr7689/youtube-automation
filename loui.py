@@ -26,7 +26,10 @@ st.markdown("""
 <style>
 /* 전체 배경 */
 .stApp { background-color: #1a1a2e; color: #e0e0e0; }
-.block-container { padding: 0 !important; max-width: 100% !important; }
+.block-container { padding: 60px 0 0 0 !important; max-width: 100% !important; }
+
+/* Streamlit 기본 헤더 숨기기 */
+header[data-testid="stHeader"] { background: #0f0f1a !important; }
 
 /* 헤더 */
 .header-bar {
