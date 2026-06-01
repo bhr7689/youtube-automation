@@ -28,8 +28,11 @@ st.markdown("""
 .stApp { background-color: #1a1a2e; color: #e0e0e0; }
 .block-container { padding: 60px 0 0 0 !important; max-width: 100% !important; }
 
-/* Streamlit 기본 헤더 숨기기 */
-header[data-testid="stHeader"] { background: #0f0f1a !important; }
+/* Streamlit 상단 툴바 완전 숨기기 */
+header[data-testid="stHeader"] { display: none !important; }
+#MainMenu { display: none !important; }
+footer { display: none !important; }
+.stDeployButton { display: none !important; }
 
 /* 헤더 */
 .header-bar {
