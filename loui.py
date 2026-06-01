@@ -1,5 +1,5 @@
 """
-토토쌤의 떡상 채널 Finder FREE
+루이의 떡상 채널 찾기
 YouTube 영상 검색 + 비율 분석 + AI 아이디어 생성
 """
 
@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 # 페이지 설정
 # ───────────────────────────────────────────────
 st.set_page_config(
-    page_title="토토쌤의 떡상 채널 Finder FREE",
+    page_title="루이의 떡상 채널 찾기",
     page_icon="💧",
     layout="wide",
 )
@@ -478,40 +478,38 @@ def results_to_csv(results: list[dict]) -> str:
 
 
 # ───────────────────────────────────────────────
-# 헤더
+# 헤더 — Streamlit 컬럼으로 항상 표시
 # ───────────────────────────────────────────────
-col_logo, col_right = st.columns([3, 2])
-with col_logo:
-    st.markdown("""
-    <div style="padding:14px 24px 4px 24px;">
-        <div style="font-size:22px;font-weight:700;color:#fff;">💧 토토쌤의 떡상 채널 Finder FREE</div>
-        <div style="font-size:12px;color:#888;margin-top:2px;">무료판 | 검색 50개 | 기본 분석용</div>
-    </div>
-    """, unsafe_allow_html=True)
+st.markdown(
+    """<div style="background:#0f0f1a;padding:16px 24px 12px 24px;
+        border-bottom:1px solid #2a2a4e;margin-bottom:16px;">
+        <span style="font-size:22px;font-weight:700;color:#fff;">💧 루이의 떡상 채널 찾기</span><br>
+        <span style="font-size:12px;color:#888;">무료판 | 검색 50개 | 기본 분석용</span>
+    </div>""",
+    unsafe_allow_html=True,
+)
 
-with col_right:
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-    c1, c2, c3 = st.columns([4, 1, 1])
-    with c1:
-        key_input = st.text_input(
-            "API Key",
-            value=st.session_state.yt_api_key,
-            type="password",
-            label_visibility="collapsed",
-            placeholder="YouTube API Key를 입력하세요",
-            key="key_input_field",
-        )
-    with c2:
-        if st.button("Key 저장", use_container_width=True):
-            st.session_state.yt_api_key = key_input
-            st.success("저장됨")
-    with c3:
-        if st.button("초기화", use_container_width=True):
-            st.session_state.yt_api_key = ""
-            st.session_state.results = []
-            st.rerun()
+hc1, hc2, hc3, hc4 = st.columns([5, 3, 1, 1])
+with hc2:
+    key_input = st.text_input(
+        "API Key",
+        value=st.session_state.yt_api_key,
+        type="password",
+        label_visibility="collapsed",
+        placeholder="YouTube API Key 입력",
+        key="key_input_field",
+    )
+with hc3:
+    if st.button("Key 저장", use_container_width=True):
+        st.session_state.yt_api_key = key_input
+        st.success("저장됨")
+with hc4:
+    if st.button("초기화", use_container_width=True):
+        st.session_state.yt_api_key = ""
+        st.session_state.results = []
+        st.rerun()
 
-st.markdown("<hr style='border-color:#2a2a4e;margin:0 0 16px 0'>", unsafe_allow_html=True)
+st.markdown("<hr style='border-color:#2a2a4e;margin:4px 0 16px 0'>", unsafe_allow_html=True)
 
 # ───────────────────────────────────────────────
 # 필터 패널
