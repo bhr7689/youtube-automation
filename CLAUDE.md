@@ -107,7 +107,12 @@ python pipeline.py --init                              # 파이프라인 폴더 
   셀프테스트 + CLI + 실제 ffmpeg 인코딩(inbox→MP4) + app.py import. **코드 버그 없음.**
 - [x] 사라졌던 UI 기능 전체 복원(2026-05-26): eGtMR 기반 9탭 합본. 제목 Lab·인코딩 잡·
   인터랙티브 자막 편집기·영상합성 고급모드·보컬분리·키 영속저장 복원 + 자동화 3탭 유지.
+- [x] 🔎 곡 역설계를 **단독 Streamlit 툴**로 분리(2026-06-01, sleepy-fermat-76R13):
+  `reverse_app.py`. URL 한 줄 → YouTube API 메타 자동 수집 → Gemini 역설계 →
+  Suno picks/프롬프트 카드 → 레시피 저장 or 파이프라인 inbox 잡 폴더 생성까지.
+  실행: `streamlit run reverse_app.py`. analyzer.py / vocab.json / recipes.py /
+  suno_studio.py 를 app.py 와 공용으로 import (코드 중복 없음).
 - [ ] 실제 API 키로 end-to-end 점검(collect→score→검수→역설계→pipeline) — 키 필요해 미수행
 - [ ] `automation.py`(laughing-hawking) cron 레이어를 통합할지 결정
-- [ ] practical-mendel 의 app.py 복원본을 default 브랜치(eqO5N)로도 머지할지 결정
+- [ ] sleepy-fermat-76R13 의 reverse_app.py 를 default 브랜치(eqO5N)로 머지해야 사용자 화면에 반영됨
 - (작업하며 갱신할 것)
