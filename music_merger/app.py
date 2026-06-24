@@ -296,13 +296,14 @@ def build_video(media_paths, audio_path, total_seconds, workdir, progress_cb=Non
                 f.write(f"file '{s.as_posix()}'\n")
 
     # 5) 합치기 (포맷 통일됐으니 비디오는 copy 가능)
+    # 오디오는 AAC 로 재인코딩 — 캡컷·아이폰 호환성 위해 MP3-in-MP4 회피
     video_out = workdir / "output_video.mp4"
     cmd = [
         "ffmpeg", "-y",
         "-f", "concat", "-safe", "0", "-i", str(seg_list),
         "-i", str(audio_path),
         "-c:v", "copy",
-        "-c:a", "copy",
+        "-c:a", "aac", "-b:a", "192k",
         "-t", str(total_seconds),
         "-shortest",
         str(video_out),
@@ -315,7 +316,7 @@ def build_video(media_paths, audio_path, total_seconds, workdir, progress_cb=Non
             "-f", "concat", "-safe", "0", "-i", str(seg_list),
             "-i", str(audio_path),
             "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
-            "-c:a", "copy",
+            "-c:a", "aac", "-b:a", "192k",
             "-t", str(total_seconds),
             "-shortest",
             str(video_out),
@@ -331,7 +332,7 @@ st.title("🎵 음악 이어붙이기")
 st.caption("음악과 이미지를 골라 긴 영상으로 만들어요 · 캡컷에 그대로 가져가세요")
 
 # 1) 음악 업로드
-st.markdown('<div class="big-label">1️⃣ 음악 파일 올리기</div>', unsafe_allow_html=True)
+st.markdown('<div class="big-label">1️⃣ 음악 파일 올리기 <span style="color:#dc2626;">*필수</span></div>', unsafe_allow_html=True)
 music_files = st.file_uploader(
     "MP3 / WAV / M4A 등 여러 개 가능",
     type=["mp3", "wav", "m4a", "aac", "ogg", "flac"],
@@ -499,6 +500,52 @@ with st.expander("🌐 키워드로 무료 스톡 자동으로 가져오기 (Pex
 
 st.markdown("---")
 
+# ── 만들기 직전 요약 카드 ─────────────────────────
+n_music = len(music_files) if music_files else 0
+n_media_uploaded = len(media_files) if media_files else 0
+n_stock = len(st.session_state.get("stock_paths", []))
+n_media_total = n_media_uploaded + n_stock
+target_sec_preview = DUR_MAP[duration_choice]
+
+# 매우 거친 예상 시간 (PC 성능에 따라 다름)
+est_min = max(1, int(target_sec_preview / 1800))           # 음악 인코딩
+if nature_file is not None:
+    est_min += 1
+est_min += max(0, n_media_total) * 1                       # 미디어당 ~1분
+est_min += max(0, int(target_sec_preview / 7200))          # 최종 합성
+
+summary_lines = []
+if n_music:
+    summary_lines.append(f"🎵 음악 **{n_music}곡** → **{duration_choice}** ({order_mode})")
+else:
+    summary_lines.append("🎵 음악 — _아직 안 올리셨어요_")
+if nature_file is not None:
+    if nature_on_sec > 0 and nature_off_sec > 0:
+        summary_lines.append(
+            f"🌿 자연 소리 {nature_volume_pct}% · {nature_on_sec}초 들리고 {nature_off_sec}초 쉬기"
+        )
+    else:
+        summary_lines.append(f"🌿 자연 소리 {nature_volume_pct}% (계속)")
+if n_media_total > 0:
+    parts = []
+    if n_media_uploaded:
+        parts.append(f"직접 {n_media_uploaded}개")
+    if n_stock:
+        parts.append(f"스톡 {n_stock}개")
+    summary_lines.append(f"🎬 배경 미디어 {n_media_total}개 ({' + '.join(parts)}) → 영상도 함께")
+else:
+    summary_lines.append("🎬 배경 없음 → MP3만 생성")
+summary_lines.append(f"⏱️ 예상 소요 **약 {est_min}분** _(PC 성능에 따라 달라요)_")
+
+st.markdown(
+    "<div style='background:#fefce8; border:1px solid #fde047; border-radius:10px; "
+    "padding:0.8rem 1rem; margin-bottom:0.8rem; font-size:0.95rem; line-height:1.7;'>"
+    "<b>📋 만들 내용 미리보기</b><br>"
+    + "<br>".join(summary_lines) +
+    "</div>",
+    unsafe_allow_html=True,
+)
+
 # 만들기 버튼
 go = st.button("🎬 만들기 시작", type="primary")
 
@@ -506,10 +553,22 @@ if go:
     if not music_files:
         st.error("음악 파일을 먼저 올려주세요!")
     else:
+        # 이전 임시폴더 정리 (디스크 청소)
+        import shutil as _sh
+        old_wd = st.session_state.get("workdir")
+        if old_wd and os.path.exists(old_wd):
+            try:
+                _sh.rmtree(old_wd)
+            except Exception:
+                pass
+        st.session_state.pop("audio_path", None)
+        st.session_state.pop("video_path", None)
+
         target_sec = DUR_MAP[duration_choice]
         progress = st.progress(0, text="준비 중...")
         try:
             workdir = Path(tempfile.mkdtemp(prefix="merger_"))
+            st.session_state["workdir"] = str(workdir)
 
             # 음악 파일 저장
             progress.progress(10, text="음악 파일 저장 중...")
@@ -582,29 +641,56 @@ if go:
             progress.empty()
             st.error(f"오류가 났어요: {e}")
 
-# 결과 다운로드
+# 결과 다운로드 + 미리보기 + 다시 시작하기
 if st.session_state.get("audio_path") and os.path.exists(st.session_state["audio_path"]):
     st.markdown("### 🎁 결과물")
     audio_path = st.session_state["audio_path"]
     label = st.session_state.get("audio_label", "")
+    audio_size_mb = os.path.getsize(audio_path) / (1024 * 1024)
+
+    # 음악 다운로드 + 미리듣기
     with open(audio_path, "rb") as f:
         st.download_button(
-            "📥 음악 MP3 다운로드",
+            f"📥 음악 MP3 다운로드 ({audio_size_mb:.1f} MB)",
             f,
             file_name=f"music_{label}.mp3",
             mime="audio/mpeg",
             key="dl_audio",
         )
+    with st.expander("🔊 다운로드 전 미리듣기"):
+        st.caption("긴 파일은 처음 부분만 듣고 마음에 들면 다운로드하세요.")
+        st.audio(audio_path, format="audio/mp3")
+
+    # 영상 다운로드 + 미리보기
     if st.session_state.get("video_path") and os.path.exists(st.session_state["video_path"]):
-        with open(st.session_state["video_path"], "rb") as f:
+        video_path = st.session_state["video_path"]
+        video_size_mb = os.path.getsize(video_path) / (1024 * 1024)
+        with open(video_path, "rb") as f:
             st.download_button(
-                "📥 영상 MP4 다운로드",
+                f"📥 영상 MP4 다운로드 ({video_size_mb:.1f} MB)",
                 f,
                 file_name=f"video_{label}.mp4",
                 mime="video/mp4",
                 key="dl_video",
             )
+        with st.expander("🎬 다운로드 전 미리보기"):
+            st.caption("긴 영상은 로딩에 시간이 좀 걸려요.")
+            st.video(video_path)
+
     st.caption("💡 이 파일을 **캡컷**에 그대로 가져가서 마무리하세요!")
+
+    # 다시 시작하기 — 결과·임시 폴더 비우고 새로 시작
+    if st.button("🔄 다시 시작하기 (결과 비우기)", key="reset", help="이번 결과물을 지우고 새로 만들 수 있어요"):
+        import shutil as _sh
+        wd = st.session_state.get("workdir")
+        if wd and os.path.exists(wd):
+            try:
+                _sh.rmtree(wd)
+            except Exception:
+                pass
+        for k in ("audio_path", "video_path", "workdir", "audio_label"):
+            st.session_state.pop(k, None)
+        st.rerun()
 
 # 약관 링크
 st.markdown(
