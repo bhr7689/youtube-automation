@@ -1,8 +1,11 @@
 """음악 이어붙이기 + 이미지 슬라이드 영상 만들기 앱"""
+import json
 import os
 import random
 import subprocess
 import tempfile
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 import streamlit as st
@@ -70,6 +73,108 @@ h2 { font-size: 1.3rem !important; }
 
 DUR_MAP = {"1시간": 3600, "2시간": 7200, "3시간": 10800, "6시간": 21600}
 IMG_INTERVAL = 270  # 4분 30초
+IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+VID_EXTS = {".mp4", ".mov", ".webm", ".mkv", ".m4v"}
+
+PEXELS_PHOTO_API = "https://api.pexels.com/v1/search"
+PEXELS_VIDEO_API = "https://api.pexels.com/videos/search"
+
+
+def is_image(path):
+    return Path(path).suffix.lower() in IMG_EXTS
+
+
+def fetch_pexels(keyword, kind, count, api_key, workdir, offset=0):
+    """Pexels에서 키워드로 사진/영상을 다운로드. kind: 'photos' | 'videos'.
+
+    무료 API 키 발급: https://www.pexels.com/api/
+    """
+    if not api_key or not keyword:
+        raise RuntimeError("Pexels API 키와 키워드를 입력해주세요.")
+
+    api = PEXELS_PHOTO_API if kind == "photos" else PEXELS_VIDEO_API
+    qs = urllib.parse.urlencode({
+        "query": keyword,
+        "per_page": max(1, min(count, 30)),
+        "orientation": "landscape",
+    })
+    req = urllib.request.Request(
+        f"{api}?{qs}",
+        headers={"Authorization": api_key, "User-Agent": "music-merger-app/1.0"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data = json.loads(r.read().decode("utf-8"))
+    except Exception as e:
+        raise RuntimeError(f"Pexels API 호출 실패: {e}")
+
+    items = data.get("photos" if kind == "photos" else "videos", [])
+    if not items:
+        raise RuntimeError(f"'{keyword}' 검색 결과가 없어요. 다른 키워드로 시도해주세요.")
+
+    saved = []
+    for i, item in enumerate(items[:count]):
+        try:
+            if kind == "photos":
+                url = item["src"].get("large2x") or item["src"]["large"]
+                ext = ".jpg"
+            else:
+                files = item.get("video_files", [])
+                # 1280px 폭 근처를 선호
+                files_sorted = sorted(
+                    files, key=lambda f: abs(int(f.get("width", 0)) - 1280)
+                )
+                pick = files_sorted[0] if files_sorted else None
+                if not pick:
+                    continue
+                url = pick["link"]
+                ext = ".mp4"
+
+            idx = offset + i
+            out = workdir / f"stock_{idx:03d}{ext}"
+            req2 = urllib.request.Request(url, headers={"User-Agent": "music-merger-app/1.0"})
+            with urllib.request.urlopen(req2, timeout=60) as r, open(out, "wb") as f:
+                f.write(r.read())
+            saved.append(out)
+        except Exception:
+            # 한 개 실패해도 계속
+            continue
+
+    if not saved:
+        raise RuntimeError("다운로드한 파일이 없어요. 키 또는 네트워크를 확인해주세요.")
+    return saved
+
+
+def preprocess_to_segment(input_path, output_path, fixed_duration=None):
+    """이미지/영상을 1280x720 30fps mp4 세그먼트로 통일.
+    이미지는 fixed_duration(기본 4:30) 길이로, 영상은 본래 길이로 인코딩."""
+    if is_image(input_path):
+        duration = fixed_duration or IMG_INTERVAL
+        cmd = [
+            "ffmpeg", "-y",
+            "-loop", "1", "-t", str(duration), "-i", str(input_path),
+            "-vf",
+            "scale=1280:720:force_original_aspect_ratio=decrease,"
+            "pad=1280:720:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps=30",
+            "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+            "-an",
+            str(output_path),
+        ]
+    else:
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(input_path),
+            "-vf",
+            "scale=1280:720:force_original_aspect_ratio=decrease,"
+            "pad=1280:720:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps=30",
+            "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+            "-an",
+            str(output_path),
+        ]
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode != 0:
+        raise RuntimeError(res.stderr[-500:])
+    return output_path
 
 
 def _probe_duration(path):
@@ -157,35 +262,46 @@ def build_audio(music_paths, total_seconds, workdir,
     return mixed
 
 
-def build_video(image_paths, audio_path, total_seconds, workdir):
-    """이미지를 왔다갔다(핑퐁) 순서로 4:30씩 보여주는 영상."""
-    if len(image_paths) > 1:
-        # 1,2,3,...,n,n-1,...,2 → 다시 처음으로 (왔다 갔다)
-        pingpong = list(image_paths) + list(image_paths[-2:0:-1])
+def build_video(media_paths, audio_path, total_seconds, workdir, progress_cb=None):
+    """이미지/영상 혼합을 핑퐁 순서로 잇고, 음악 길이만큼 채우는 영상.
+
+    이미지는 4:30씩, 영상은 본래 길이대로 나옴."""
+    # 1) 각 입력을 1280x720 30fps mp4 세그먼트로 정규화
+    segments = []
+    for i, p in enumerate(media_paths):
+        seg = workdir / f"seg_{i:03d}.mp4"
+        preprocess_to_segment(p, seg, fixed_duration=IMG_INTERVAL)
+        segments.append(seg)
+        if progress_cb:
+            progress_cb(i + 1, len(media_paths))
+
+    # 2) 핑퐁(왔다 갔다) 시퀀스
+    if len(segments) > 1:
+        pingpong = segments + segments[-2:0:-1]
     else:
-        pingpong = list(image_paths)
+        pingpong = segments
 
-    n_slots = (total_seconds // IMG_INTERVAL) + 2  # 여유 있게
-    img_list = workdir / "imglist.txt"
-    with open(img_list, "w", encoding="utf-8") as f:
-        last_path = None
-        for i in range(n_slots):
-            p = pingpong[i % len(pingpong)]
-            f.write(f"file '{p.as_posix()}'\n")
-            f.write(f"duration {IMG_INTERVAL}\n")
-            last_path = p
-        # concat demuxer 규약상 마지막 파일은 duration 없이 한 번 더
-        f.write(f"file '{last_path.as_posix()}'\n")
+    # 3) 시퀀스 한 사이클 길이 측정 → 몇 번 반복하면 목표 길이를 덮는지
+    seg_durations = {s: max(_probe_duration(s), 1.0) for s in segments}
+    cycle = sum(seg_durations[s] for s in pingpong)
+    if cycle <= 0:
+        cycle = IMG_INTERVAL
+    loops = max(1, int(total_seconds // cycle) + 2)
 
+    # 4) concat 리스트 작성
+    seg_list = workdir / "seglist.txt"
+    with open(seg_list, "w", encoding="utf-8") as f:
+        for _ in range(loops):
+            for s in pingpong:
+                f.write(f"file '{s.as_posix()}'\n")
+
+    # 5) 합치기 (포맷 통일됐으니 비디오는 copy 가능)
     video_out = workdir / "output_video.mp4"
     cmd = [
         "ffmpeg", "-y",
-        "-f", "concat", "-safe", "0", "-i", str(img_list),
+        "-f", "concat", "-safe", "0", "-i", str(seg_list),
         "-i", str(audio_path),
-        "-vf",
-        "scale=1280:720:force_original_aspect_ratio=decrease,"
-        "pad=1280:720:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps=30",
-        "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+        "-c:v", "copy",
         "-c:a", "copy",
         "-t", str(total_seconds),
         "-shortest",
@@ -193,7 +309,20 @@ def build_video(image_paths, audio_path, total_seconds, workdir):
     ]
     res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0:
-        raise RuntimeError(res.stderr[-800:])
+        # copy 실패 시 재인코딩으로 폴백
+        cmd_re = [
+            "ffmpeg", "-y",
+            "-f", "concat", "-safe", "0", "-i", str(seg_list),
+            "-i", str(audio_path),
+            "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+            "-c:a", "copy",
+            "-t", str(total_seconds),
+            "-shortest",
+            str(video_out),
+        ]
+        res2 = subprocess.run(cmd_re, capture_output=True, text=True)
+        if res2.returncode != 0:
+            raise RuntimeError(res2.stderr[-800:])
     return video_out
 
 
@@ -278,18 +407,95 @@ order_mode = st.radio(
     label_visibility="collapsed",
 )
 
-# 5) 이미지 (선택)
-st.markdown('<div class="big-label">5️⃣ 배경 이미지 (선택)</div>', unsafe_allow_html=True)
-st.caption("올리면 **4분 30초**마다 이미지가 왔다 갔다 하는 영상도 같이 만들어요")
-image_files = st.file_uploader(
-    "JPG / PNG 여러 개",
-    type=["jpg", "jpeg", "png"],
+# 5) 배경 이미지·영상 (선택, 직접 업로드)
+st.markdown('<div class="big-label">5️⃣ 배경 이미지·영상 (선택)</div>', unsafe_allow_html=True)
+st.caption("직접 올린 이미지(4분 30초씩) · 영상(본래 길이)을 왔다 갔다 보여줘요")
+media_files = st.file_uploader(
+    "JPG / PNG / MP4 / MOV 여러 개",
+    type=["jpg", "jpeg", "png", "webp", "bmp", "mp4", "mov", "webm", "mkv", "m4v"],
     accept_multiple_files=True,
     label_visibility="collapsed",
-    key="images",
+    key="media",
 )
-if image_files:
-    st.caption(f"🖼️ {len(image_files)}장 선택됨")
+if media_files:
+    n_img = sum(1 for m in media_files if Path(m.name).suffix.lower() in IMG_EXTS)
+    n_vid = len(media_files) - n_img
+    st.caption(f"🖼️ 이미지 {n_img}장 · 🎞️ 영상 {n_vid}개 선택됨")
+
+# 6) 스톡 이미지·영상 가져오기 (Pexels)
+st.markdown(
+    '<div class="big-label">6️⃣ 스톡 이미지·영상 가져오기 (선택, Pexels)</div>',
+    unsafe_allow_html=True,
+)
+with st.expander("🌐 키워드로 무료 스톡 자동으로 가져오기 (Pexels)"):
+    st.caption(
+        "Pexels는 무료 스톡 사진·영상 사이트예요. "
+        "[여기에서 무료 API 키 발급](https://www.pexels.com/api/) "
+        "(가입 후 'Your API Key' 복사) → 아래에 붙여넣기."
+    )
+    default_key = os.environ.get("PEXELS_API_KEY", "")
+    saved_key = st.session_state.get("pexels_key", default_key)
+    pexels_key = st.text_input(
+        "Pexels API 키",
+        value=saved_key,
+        type="password",
+        help="한 번 입력해두면 이 세션에서 계속 사용돼요",
+    )
+    if pexels_key:
+        st.session_state["pexels_key"] = pexels_key
+
+    col_kw, col_kind = st.columns([2, 1])
+    with col_kw:
+        stock_keyword = st.text_input(
+            "키워드 (예: 바다, 산, 도시 야경, ocean)",
+            placeholder="ocean",
+        )
+    with col_kind:
+        stock_kind_label = st.radio(
+            "종류", ["이미지", "영상"], horizontal=False, key="stock_kind"
+        )
+    stock_count = st.slider("가져올 개수", 1, 15, 5)
+
+    col_get, col_clr = st.columns(2)
+    with col_get:
+        do_fetch = st.button("📥 가져오기", use_container_width=True)
+    with col_clr:
+        do_clear = st.button("🗑️ 비우기", use_container_width=True)
+
+    if "stock_paths" not in st.session_state:
+        st.session_state["stock_paths"] = []
+        st.session_state["stock_dir"] = None
+
+    if do_clear:
+        st.session_state["stock_paths"] = []
+        st.session_state["stock_dir"] = None
+        st.success("스톡 풀을 비웠어요.")
+
+    if do_fetch:
+        if not pexels_key:
+            st.error("Pexels API 키를 먼저 입력해주세요.")
+        elif not stock_keyword.strip():
+            st.error("키워드를 입력해주세요.")
+        else:
+            kind = "photos" if stock_kind_label == "이미지" else "videos"
+            with st.spinner(f"'{stock_keyword}' {stock_kind_label} {stock_count}개 가져오는 중..."):
+                try:
+                    if not st.session_state["stock_dir"]:
+                        st.session_state["stock_dir"] = tempfile.mkdtemp(prefix="stock_")
+                    stock_dir = Path(st.session_state["stock_dir"])
+                    offset = len(st.session_state["stock_paths"])
+                    new_paths = fetch_pexels(
+                        stock_keyword.strip(), kind, stock_count,
+                        pexels_key, stock_dir, offset=offset,
+                    )
+                    st.session_state["stock_paths"].extend([str(p) for p in new_paths])
+                    st.success(f"✅ {len(new_paths)}개 추가됨 · 풀 총 {len(st.session_state['stock_paths'])}개")
+                except Exception as e:
+                    st.error(f"가져오기 실패: {e}")
+
+    pool_n = len(st.session_state.get("stock_paths", []))
+    if pool_n > 0:
+        st.caption(f"📦 스톡 풀: **{pool_n}개** (만들기 누르면 위 직접 업로드와 함께 사용돼요)")
 
 st.markdown("---")
 
@@ -345,18 +551,29 @@ if go:
             st.session_state["audio_label"] = duration_choice
             st.session_state.pop("video_path", None)
 
-            # 이미지가 있으면 영상도
-            if image_files:
-                progress.progress(60, text="이미지 영상도 만드는 중...")
-                img_paths = []
-                for i, imf in enumerate(image_files):
+            # 배경 미디어(직접 업로드 + 스톡 풀) 모으기
+            media_paths = []
+            if media_files:
+                for i, imf in enumerate(media_files):
                     ext = Path(imf.name).suffix.lower() or ".jpg"
-                    p = workdir / f"img_{i:03d}{ext}"
+                    p = workdir / f"media_{i:03d}{ext}"
                     with open(p, "wb") as f:
                         f.write(imf.getbuffer())
-                    img_paths.append(p)
+                    media_paths.append(p)
+            for stock_p in st.session_state.get("stock_paths", []):
+                if os.path.exists(stock_p):
+                    media_paths.append(Path(stock_p))
 
-                video_out = build_video(img_paths, audio_out, target_sec, workdir)
+            if media_paths:
+                progress.progress(55, text=f"배경 영상 만드는 중... ({len(media_paths)}개 미디어 정규화)")
+
+                def _prog(done, total):
+                    pct = 55 + int(35 * done / max(1, total))
+                    progress.progress(min(pct, 90), text=f"미디어 정규화 {done}/{total}...")
+
+                video_out = build_video(
+                    media_paths, audio_out, target_sec, workdir, progress_cb=_prog,
+                )
                 st.session_state["video_path"] = str(video_out)
 
             progress.progress(100, text="완성!")
