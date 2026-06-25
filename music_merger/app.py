@@ -126,10 +126,40 @@ def delete_library_item(kind, name):
     if target.exists() and target.is_file():
         try:
             target.unlink()
+            # 비디오면 썸네일도 같이 제거
+            if kind == "videos":
+                thumb = d / ".thumbs" / f"{target.stem}.jpg"
+                if thumb.exists():
+                    try:
+                        thumb.unlink()
+                    except Exception:
+                        pass
             return True
         except Exception:
             return False
     return False
+
+
+def get_or_make_video_thumb(video_path):
+    """비디오 첫 프레임을 작은 썸네일(.thumbs/이름.jpg)로 캐시."""
+    thumb_dir = library_dir("videos") / ".thumbs"
+    thumb_dir.mkdir(parents=True, exist_ok=True)
+    thumb = thumb_dir / f"{Path(video_path).stem}.jpg"
+    if thumb.exists():
+        return thumb
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(video_path),
+        "-ss", "0", "-vframes", "1",
+        "-vf", "scale=400:-2",
+        "-q:v", "5",
+        str(thumb),
+    ]
+    try:
+        subprocess.run(cmd, capture_output=True, timeout=30)
+    except Exception:
+        pass
+    return thumb if thumb.exists() else None
 
 PEXELS_PHOTO_API = "https://api.pexels.com/v1/search"
 PEXELS_VIDEO_API = "https://api.pexels.com/videos/search"
@@ -147,6 +177,10 @@ CROP_MODES = {
 
 def is_image(path):
     return Path(path).suffix.lower() in IMG_EXTS
+
+
+def is_video(path):
+    return Path(path).suffix.lower() in VID_EXTS
 
 
 def search_pexels_images(keyword, count, api_key):
@@ -497,7 +531,7 @@ with st.expander("⚙️ 막혔을 때 — 모든 업로드 한꺼번에 비우�
             st.session_state.pop(k, None)
         # 라이브러리 체크박스도 해제 (파일은 유지, 선택만 비움)
         for k in list(st.session_state.keys()):
-            if k.startswith("use_lib_img_"):
+            if k.startswith("use_lib_img_") or k.startswith("use_lib_vid_"):
                 st.session_state.pop(k, None)
         st.rerun()
 
@@ -652,41 +686,75 @@ st.markdown('<div class="big-label">5️⃣ 배경 이미지·영상 (선택)</d
 st.caption("직접 올린 이미지(4분 30초씩) · 영상(본래 길이)을 왔다 갔다 보여줘요 · "
            "**파노라마(가로로 긴 이미지)** 는 전체 폭을 그대로 가로지르며 패닝돼요")
 
-# 이미지 라이브러리 (저장된 것 중 골라 풀에 추가)
+# 이미지·영상 라이브러리 (저장된 것 중 골라 풀에 추가)
 saved_images = list_library_items("images")
+saved_videos = list_library_items("videos")
 if "lib_image_paths" not in st.session_state:
     st.session_state["lib_image_paths"] = []
 
-if saved_images:
-    with st.expander(f"📁 내 이미지 라이브러리 ({len(saved_images)}장 저장됨) — 골라서 사용"):
+total_lib = len(saved_images) + len(saved_videos)
+if total_lib > 0:
+    with st.expander(
+        f"📁 내 이미지·영상 라이브러리 (이미지 {len(saved_images)}장 · 영상 {len(saved_videos)}개) — 골라서 사용"
+    ):
         st.caption("체크해서 이번에 사용 · 🗑️ 로 라이브러리에서 영구 삭제")
-        for row_start in range(0, len(saved_images), 2):
-            row = saved_images[row_start:row_start + 2]
-            cols = st.columns(2)
-            for col, img in zip(cols, row):
-                with col:
-                    try:
-                        st.image(str(img), use_container_width=True)
-                    except Exception:
-                        pass
-                    st.caption(f"📁 {img.name[:24]}")
-                    c1, c2 = st.columns([3, 1])
-                    with c1:
-                        use_it = st.checkbox(
-                            "이번 영상에 쓰기", key=f"use_lib_img_{img.name}",
-                        )
-                    with c2:
-                        if st.button("🗑️", key=f"del_lib_img_{img.name}", help="라이브러리에서 영구 삭제"):
-                            delete_library_item("images", img.name)
-                            st.rerun()
-        # 선택된 라이브러리 이미지들을 추적
-        chosen_lib_imgs = [
-            img for img in saved_images
-            if st.session_state.get(f"use_lib_img_{img.name}", False)
-        ]
-        st.session_state["lib_image_paths"] = [str(p) for p in chosen_lib_imgs]
-        if chosen_lib_imgs:
-            st.caption(f"✅ 라이브러리에서 {len(chosen_lib_imgs)}장 선택됨")
+
+        # 이미지 먼저
+        if saved_images:
+            st.markdown("**🖼️ 이미지**")
+            for row_start in range(0, len(saved_images), 2):
+                row = saved_images[row_start:row_start + 2]
+                cols = st.columns(2)
+                for col, img in zip(cols, row):
+                    with col:
+                        try:
+                            st.image(str(img), use_container_width=True)
+                        except Exception:
+                            pass
+                        st.caption(f"📁 {img.name[:24]}")
+                        c1, c2 = st.columns([3, 1])
+                        with c1:
+                            st.checkbox("이번에 쓰기", key=f"use_lib_img_{img.name}")
+                        with c2:
+                            if st.button("🗑️", key=f"del_lib_img_{img.name}", help="영구 삭제"):
+                                delete_library_item("images", img.name)
+                                st.rerun()
+
+        # 영상
+        if saved_videos:
+            st.markdown("**🎞️ 영상**")
+            for row_start in range(0, len(saved_videos), 2):
+                row = saved_videos[row_start:row_start + 2]
+                cols = st.columns(2)
+                for col, vid in zip(cols, row):
+                    with col:
+                        thumb = get_or_make_video_thumb(vid)
+                        if thumb and thumb.exists():
+                            try:
+                                st.image(str(thumb), use_container_width=True)
+                            except Exception:
+                                pass
+                        else:
+                            st.caption("🎞️ (썸네일 없음)")
+                        st.caption(f"📁 {vid.name[:24]}")
+                        c1, c2 = st.columns([3, 1])
+                        with c1:
+                            st.checkbox("이번에 쓰기", key=f"use_lib_vid_{vid.name}")
+                        with c2:
+                            if st.button("🗑️", key=f"del_lib_vid_{vid.name}", help="영구 삭제"):
+                                delete_library_item("videos", vid.name)
+                                st.rerun()
+
+        # 선택된 라이브러리 미디어들을 추적
+        chosen_imgs = [img for img in saved_images
+                       if st.session_state.get(f"use_lib_img_{img.name}", False)]
+        chosen_vids = [vid for vid in saved_videos
+                       if st.session_state.get(f"use_lib_vid_{vid.name}", False)]
+        st.session_state["lib_image_paths"] = (
+            [str(p) for p in chosen_imgs] + [str(p) for p in chosen_vids]
+        )
+        if chosen_imgs or chosen_vids:
+            st.caption(f"✅ 라이브러리에서 이미지 {len(chosen_imgs)}장 · 영상 {len(chosen_vids)}개 선택됨")
 media_files = st.file_uploader(
     "JPG / PNG / MP4 / MOV 여러 개",
     type=["jpg", "jpeg", "png", "webp", "bmp", "mp4", "mov", "webm", "mkv", "m4v"],
@@ -735,6 +803,30 @@ if media_files:
                                          use_container_width=True):
                                 save_to_library("images", mf)
                                 st.rerun()
+
+    # 업로드한 영상: 라이브러리 저장 옵션
+    video_uploads = [m for m in media_files if Path(m.name).suffix.lower() in VID_EXTS]
+    if video_uploads:
+        with st.expander(f"🎞️ 업로드한 영상 {len(video_uploads)}개 라이브러리에 저장"):
+            st.caption("영상도 라이브러리에 한 번 저장해두면 다음에 또 쓸 수 있어요.")
+            for mf in video_uploads:
+                c1, c2 = st.columns([3, 1])
+                with c1:
+                    st.caption(f"🎞️ {mf.name}")
+                with c2:
+                    already_saved = (library_dir("videos") / mf.name).exists()
+                    if already_saved:
+                        st.caption("💾 이미 저장됨")
+                    else:
+                        if st.button("💾 저장", key=f"save_vid_{mf.name}_{mf.size}",
+                                     use_container_width=True):
+                            saved = save_to_library("videos", mf)
+                            # 썸네일 미리 생성 (다음 라이브러리 표시 빠르게)
+                            try:
+                                get_or_make_video_thumb(saved)
+                            except Exception:
+                                pass
+                            st.rerun()
 
 # 6) 스톡 이미지 검색 · 미리보기 · 선택 · 자르기
 st.markdown(
