@@ -89,71 +89,106 @@ VID_EXTS = {".mp4", ".mov", ".webm", ".mkv", ".m4v"}
 
 PEXELS_PHOTO_API = "https://api.pexels.com/v1/search"
 PEXELS_VIDEO_API = "https://api.pexels.com/videos/search"
+PIXABAY_API = "https://pixabay.com/api/"
+
+CROP_MODES = {
+    "그대로": None,
+    "왼쪽만 (50%)": "left_50",
+    "오른쪽만 (50%)": "right_50",
+    "가운데만 (50%)": "center_50",
+    "왼쪽 위주 (70%)": "left_70",
+    "오른쪽 위주 (70%)": "right_70",
+}
 
 
 def is_image(path):
     return Path(path).suffix.lower() in IMG_EXTS
 
 
-def fetch_pexels(keyword, kind, count, api_key, workdir, offset=0):
-    """Pexels에서 키워드로 사진/영상을 다운로드. kind: 'photos' | 'videos'.
-
-    무료 API 키 발급: https://www.pexels.com/api/
-    """
-    if not api_key or not keyword:
-        raise RuntimeError("Pexels API 키와 키워드를 입력해주세요.")
-
-    api = PEXELS_PHOTO_API if kind == "photos" else PEXELS_VIDEO_API
+def search_pexels_images(keyword, count, api_key):
+    """Pexels 사진 검색 → 미리보기 목록만 반환 (다운로드 X)."""
     qs = urllib.parse.urlencode({
         "query": keyword,
-        "per_page": max(1, min(count, 30)),
+        "per_page": max(3, min(count, 30)),
         "orientation": "landscape",
     })
     req = urllib.request.Request(
-        f"{api}?{qs}",
+        f"{PEXELS_PHOTO_API}?{qs}",
         headers={"Authorization": api_key, "User-Agent": "music-merger-app/1.0"},
     )
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            data = json.loads(r.read().decode("utf-8"))
-    except Exception as e:
-        raise RuntimeError(f"Pexels API 호출 실패: {e}")
+    with urllib.request.urlopen(req, timeout=30) as r:
+        data = json.loads(r.read().decode("utf-8"))
+    items = []
+    for p in data.get("photos", []):
+        src = p.get("src", {})
+        items.append({
+            "source": "pexels",
+            "id": f"pex_{p.get('id', '')}",
+            "thumb_url": src.get("medium") or src.get("small") or src.get("tiny", ""),
+            "full_url": src.get("large2x") or src.get("large") or src.get("original", ""),
+        })
+    return items
 
-    items = data.get("photos" if kind == "photos" else "videos", [])
-    if not items:
-        raise RuntimeError(f"'{keyword}' 검색 결과가 없어요. 다른 키워드로 시도해주세요.")
 
-    saved = []
-    for i, item in enumerate(items[:count]):
-        try:
-            if kind == "photos":
-                url = item["src"].get("large2x") or item["src"]["large"]
-                ext = ".jpg"
-            else:
-                files = item.get("video_files", [])
-                # 1280px 폭 근처를 선호
-                files_sorted = sorted(
-                    files, key=lambda f: abs(int(f.get("width", 0)) - 1280)
-                )
-                pick = files_sorted[0] if files_sorted else None
-                if not pick:
-                    continue
-                url = pick["link"]
-                ext = ".mp4"
+def search_pixabay(keyword, count, api_key):
+    """Pixabay 사진 검색 → 미리보기 목록만 반환."""
+    qs = urllib.parse.urlencode({
+        "key": api_key,
+        "q": keyword,
+        "image_type": "photo",
+        "per_page": max(3, min(count, 30)),
+        "safesearch": "true",
+        "orientation": "horizontal",
+    })
+    req = urllib.request.Request(
+        f"{PIXABAY_API}?{qs}",
+        headers={"User-Agent": "music-merger-app/1.0"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as r:
+        data = json.loads(r.read().decode("utf-8"))
+    items = []
+    for h in data.get("hits", []):
+        items.append({
+            "source": "pixabay",
+            "id": f"pix_{h.get('id', '')}",
+            "thumb_url": h.get("previewURL") or h.get("webformatURL", ""),
+            "full_url": h.get("largeImageURL") or h.get("webformatURL", ""),
+        })
+    return items
 
-            idx = offset + i
-            out = workdir / f"stock_{idx:03d}{ext}"
-            req2 = urllib.request.Request(url, headers={"User-Agent": "music-merger-app/1.0"})
-            with urllib.request.urlopen(req2, timeout=60) as r, open(out, "wb") as f:
-                f.write(r.read())
-            saved.append(out)
-        except Exception:
-            # 한 개 실패해도 계속
-            continue
 
-    if not saved:
-        raise RuntimeError("다운로드한 파일이 없어요. 키 또는 네트워크를 확인해주세요.")
-    return saved
+def download_url_to(url, out_path):
+    req = urllib.request.Request(url, headers={"User-Agent": "music-merger-app/1.0"})
+    with urllib.request.urlopen(req, timeout=60) as r, open(out_path, "wb") as f:
+        f.write(r.read())
+    return out_path
+
+
+def crop_image(img_path, output_path, mode):
+    """이미지 좌우 자르기. mode: left_50 / right_50 / center_50 / left_70 / right_70."""
+    if not mode:
+        # 자르기 안 함 — 그대로 복사
+        if str(img_path) != str(output_path):
+            import shutil as _sh
+            _sh.copyfile(img_path, output_path)
+        return output_path
+    from PIL import Image
+    img = Image.open(img_path)
+    if img.mode in ("RGBA", "P"):
+        img = img.convert("RGB")
+    w, h = img.size
+    boxes = {
+        "left_50":  (0,            0, w // 2,       h),
+        "right_50": (w // 2,       0, w,            h),
+        "center_50":(w // 4,       0, 3 * w // 4,   h),
+        "left_70":  (0,            0, int(w * 0.7), h),
+        "right_70": (int(w * 0.3), 0, w,            h),
+    }
+    box = boxes.get(mode)
+    if not box:
+        return img_path
+    img.crop(box).save(output_path, quality=92)
+    return output_path
 
 
 def preprocess_to_segment(input_path, output_path, fixed_duration=None, pan_direction=None):
@@ -508,80 +543,137 @@ if media_files:
             _clear_uploader("media")
             st.rerun()
 
-# 6) 스톡 이미지·영상 가져오기 (Pexels)
+# 6) 스톡 이미지 검색 · 미리보기 · 선택 · 자르기
 st.markdown(
-    '<div class="big-label">6️⃣ 스톡 이미지·영상 가져오기 (선택, Pexels)</div>',
+    '<div class="big-label">6️⃣ 스톡 이미지 검색·선택 (선택, Pexels·Pixabay)</div>',
     unsafe_allow_html=True,
 )
-with st.expander("🌐 키워드로 무료 스톡 자동으로 가져오기 (Pexels)"):
-    st.caption(
-        "Pexels는 무료 스톡 사진·영상 사이트예요. "
-        "[여기에서 무료 API 키 발급](https://www.pexels.com/api/) "
-        "(가입 후 'Your API Key' 복사) → 아래에 붙여넣기."
+with st.expander("🌐 키워드로 스톡 이미지 검색 → 미리보고 선택 → 자르기"):
+    source = st.radio(
+        "출처",
+        ["Pixabay", "Pexels"],
+        horizontal=True,
+        help="둘 다 무료 스톡 사이트예요. 각자 다른 API 키 필요.",
     )
-    default_key = os.environ.get("PEXELS_API_KEY", "")
-    saved_key = st.session_state.get("pexels_key", default_key)
-    pexels_key = st.text_input(
-        "Pexels API 키",
-        value=saved_key,
-        type="password",
-        help="한 번 입력해두면 이 세션에서 계속 사용돼요",
-    )
-    if pexels_key:
-        st.session_state["pexels_key"] = pexels_key
+    if source == "Pixabay":
+        key_help = "[Pixabay 무료 API 키 발급](https://pixabay.com/api/docs/) — 가입 후 'Your API key' 복사"
+        ss_key = "pixabay_key"
+        env_key = "PIXABAY_API_KEY"
+    else:
+        key_help = "[Pexels 무료 API 키 발급](https://www.pexels.com/api/) — 가입 후 'Your API Key' 복사"
+        ss_key = "pexels_key"
+        env_key = "PEXELS_API_KEY"
+    st.caption(key_help)
 
-    col_kw, col_kind = st.columns([2, 1])
+    saved_key = st.session_state.get(ss_key, os.environ.get(env_key, ""))
+    api_key = st.text_input(
+        f"{source} API 키", value=saved_key, type="password",
+        key=f"api_input_{source}",
+        help="한 번 입력해두면 이 세션 동안 기억해요",
+    )
+    if api_key:
+        st.session_state[ss_key] = api_key
+
+    col_kw, col_cnt = st.columns([2, 1])
     with col_kw:
         stock_keyword = st.text_input(
-            "키워드 (예: 바다, 산, 도시 야경, ocean)",
-            placeholder="ocean",
+            "키워드 (예: paris eiffel, ocean, 카페)",
+            placeholder="paris eiffel tower",
+            key=f"kw_{source}",
         )
-    with col_kind:
-        stock_kind_label = st.radio(
-            "종류", ["이미지", "영상"], horizontal=False, key="stock_kind"
-        )
-    stock_count = st.slider("가져올 개수", 1, 15, 5)
+    with col_cnt:
+        stock_count = st.slider("결과 개수", 3, 30, 12, key=f"cnt_{source}")
 
-    col_get, col_clr = st.columns(2)
-    with col_get:
-        do_fetch = st.button("📥 가져오기", use_container_width=True)
-    with col_clr:
-        do_clear = st.button("🗑️ 비우기", use_container_width=True)
-
-    if "stock_paths" not in st.session_state:
-        st.session_state["stock_paths"] = []
-        st.session_state["stock_dir"] = None
-
-    if do_clear:
-        st.session_state["stock_paths"] = []
-        st.session_state["stock_dir"] = None
-        st.success("스톡 풀을 비웠어요.")
-
-    if do_fetch:
-        if not pexels_key:
-            st.error("Pexels API 키를 먼저 입력해주세요.")
+    if st.button("🔍 검색하기", use_container_width=True, key=f"go_search_{source}"):
+        if not api_key:
+            st.error(f"{source} API 키를 먼저 입력해주세요.")
         elif not stock_keyword.strip():
             st.error("키워드를 입력해주세요.")
         else:
-            kind = "photos" if stock_kind_label == "이미지" else "videos"
-            with st.spinner(f"'{stock_keyword}' {stock_kind_label} {stock_count}개 가져오는 중..."):
+            with st.spinner(f"{source}에서 '{stock_keyword}' 검색 중..."):
                 try:
-                    if not st.session_state["stock_dir"]:
-                        st.session_state["stock_dir"] = tempfile.mkdtemp(prefix="stock_")
-                    stock_dir = Path(st.session_state["stock_dir"])
-                    offset = len(st.session_state["stock_paths"])
-                    new_paths = fetch_pexels(
-                        stock_keyword.strip(), kind, stock_count,
-                        pexels_key, stock_dir, offset=offset,
-                    )
-                    st.session_state["stock_paths"].extend([str(p) for p in new_paths])
-                    st.success(f"✅ {len(new_paths)}개 추가됨 · 풀 총 {len(st.session_state['stock_paths'])}개")
+                    if source == "Pixabay":
+                        items = search_pixabay(stock_keyword.strip(), stock_count, api_key)
+                    else:
+                        items = search_pexels_images(stock_keyword.strip(), stock_count, api_key)
+                    if not items:
+                        st.warning("결과가 없어요. 다른 키워드로 시도해주세요.")
+                    else:
+                        st.session_state["search_results"] = items
+                        # 기본은 모두 체크 + 자르기 그대로
+                        for it in items:
+                            st.session_state[f"sel_{it['id']}"] = True
+                            st.session_state.setdefault(f"crop_{it['id']}", "그대로")
+                        st.success(f"{len(items)}개 검색됨. 아래에서 골라주세요.")
                 except Exception as e:
-                    st.error(f"가져오기 실패: {e}")
+                    st.error(f"검색 실패: {e}")
 
+    # 검색 결과 그리드
+    results = st.session_state.get("search_results", [])
+    if results:
+        st.markdown("---")
+        st.markdown(f"**🖼️ {len(results)}개 검색 결과** — 체크박스로 선택, 자르기 모드 골라주세요.")
+        for row_start in range(0, len(results), 2):
+            row = results[row_start:row_start + 2]
+            cols = st.columns(2)
+            for col, it in zip(cols, row):
+                with col:
+                    try:
+                        st.image(it["thumb_url"], use_container_width=True)
+                    except Exception:
+                        st.caption("(이미지 미리보기 실패)")
+                    st.checkbox("사용", value=True, key=f"sel_{it['id']}")
+                    st.selectbox(
+                        "자르기",
+                        options=list(CROP_MODES.keys()),
+                        key=f"crop_{it['id']}",
+                        label_visibility="collapsed",
+                    )
+
+        if st.button("📥 선택한 것만 가져와서 풀에 추가", type="primary",
+                     use_container_width=True, key="add_selected"):
+            chosen = [it for it in results if st.session_state.get(f"sel_{it['id']}", False)]
+            if not chosen:
+                st.warning("하나 이상 체크해주세요.")
+            else:
+                if not st.session_state.get("stock_dir"):
+                    st.session_state["stock_dir"] = tempfile.mkdtemp(prefix="stock_")
+                stock_dir = Path(st.session_state["stock_dir"])
+                if "stock_paths" not in st.session_state:
+                    st.session_state["stock_paths"] = []
+                added = 0
+                with st.spinner(f"{len(chosen)}개 다운로드 + 자르기 중..."):
+                    for it in chosen:
+                        try:
+                            offset = len(st.session_state["stock_paths"])
+                            raw = stock_dir / f"raw_{offset:03d}.jpg"
+                            download_url_to(it["full_url"], raw)
+                            crop_label = st.session_state.get(f"crop_{it['id']}", "그대로")
+                            crop_mode = CROP_MODES.get(crop_label)
+                            final = stock_dir / f"stock_{offset:03d}.jpg"
+                            crop_image(raw, final, crop_mode)
+                            try:
+                                if raw.exists() and raw != final:
+                                    raw.unlink()
+                            except Exception:
+                                pass
+                            st.session_state["stock_paths"].append(str(final))
+                            added += 1
+                        except Exception as e:
+                            st.warning(f"한 개 실패: {e}")
+                st.success(f"✅ {added}개 추가 · 풀 총 {len(st.session_state['stock_paths'])}개")
+
+    # 현재 풀 상태
     pool_n = len(st.session_state.get("stock_paths", []))
     if pool_n > 0:
-        st.caption(f"📦 스톡 풀: **{pool_n}개** (만들기 누르면 위 직접 업로드와 함께 사용돼요)")
+        c1, c2 = st.columns([3, 1])
+        with c1:
+            st.caption(f"📦 스톡 풀: **{pool_n}개** (만들기 누르면 같이 사용돼요)")
+        with c2:
+            if st.button("🗑️ 풀 비우기", key="clear_stock_pool", use_container_width=True):
+                st.session_state["stock_paths"] = []
+                st.session_state["stock_dir"] = None
+                st.rerun()
 
 # 이미지 좌우 패닝 효과 (켄번스)
 pan_enabled = st.checkbox(
