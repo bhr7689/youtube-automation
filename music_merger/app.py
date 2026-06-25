@@ -200,14 +200,33 @@ def preprocess_to_segment(input_path, output_path, fixed_duration=None, pan_dire
     if is_image(input_path):
         duration = fixed_duration or IMG_INTERVAL
         if pan_direction in ("ltr", "rtl"):
-            # 좌우 패닝: 캔버스를 키운 뒤 1280x720 뷰포트가 가로로 이동
             if pan_direction == "ltr":
                 x_expr = f"(iw-1280)*t/{duration}"
             else:
                 x_expr = f"(iw-1280)*(1-t/{duration})"
+
+            # 파노라마 친화: 가로가 충분히 긴 이미지면 전체 폭을 그대로 패닝.
+            # 일반 비율은 캔버스를 키워 패닝 여백을 만든다.
+            try:
+                from PIL import Image
+                with Image.open(input_path) as _img:
+                    iw_src, ih_src = _img.size
+                scaled_w_at_720h = int(iw_src * 720 / ih_src) if ih_src > 0 else 1280
+            except Exception:
+                scaled_w_at_720h = 0
+
+            if scaled_w_at_720h > 1280:
+                # 파노라마 또는 가로로 긴 이미지: 높이만 720으로 맞추고 전체 폭 가로지름
+                scale_str = "scale=-2:720"
+                y_expr = "0"
+            else:
+                # 일반/세로 이미지: 캔버스 확대 후 패닝 여백 확보
+                scale_str = "scale=2240:1260:force_original_aspect_ratio=increase"
+                y_expr = "(ih-720)/2"
+
             vf = (
-                f"scale=2240:1260:force_original_aspect_ratio=increase,"
-                f"crop=1280:720:'{x_expr}':'(ih-720)/2',"
+                f"{scale_str},"
+                f"crop=1280:720:'{x_expr}':'{y_expr}',"
                 f"setsar=1,fps=30"
             )
         else:
@@ -524,7 +543,8 @@ order_mode = st.radio(
 
 # 5) 배경 이미지·영상 (선택, 직접 업로드)
 st.markdown('<div class="big-label">5️⃣ 배경 이미지·영상 (선택)</div>', unsafe_allow_html=True)
-st.caption("직접 올린 이미지(4분 30초씩) · 영상(본래 길이)을 왔다 갔다 보여줘요")
+st.caption("직접 올린 이미지(4분 30초씩) · 영상(본래 길이)을 왔다 갔다 보여줘요 · "
+           "**파노라마(가로로 긴 이미지)** 는 전체 폭을 그대로 가로지르며 패닝돼요")
 media_files = st.file_uploader(
     "JPG / PNG / MP4 / MOV 여러 개",
     type=["jpg", "jpeg", "png", "webp", "bmp", "mp4", "mov", "webm", "mkv", "m4v"],
