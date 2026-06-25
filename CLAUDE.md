@@ -103,6 +103,18 @@ python pipeline.py --init                              # 파이프라인 폴더 
   (이 훅은 default 브랜치에 머지돼야 모든 세션에 적용됨.)
 
 ## 다음 할 일 / 미확인
+- [x] 🔬 **제목 알고리즘 분석 앱 + 글로벌 시드 발굴**(2026-06-25, awesome-ride-86mmn8):
+  `title_analyzer_app.py` 신규 — 모바일 세로 우선. 4모드: 🪄 시드 자동 발굴 / 🔥 트렌드 /
+  📂 카테고리 / ✍️ 직접 붙여넣기. 히든 젬(viral_ratio=조회수/구독자) 발굴, 15개국
+  멀티셀렉트(KR/US/JP/IN/MX/ES/BR/DE/FR/ID/VN/TH/PH…) 다국가 비교 → 🌍 공통 시드 vs
+  🏳️ 국가별 고유 시드. 토큰 추출은 유니코드 \w 기반(일본어/스페인어/힌디 등 호환).
+  쇼츠/롱폼 사용자 라디오 선택.
+- [x] 🤖 **자동 시드 발굴 → Notion 적재**(2026-06-25, awesome-ride-86mmn8):
+  `daily_seed_report.py` + `.github/workflows/daily_seed_report.yml`. GitHub Actions cron
+  매일 08:00 KST 트리거. 환경변수로 모드(hidden_gems/trending)·국가·기간·임계값 제어.
+  Notion DB 스키마 자동 감지(컬럼명 한/영 매칭) — 사용자가 어떤 컬럼을 만들었든 매칭되는
+  것만 채움. 본문엔 국가별 시드 + 영상 리스트(⚡배수·구독자·조회수). Secrets 3개 필요:
+  YOUTUBE_API_KEY / NOTION_TOKEN / NOTION_DATABASE_ID.
 - [x] 모듈 실제 구동 검증 완료(2026-05-26): 전 모듈 헤드리스 검증 35/35 통과 +
   셀프테스트 + CLI + 실제 ffmpeg 인코딩(inbox→MP4) + app.py import. **코드 버그 없음.**
 - [x] 사라졌던 UI 기능 전체 복원(2026-05-26): eGtMR 기반 9탭 합본. 제목 Lab·인코딩 잡·

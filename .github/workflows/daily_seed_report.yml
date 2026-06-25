@@ -1,0 +1,51 @@
+name: 🪄 자동 시드 발굴 → Notion
+
+# 매일/2일/3일 간격을 한 워크플로우로 처리.
+# cron schedule 은 UTC 기준. 아래는 한국시간 오전 8시(= UTC 23시 전날) 매일 1회.
+# - 매일: 그대로 둡니다
+# - 2일에 1번: jobs.run.if 의 주석을 해제하고 modulo 2 조건 사용
+# - 3일에 1번: modulo 3 조건 사용
+on:
+  schedule:
+    - cron: '0 23 * * *'   # 매일 한국시간 08:00
+  workflow_dispatch:        # GitHub 웹에서 수동 실행도 가능
+    inputs:
+      mode:
+        description: '발굴 모드 (hidden_gems | trending)'
+        required: false
+        default: 'hidden_gems'
+      countries:
+        description: '국가 코드 (콤마구분, 예: KR,US,JP,MX)'
+        required: false
+        default: 'KR,US,JP'
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    # 2일/3일 간격으로 돌리고 싶으면 아래 if 조건을 켜세요:
+    # if: ${{ (github.event_name == 'workflow_dispatch') || (fromJSON(format('{{"d":{0}}}', github.run_number)).d % 2) == 0 }}
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 의존성 설치
+        run: pip install google-api-python-client requests
+
+      - name: 시드 발굴 + Notion 저장 실행
+        env:
+          YOUTUBE_API_KEY:    ${{ secrets.YOUTUBE_API_KEY }}
+          NOTION_TOKEN:       ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          REPORT_MODE:        ${{ github.event.inputs.mode      || 'hidden_gems' }}
+          REPORT_COUNTRIES:   ${{ github.event.inputs.countries || 'KR,US,JP' }}
+          REPORT_DAYS:        '7'
+          REPORT_MIN_RATIO:   '5'
+          REPORT_MIN_VIEWS:   '5000'
+          REPORT_TOP_N:       '30'
+        run: python daily_seed_report.py
