@@ -87,6 +87,50 @@ IMG_INTERVAL = 270  # 4분 30초
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 VID_EXTS = {".mp4", ".mov", ".webm", ".mkv", ".m4v"}
 
+# 사용자 라이브러리 (자주 쓰는 자연소리·이미지 영구 보관) — gitignore 됨
+LIBRARY_DIR = Path(__file__).parent / "library"
+
+
+def library_dir(kind):
+    """kind: 'sounds' 또는 'images'."""
+    d = LIBRARY_DIR / kind
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def list_library_items(kind):
+    d = library_dir(kind)
+    return sorted([p for p in d.iterdir() if p.is_file()], key=lambda p: p.name.lower())
+
+
+def save_to_library(kind, uploaded_file, custom_name=None):
+    """업로드된 파일을 라이브러리 폴더에 영구 저장. 이름 중복은 _2, _3 자동 추가."""
+    d = library_dir(kind)
+    raw_name = custom_name or uploaded_file.name
+    safe = raw_name.replace("/", "_").replace("\\", "_")
+    target = d / safe
+    if target.exists():
+        stem, suffix = target.stem, target.suffix
+        i = 2
+        while (d / f"{stem}_{i}{suffix}").exists():
+            i += 1
+        target = d / f"{stem}_{i}{suffix}"
+    with open(target, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    return target
+
+
+def delete_library_item(kind, name):
+    d = library_dir(kind)
+    target = d / name
+    if target.exists() and target.is_file():
+        try:
+            target.unlink()
+            return True
+        except Exception:
+            return False
+    return False
+
 PEXELS_PHOTO_API = "https://api.pexels.com/v1/search"
 PEXELS_VIDEO_API = "https://api.pexels.com/videos/search"
 PIXABAY_API = "https://pixabay.com/api/"
@@ -447,9 +491,14 @@ st.caption("음악과 이미지를 골라 긴 영상으로 만들어요 · 캡�
 with st.expander("⚙️ 막혔을 때 — 모든 업로드 한꺼번에 비우기"):
     st.caption("X 버튼이 안 눌릴 때 누르세요. 모든 업로드 칸이 비어요.")
     if st.button("🔄 모두 비우고 처음부터", key="clear_all"):
-        for k in ("music", "nature", "media", "stock_paths", "stock_dir",
-                  "audio_path", "video_path", "workdir", "audio_label"):
+        for k in ("music", "nature", "nature_new", "media", "stock_paths", "stock_dir",
+                  "lib_image_paths", "audio_path", "video_path", "workdir", "audio_label",
+                  "search_results"):
             st.session_state.pop(k, None)
+        # 라이브러리 체크박스도 해제 (파일은 유지, 선택만 비움)
+        for k in list(st.session_state.keys()):
+            if k.startswith("use_lib_img_"):
+                st.session_state.pop(k, None)
         st.rerun()
 
 # 1) 음악 업로드
@@ -470,28 +519,85 @@ if music_files:
             _clear_uploader("music")
             st.rerun()
 
-# 2) 자연의 소리 (선택)
+# 2) 자연의 소리 (선택) — 라이브러리 + 새 업로드
 st.markdown('<div class="big-label">2️⃣ 자연의 소리 (선택)</div>', unsafe_allow_html=True)
-st.caption("빗소리·파도·새소리 같은 파일을 올리면 음악 위에 살짝 깔아드려요")
-nature_file = st.file_uploader(
-    "MP3 / WAV / M4A 한 개",
-    type=["mp3", "wav", "m4a", "aac", "ogg", "flac"],
-    accept_multiple_files=False,
-    label_visibility="collapsed",
-    key="nature",
+st.caption("빗소리·파도·새소리 같은 파일. 한 번 저장해두면 다음에 또 골라 쓸 수 있어요.")
+
+saved_sounds = list_library_items("sounds")
+
+# 라이브러리 관리(저장된 목록 + 삭제)
+if saved_sounds:
+    with st.expander(f"📁 내 자연소리 라이브러리 ({len(saved_sounds)}개 저장됨)"):
+        for s in saved_sounds:
+            c1, c2 = st.columns([5, 1])
+            with c1:
+                st.caption(f"🎵 {s.name}")
+            with c2:
+                if st.button("🗑️", key=f"del_snd_{s.name}", help=f"{s.name} 삭제"):
+                    delete_library_item("sounds", s.name)
+                    st.rerun()
+
+# 사용할 자연 소리 선택
+nature_source = st.radio(
+    "어떻게 사용할까요?",
+    ["사용 안 함", "라이브러리에서 선택", "새로 업로드"],
+    horizontal=True,
+    index=1 if saved_sounds else 0,
+    key="nature_source",
 )
+
+nature_path_for_build = None  # 실제 빌드에 쓸 파일 경로 (Path 또는 None)
+nature_file = None  # 새 업로드 UploadedFile (요약 카드용 호환)
+
+if nature_source == "라이브러리에서 선택":
+    if not saved_sounds:
+        st.info("저장된 소리가 없어요. '새로 업로드' 를 골라 첫 파일을 추가해주세요.")
+    else:
+        chosen = st.selectbox(
+            "저장된 자연 소리",
+            options=[s.name for s in saved_sounds],
+            key="nature_lib_select",
+        )
+        nature_path_for_build = library_dir("sounds") / chosen
+        st.caption(f"🌿 선택됨: **{chosen}**")
+        # 요약 카드용 더미 객체 (name 만 필요)
+        class _LibFile:
+            def __init__(self, name): self.name = name
+        nature_file = _LibFile(chosen)
+
+elif nature_source == "새로 업로드":
+    new_sound = st.file_uploader(
+        "MP3 / WAV / M4A 한 개",
+        type=["mp3", "wav", "m4a", "aac", "ogg", "flac"],
+        accept_multiple_files=False,
+        label_visibility="collapsed",
+        key="nature_new",
+    )
+    if new_sound is not None:
+        c1, c2 = st.columns([3, 1])
+        with c1:
+            st.caption(f"🌿 {new_sound.name}")
+        with c2:
+            if st.button("🗑️ 빼기", key="clear_nature_new", use_container_width=True):
+                _clear_uploader("nature_new")
+                st.rerun()
+        save_to_lib = st.checkbox(
+            f"💾 '{new_sound.name}' 을 라이브러리에 저장 (다음에도 쓸 수 있게)",
+            value=True,
+            key="save_nature_to_lib",
+        )
+        if save_to_lib and st.button("📥 지금 라이브러리에 저장", key="save_now_nature"):
+            saved_path = save_to_library("sounds", new_sound)
+            st.success(f"✅ 저장됨: {saved_path.name}")
+            st.rerun()
+        # 이번 실행에 임시로 쓰기 위해 file 객체 그대로 사용
+        nature_file = new_sound
+
 nature_volume_pct = 30
 nature_pattern = "계속 들리게"
 nature_on_sec = 0
 nature_off_sec = 0
 if nature_file is not None:
-    c1, c2 = st.columns([3, 1])
-    with c1:
-        st.caption(f"🌿 {nature_file.name}")
-    with c2:
-        if st.button("🗑️ 빼기", key="clear_nature", use_container_width=True):
-            _clear_uploader("nature")
-            st.rerun()
     nature_volume_pct = st.slider(
         "자연의 소리 크기 (음악 대비 %)",
         min_value=5, max_value=100, value=30, step=5,
@@ -541,10 +647,46 @@ order_mode = st.radio(
     label_visibility="collapsed",
 )
 
-# 5) 배경 이미지·영상 (선택, 직접 업로드)
+# 5) 배경 이미지·영상 (선택, 직접 업로드 + 라이브러리)
 st.markdown('<div class="big-label">5️⃣ 배경 이미지·영상 (선택)</div>', unsafe_allow_html=True)
 st.caption("직접 올린 이미지(4분 30초씩) · 영상(본래 길이)을 왔다 갔다 보여줘요 · "
            "**파노라마(가로로 긴 이미지)** 는 전체 폭을 그대로 가로지르며 패닝돼요")
+
+# 이미지 라이브러리 (저장된 것 중 골라 풀에 추가)
+saved_images = list_library_items("images")
+if "lib_image_paths" not in st.session_state:
+    st.session_state["lib_image_paths"] = []
+
+if saved_images:
+    with st.expander(f"📁 내 이미지 라이브러리 ({len(saved_images)}장 저장됨) — 골라서 사용"):
+        st.caption("체크해서 이번에 사용 · 🗑️ 로 라이브러리에서 영구 삭제")
+        for row_start in range(0, len(saved_images), 2):
+            row = saved_images[row_start:row_start + 2]
+            cols = st.columns(2)
+            for col, img in zip(cols, row):
+                with col:
+                    try:
+                        st.image(str(img), use_container_width=True)
+                    except Exception:
+                        pass
+                    st.caption(f"📁 {img.name[:24]}")
+                    c1, c2 = st.columns([3, 1])
+                    with c1:
+                        use_it = st.checkbox(
+                            "이번 영상에 쓰기", key=f"use_lib_img_{img.name}",
+                        )
+                    with c2:
+                        if st.button("🗑️", key=f"del_lib_img_{img.name}", help="라이브러리에서 영구 삭제"):
+                            delete_library_item("images", img.name)
+                            st.rerun()
+        # 선택된 라이브러리 이미지들을 추적
+        chosen_lib_imgs = [
+            img for img in saved_images
+            if st.session_state.get(f"use_lib_img_{img.name}", False)
+        ]
+        st.session_state["lib_image_paths"] = [str(p) for p in chosen_lib_imgs]
+        if chosen_lib_imgs:
+            st.caption(f"✅ 라이브러리에서 {len(chosen_lib_imgs)}장 선택됨")
 media_files = st.file_uploader(
     "JPG / PNG / MP4 / MOV 여러 개",
     type=["jpg", "jpeg", "png", "webp", "bmp", "mp4", "mov", "webm", "mkv", "m4v"],
@@ -563,10 +705,10 @@ if media_files:
             _clear_uploader("media")
             st.rerun()
 
-    # 업로드한 이미지: 미리보기 + 좌우 자르기 모드 (이미지만 — 영상은 그대로)
+    # 업로드한 이미지: 미리보기 + 좌우 자르기 모드 + 라이브러리 저장 옵션
     image_uploads = [m for m in media_files if Path(m.name).suffix.lower() in IMG_EXTS]
     if image_uploads:
-        with st.expander(f"🔪 업로드한 이미지 {len(image_uploads)}장 미리보고 좌우 자르기"):
+        with st.expander(f"🔪 업로드한 이미지 {len(image_uploads)}장 미리보기 / 자르기 / 라이브러리에 저장"):
             st.caption("이미지마다 사용할 부분을 골라요. 영상 파일은 자르기 없음 (원본 그대로).")
             for row_start in range(0, len(image_uploads), 2):
                 row = image_uploads[row_start:row_start + 2]
@@ -585,6 +727,14 @@ if media_files:
                             key=crop_key,
                             label_visibility="collapsed",
                         )
+                        already_saved = (library_dir("images") / mf.name).exists()
+                        if already_saved:
+                            st.caption("💾 이미 라이브러리에 있음")
+                        else:
+                            if st.button("💾 라이브러리 저장", key=f"save_img_{mf.name}_{mf.size}",
+                                         use_container_width=True):
+                                save_to_library("images", mf)
+                                st.rerun()
 
 # 6) 스톡 이미지 검색 · 미리보기 · 선택 · 자르기
 st.markdown(
@@ -744,7 +894,8 @@ st.markdown("---")
 n_music = len(music_files) if music_files else 0
 n_media_uploaded = len(media_files) if media_files else 0
 n_stock = len(st.session_state.get("stock_paths", []))
-n_media_total = n_media_uploaded + n_stock
+n_lib = len(st.session_state.get("lib_image_paths", []))
+n_media_total = n_media_uploaded + n_stock + n_lib
 target_sec_preview = DUR_MAP[duration_choice]
 
 # 매우 거친 예상 시간 (PC 성능에 따라 다름)
@@ -770,6 +921,8 @@ if n_media_total > 0:
     parts = []
     if n_media_uploaded:
         parts.append(f"직접 {n_media_uploaded}개")
+    if n_lib:
+        parts.append(f"라이브러리 {n_lib}개")
     if n_stock:
         parts.append(f"스톡 {n_stock}개")
     extra = "음악 같이 깔린 영상" if (bake_audio_in_video and n_music) else "무음 영상 (캡컷용)"
@@ -793,7 +946,11 @@ go = st.button("🎬 만들기 시작", type="primary")
 
 if go:
     has_music = bool(music_files)
-    has_media_input = bool(media_files) or bool(st.session_state.get("stock_paths"))
+    has_media_input = (
+        bool(media_files)
+        or bool(st.session_state.get("stock_paths"))
+        or bool(st.session_state.get("lib_image_paths"))
+    )
     if not has_music and not has_media_input:
         st.error("음악 또는 이미지/영상 중 하나는 꼭 올려주세요!")
     else:
@@ -829,9 +986,13 @@ if go:
                 if order_mode == "랜덤 섞기":
                     random.shuffle(music_paths)
 
-                # 자연의 소리 저장 (있으면)
+                # 자연의 소리 경로 결정
+                # - 라이브러리 선택: nature_path_for_build 에 이미 Path 가 들어있음 → 그대로 사용
+                # - 새 업로드: workdir 에 저장 후 그 경로 사용
                 nature_path = None
-                if nature_file is not None:
+                if nature_path_for_build is not None and Path(nature_path_for_build).exists():
+                    nature_path = Path(nature_path_for_build)
+                elif nature_file is not None and hasattr(nature_file, "getbuffer"):
                     ext = Path(nature_file.name).suffix.lower() or ".mp3"
                     nature_path = workdir / f"nature{ext}"
                     with open(nature_path, "wb") as f:
@@ -869,6 +1030,10 @@ if go:
                             crop_image(p, cropped, crop_mode)
                             p = cropped
                     media_paths.append(p)
+            # 라이브러리에서 골라둔 이미지도 풀에 추가
+            for lib_p in st.session_state.get("lib_image_paths", []):
+                if os.path.exists(lib_p):
+                    media_paths.append(Path(lib_p))
             for stock_p in st.session_state.get("stock_paths", []):
                 if os.path.exists(stock_p):
                     media_paths.append(Path(stock_p))
