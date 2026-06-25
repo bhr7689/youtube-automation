@@ -242,10 +242,29 @@ def download_url_to(url, out_path):
     return out_path
 
 
-def crop_image(img_path, output_path, mode):
-    """이미지 좌우 자르기. mode: left_50 / right_50 / center_50 / left_70 / right_70."""
+def _crop_box(w, h, mode):
+    return {
+        "left_50":  (0,            0, w // 2,       h),
+        "right_50": (w // 2,       0, w,            h),
+        "center_50":(w // 4,       0, 3 * w // 4,   h),
+        "left_70":  (0,            0, int(w * 0.7), h),
+        "right_70": (int(w * 0.3), 0, w,            h),
+    }.get(mode)
+
+
+def crop_pil_image(pil_img, mode):
+    """PIL Image 메모리에서 자르기. 미리보기용."""
     if not mode:
-        # 자르기 안 함 — 그대로 복사
+        return pil_img
+    if pil_img.mode in ("RGBA", "P"):
+        pil_img = pil_img.convert("RGB")
+    box = _crop_box(*pil_img.size, mode)
+    return pil_img.crop(box) if box else pil_img
+
+
+def crop_image(img_path, output_path, mode):
+    """이미지 좌우 자르기 (파일 저장). 생성 시 사용."""
+    if not mode:
         if str(img_path) != str(output_path):
             import shutil as _sh
             _sh.copyfile(img_path, output_path)
@@ -254,19 +273,19 @@ def crop_image(img_path, output_path, mode):
     img = Image.open(img_path)
     if img.mode in ("RGBA", "P"):
         img = img.convert("RGB")
-    w, h = img.size
-    boxes = {
-        "left_50":  (0,            0, w // 2,       h),
-        "right_50": (w // 2,       0, w,            h),
-        "center_50":(w // 4,       0, 3 * w // 4,   h),
-        "left_70":  (0,            0, int(w * 0.7), h),
-        "right_70": (int(w * 0.3), 0, w,            h),
-    }
-    box = boxes.get(mode)
+    box = _crop_box(*img.size, mode)
     if not box:
         return img_path
     img.crop(box).save(output_path, quality=92)
     return output_path
+
+
+@st.cache_data(show_spinner=False)
+def fetch_thumb_bytes(url):
+    """URL 썸네일을 한 번만 받아 캐시 (자르기 모드 바꿔도 재다운로드 X)."""
+    req = urllib.request.Request(url, headers={"User-Agent": "music-merger-app/1.0"})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return r.read()
 
 
 def preprocess_to_segment(input_path, output_path, fixed_duration=None, pan_direction=None):
@@ -783,14 +802,29 @@ if media_files:
                 cols = st.columns(2)
                 for col, mf in zip(cols, row):
                     with col:
-                        try:
-                            st.image(mf, use_container_width=True)
-                        except Exception:
-                            pass
-                        st.caption(f"📁 {mf.name[:24]}")
                         crop_key = f"up_crop_{mf.name}_{mf.size}"
+                        crop_label = st.session_state.get(crop_key, "그대로")
+                        crop_mode_now = CROP_MODES.get(crop_label)
+                        # 자르기 모드에 맞춰 미리보기를 즉시 잘린 모습으로 표시
+                        try:
+                            if crop_mode_now:
+                                import io
+                                from PIL import Image as _PILImage
+                                mf.seek(0)
+                                _pil = _PILImage.open(io.BytesIO(mf.getvalue()))
+                                _cropped = crop_pil_image(_pil, crop_mode_now)
+                                st.image(_cropped, use_container_width=True)
+                                st.caption(f"✂️ 자르기 적용: **{crop_label}**")
+                            else:
+                                st.image(mf, use_container_width=True)
+                        except Exception:
+                            try:
+                                st.image(mf, use_container_width=True)
+                            except Exception:
+                                pass
+                        st.caption(f"📁 {mf.name[:24]}")
                         st.selectbox(
-                            "자르기",
+                            "자르기 (선택 즉시 위 미리보기 반영)",
                             options=list(CROP_MODES.keys()),
                             key=crop_key,
                             label_visibility="collapsed",
@@ -903,15 +937,28 @@ with st.expander("🌐 키워드로 스톡 이미지 검색 → 미리보고 선
             cols = st.columns(2)
             for col, it in zip(cols, row):
                 with col:
+                    crop_key = f"crop_{it['id']}"
+                    crop_label = st.session_state.get(crop_key, "그대로")
+                    crop_mode_now = CROP_MODES.get(crop_label)
+                    # 자르기 모드 즉시 미리보기 반영 (썸네일은 캐시됨)
                     try:
-                        st.image(it["thumb_url"], use_container_width=True)
+                        if crop_mode_now:
+                            import io
+                            from PIL import Image as _PILImage
+                            _thumb_bytes = fetch_thumb_bytes(it["thumb_url"])
+                            _pil = _PILImage.open(io.BytesIO(_thumb_bytes))
+                            _cropped = crop_pil_image(_pil, crop_mode_now)
+                            st.image(_cropped, use_container_width=True)
+                            st.caption(f"✂️ {crop_label}")
+                        else:
+                            st.image(it["thumb_url"], use_container_width=True)
                     except Exception:
                         st.caption("(이미지 미리보기 실패)")
                     st.checkbox("사용", value=True, key=f"sel_{it['id']}")
                     st.selectbox(
-                        "자르기",
+                        "자르기 (선택 즉시 위 미리보기 반영)",
                         options=list(CROP_MODES.keys()),
-                        key=f"crop_{it['id']}",
+                        key=crop_key,
                         label_visibility="collapsed",
                     )
 
