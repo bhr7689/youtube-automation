@@ -543,6 +543,29 @@ if media_files:
             _clear_uploader("media")
             st.rerun()
 
+    # 업로드한 이미지: 미리보기 + 좌우 자르기 모드 (이미지만 — 영상은 그대로)
+    image_uploads = [m for m in media_files if Path(m.name).suffix.lower() in IMG_EXTS]
+    if image_uploads:
+        with st.expander(f"🔪 업로드한 이미지 {len(image_uploads)}장 미리보고 좌우 자르기"):
+            st.caption("이미지마다 사용할 부분을 골라요. 영상 파일은 자르기 없음 (원본 그대로).")
+            for row_start in range(0, len(image_uploads), 2):
+                row = image_uploads[row_start:row_start + 2]
+                cols = st.columns(2)
+                for col, mf in zip(cols, row):
+                    with col:
+                        try:
+                            st.image(mf, use_container_width=True)
+                        except Exception:
+                            pass
+                        st.caption(f"📁 {mf.name[:24]}")
+                        crop_key = f"up_crop_{mf.name}_{mf.size}"
+                        st.selectbox(
+                            "자르기",
+                            options=list(CROP_MODES.keys()),
+                            key=crop_key,
+                            label_visibility="collapsed",
+                        )
+
 # 6) 스톡 이미지 검색 · 미리보기 · 선택 · 자르기
 st.markdown(
     '<div class="big-label">6️⃣ 스톡 이미지 검색·선택 (선택, Pexels·Pixabay)</div>',
@@ -816,6 +839,15 @@ if go:
                     p = workdir / f"media_{i:03d}{ext}"
                     with open(p, "wb") as f:
                         f.write(imf.getbuffer())
+                    # 업로드한 이미지에 자르기 모드 선택돼 있으면 적용
+                    if ext in IMG_EXTS:
+                        crop_key = f"up_crop_{imf.name}_{imf.size}"
+                        crop_label = st.session_state.get(crop_key, "그대로")
+                        crop_mode = CROP_MODES.get(crop_label)
+                        if crop_mode:
+                            cropped = workdir / f"media_{i:03d}_cropped{ext}"
+                            crop_image(p, cropped, crop_mode)
+                            p = cropped
                     media_paths.append(p)
             for stock_p in st.session_state.get("stock_paths", []):
                 if os.path.exists(stock_p):
