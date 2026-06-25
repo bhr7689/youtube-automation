@@ -24,3 +24,6 @@ score_cache.json
 # 오케스트레이터 실행 이력
 orchestrator_log.jsonl
 cron.log
+
+# 음악 이어붙이기 앱의 사용자 라이브러리 (자연 소리·이미지)
+music_merger/library/
