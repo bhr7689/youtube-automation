@@ -12,15 +12,15 @@ set BRANCH=claude/youtube-discovery-dashboard-eqO5N
 
 where git >nul 2>nul
 if errorlevel 1 goto need_git
-echo [1/5] Git OK
+echo [1/6] Git OK
 
 where python >nul 2>nul
 if errorlevel 1 goto need_python
-echo [2/5] Python OK
+echo [2/6] Python OK
 
 where ffmpeg >nul 2>nul
 if errorlevel 1 goto need_ffmpeg
-echo [3/5] ffmpeg OK
+echo [3/6] ffmpeg OK
 goto clone_or_pull
 
 :need_git
@@ -42,7 +42,7 @@ echo [필요] ffmpeg 가 없어요. winget 으로 자동 설치 시도합니다.
 winget install -e --id Gyan.FFmpeg --accept-source-agreements --accept-package-agreements
 where ffmpeg >nul 2>nul
 if errorlevel 1 goto ffmpeg_manual
-echo [3/5] ffmpeg OK
+echo [3/6] ffmpeg OK
 goto clone_or_pull
 
 :ffmpeg_manual
@@ -57,14 +57,14 @@ exit /b 1
 
 :clone_or_pull
 if exist "%INSTALL_DIR%\.git" goto update_repo
-echo [4/5] 새로 받는 중...
+echo [4/6] 새로 받는 중...
 cd /d "%USERPROFILE%"
 git clone -b %BRANCH% https://github.com/bhr7689/youtube-automation.git
 if errorlevel 1 goto clone_failed
 goto install_pkg
 
 :update_repo
-echo [4/5] 이미 폴더가 있어요. 최신 코드로 업데이트 중...
+echo [4/6] 이미 폴더가 있어요. 최신 코드로 업데이트 중...
 cd /d "%INSTALL_DIR%"
 git pull origin %BRANCH%
 goto install_pkg
@@ -75,8 +75,14 @@ pause
 exit /b 1
 
 :install_pkg
-echo [5/5] 파이썬 패키지 확인...
+echo [5/6] 파이썬 패키지 확인...
 pip install streamlit -q --disable-pip-version-check
+
+echo [6/6] 포트 8503 사용 중인 이전 인스턴스 정리 중...
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8503 ^| findstr LISTENING') do (
+    echo    PID %%a 종료 시도
+    taskkill /F /PID %%a >nul 2>nul
+)
 
 echo.
 echo ============================================
