@@ -10,16 +10,24 @@ echo.
 
 cd /d "%~dp0"
 
-echo [1/3] 최신 코드 받는 중...
+echo [1/4] 최신 코드 받는 중...
 git pull origin claude/youtube-discovery-dashboard-eqO5N
 echo.
 
-echo [2/3] 패키지 확인 중...
+echo [2/4] 패키지 확인 중...
 pip install streamlit -q --disable-pip-version-check
 echo.
 
 where ffmpeg >nul 2>nul
 if errorlevel 1 goto need_ffmpeg
+
+echo [3/4] 포트 8503 사용 중인 이전 인스턴스 정리 중...
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8503 ^| findstr LISTENING') do (
+    echo    PID %%a 종료 시도
+    taskkill /F /PID %%a >nul 2>nul
+)
+echo.
+
 goto run_app
 
 :need_ffmpeg
@@ -30,7 +38,7 @@ pause
 exit /b 1
 
 :run_app
-echo [3/3] 음악 이어붙이기 시작 중. 브라우저가 자동으로 열립니다.
+echo [4/4] 음악 이어붙이기 시작 중. 브라우저가 자동으로 열립니다.
 echo        종료하려면 이 창을 닫거나 Ctrl+C 를 누르세요.
 echo.
 streamlit run "%~dp0music_merger\app.py" --server.port 8503 --server.headless false
