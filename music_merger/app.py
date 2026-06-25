@@ -156,17 +156,34 @@ def fetch_pexels(keyword, kind, count, api_key, workdir, offset=0):
     return saved
 
 
-def preprocess_to_segment(input_path, output_path, fixed_duration=None):
+def preprocess_to_segment(input_path, output_path, fixed_duration=None, pan_direction=None):
     """이미지/영상을 1280x720 30fps mp4 세그먼트로 통일.
-    이미지는 fixed_duration(기본 4:30) 길이로, 영상은 본래 길이로 인코딩."""
+    이미지는 fixed_duration(기본 4:30) 길이로, 영상은 본래 길이로 인코딩.
+
+    pan_direction='ltr' 또는 'rtl' 이면 이미지가 그 방향으로 천천히 패닝.
+    영상 파일은 무시(원본 모션 유지)."""
     if is_image(input_path):
         duration = fixed_duration or IMG_INTERVAL
+        if pan_direction in ("ltr", "rtl"):
+            # 좌우 패닝: 캔버스를 키운 뒤 1280x720 뷰포트가 가로로 이동
+            if pan_direction == "ltr":
+                x_expr = f"(iw-1280)*t/{duration}"
+            else:
+                x_expr = f"(iw-1280)*(1-t/{duration})"
+            vf = (
+                f"scale=2240:1260:force_original_aspect_ratio=increase,"
+                f"crop=1280:720:'{x_expr}':'(ih-720)/2',"
+                f"setsar=1,fps=30"
+            )
+        else:
+            vf = (
+                "scale=1280:720:force_original_aspect_ratio=decrease,"
+                "pad=1280:720:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps=30"
+            )
         cmd = [
             "ffmpeg", "-y",
             "-loop", "1", "-t", str(duration), "-i", str(input_path),
-            "-vf",
-            "scale=1280:720:force_original_aspect_ratio=decrease,"
-            "pad=1280:720:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps=30",
+            "-vf", vf,
             "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
             "-an",
             str(output_path),
@@ -273,16 +290,23 @@ def build_audio(music_paths, total_seconds, workdir,
     return mixed
 
 
-def build_video(media_paths, total_seconds, workdir, audio_path=None, progress_cb=None):
+def build_video(media_paths, total_seconds, workdir, audio_path=None, pan_enabled=True, progress_cb=None):
     """이미지/영상 혼합을 핑퐁 순서로 잇고, 정해진 길이로 채우는 영상.
 
     audio_path=None 이면 무음 영상 (캡컷에서 음악과 따로 합치기 좋게).
+    pan_enabled=True 이면 이미지마다 좌우 패닝(켄번스). 짝수번 이미지는 왼→오,
+    홀수번은 오→왼 으로 번갈아 가며 '왔다 갔다' 느낌이 살아남.
     이미지는 4:30씩, 영상은 본래 길이대로 나옴."""
     # 1) 각 입력을 1280x720 30fps mp4 세그먼트로 정규화
     segments = []
+    image_idx = 0
     for i, p in enumerate(media_paths):
         seg = workdir / f"seg_{i:03d}.mp4"
-        preprocess_to_segment(p, seg, fixed_duration=IMG_INTERVAL)
+        direction = None
+        if pan_enabled and is_image(p):
+            direction = "ltr" if image_idx % 2 == 0 else "rtl"
+            image_idx += 1
+        preprocess_to_segment(p, seg, fixed_duration=IMG_INTERVAL, pan_direction=direction)
         segments.append(seg)
         if progress_cb:
             progress_cb(i + 1, len(media_paths))
@@ -559,6 +583,15 @@ with st.expander("🌐 키워드로 무료 스톡 자동으로 가져오기 (Pex
     if pool_n > 0:
         st.caption(f"📦 스톡 풀: **{pool_n}개** (만들기 누르면 위 직접 업로드와 함께 사용돼요)")
 
+# 이미지 좌우 패닝 효과 (켄번스)
+pan_enabled = st.checkbox(
+    "🎞️ 이미지에 좌우 패닝 효과 넣기 (살짝 움직임)",
+    value=True,
+    help="이미지가 4분 30초 동안 왼→오 또는 오→왼 으로 천천히 움직여요. "
+         "캡컷에서 좌우로 붙인 합성 이미지(예: 에펠탑+카페)에 특히 잘 어울려요. "
+         "체크 안 하면 정지 이미지로 컷 전환만 됩니다.",
+)
+
 # 영상에 오디오 포함 여부 (기본: 무음 — 캡컷에서 합치기 좋게)
 bake_audio_in_video = st.checkbox(
     "🎬 영상 MP4 에 음악·자연소리도 같이 깔기",
@@ -707,7 +740,9 @@ if go:
                 video_audio = audio_out if (bake_audio_in_video and audio_out) else None
                 video_out = build_video(
                     media_paths, target_sec, workdir,
-                    audio_path=video_audio, progress_cb=_prog,
+                    audio_path=video_audio,
+                    pan_enabled=pan_enabled,
+                    progress_cb=_prog,
                 )
                 st.session_state["video_path"] = str(video_out)
                 st.session_state["audio_label"] = duration_choice
