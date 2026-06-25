@@ -6,17 +6,23 @@ upsert(중복 체크)한다. Performance Score 와 Reference Level 자동 계산
 
 환경변수 (GitHub Secrets):
   YOUTUBE_API_KEY                  (필수)
-  NOTION_TOKEN                     (필수)
-  NOTION_KEYWORD_MASTER_DB_ID      (필수) — Search Keyword Master DB ID
-  NOTION_REFERENCE_VIDEOS_DB_ID    (필수) — YouTube Reference Videos DB ID
+  NOTION_TOKEN                     (Notion 모드에서 필수)
+  NOTION_KEYWORD_MASTER_DB_ID      (Notion 모드에서 필수)
+  NOTION_REFERENCE_VIDEOS_DB_ID    (Notion 모드에서 필수)
 
 선택 환경변수:
   COLLECT_PER_KEYWORD     (기본 15) — 키워드당 영상 개수
   COLLECT_DAYS            (기본 90) — 최근 N일 영상만 (0 = 전체기간)
   COLLECT_PRIORITY_FILTER (예: 'A,B') — 특정 우선순위만
+
+CLI 인자 (Notion 없이 빠른 테스트):
+  --dry-run                Notion 저장 없이 콘솔만 출력
+  --keyword "..."          인라인 키워드(콤마구분) — Notion 안 읽고 즉시 검색
+  --region KR --lang ko    인라인 키워드용 지역/언어
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
@@ -470,47 +476,122 @@ def upsert_videos(
 # ============================================================
 # main
 # ============================================================
+def _normalize_lang(lang: str) -> str:
+    lang = (lang or "").lower()
+    return {"kr": "ko", "jp": "ja"}.get(lang, lang)
+
+
+def print_videos(vids: list[dict], search_term: str):
+    """dry-run용: 영상 목록을 점수와 함께 콘솔 출력."""
+    scored = [
+        (v, calc_performance_score(v, search_term)) for v in vids
+    ]
+    scored.sort(key=lambda x: -x[1])
+    for v, score in scored:
+        level = to_reference_level(score)
+        subs = v.get("subscriber_count")
+        subs_txt = f"{subs:,}" if subs is not None else "-"
+        ratio_txt = ""
+        if subs and subs > 0:
+            ratio = v.get("view_count", 0) / max(subs, 100)
+            ratio_txt = f" · ⚡{ratio:.1f}배"
+        print(
+            f"  [{level} {score:3d}] {v['title'][:70]}"
+            f"\n        📺 {v.get('channel_title','')[:40]} · 구독 {subs_txt}"
+            f" · 조회 {v.get('view_count', 0):,}{ratio_txt}"
+        )
+
+
 def main():
+    parser = argparse.ArgumentParser(description="YouTube 키워드별 영상 수집")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Notion 저장 없이 콘솔만 출력")
+    parser.add_argument("--keyword", default="",
+                        help="인라인 키워드(콤마구분) — Notion 안 읽고 즉시 검색")
+    parser.add_argument("--region", default="", help="인라인 키워드용 region")
+    parser.add_argument("--lang", default="", help="인라인 키워드용 language")
+    parser.add_argument("--per-keyword", type=int,
+                        default=int(os.environ.get("COLLECT_PER_KEYWORD", "15")))
+    parser.add_argument("--days", type=int,
+                        default=int(os.environ.get("COLLECT_DAYS", "90")))
+    args = parser.parse_args()
+
     yt_key = os.environ.get("YOUTUBE_API_KEY", "").strip()
+    if not yt_key:
+        sys.exit("YOUTUBE_API_KEY 환경변수가 필요해요.")
+
+    yt = yt_client(yt_key)
+
+    # ---- 인라인 키워드 모드 (Notion 안 읽음) ----
+    if args.keyword:
+        terms = [k.strip() for k in args.keyword.split(",") if k.strip()]
+        print(f"🔬 인라인 모드 — 키워드 {len(terms)}개 (dry-run={args.dry_run})")
+        for i, term in enumerate(terms, 1):
+            print(f"\n[{i}/{len(terms)}] '{term}' (region={args.region or '-'}, "
+                  f"lang={_normalize_lang(args.lang) or '-'})")
+            try:
+                vids = collect_videos_for_keyword(
+                    yt, keyword=term,
+                    region=args.region.upper(),
+                    lang=_normalize_lang(args.lang),
+                    per_keyword=args.per_keyword, days=args.days,
+                )
+            except Exception as e:
+                print(f"  ⚠️ 수집 실패: {e}", file=sys.stderr)
+                continue
+            if not vids:
+                print("  · 영상 0개")
+                continue
+            print(f"  ✅ 영상 {len(vids)}개 수집")
+            if args.dry_run:
+                print_videos(vids, term)
+            else:
+                notion_token = os.environ.get("NOTION_TOKEN", "").strip()
+                ref_db = os.environ.get("NOTION_REFERENCE_VIDEOS_DB_ID", "").strip()
+                if not (notion_token and ref_db):
+                    print("  · Notion 미설정 — dry-run으로만 출력합니다")
+                    print_videos(vids, term)
+                else:
+                    fake_row = {"keyword": term, "main": None, "middle": None, "sub": None}
+                    c, s = upsert_videos(notion_token, ref_db, vids, fake_row, term)
+                    print(f"  💾 Notion: 신규 {c} · 업데이트 {s}")
+        return
+
+    # ---- Notion 키워드 마스터 모드 ----
     notion_token = os.environ.get("NOTION_TOKEN", "").strip()
     kw_db = os.environ.get("NOTION_KEYWORD_MASTER_DB_ID", "").strip()
     ref_db = os.environ.get("NOTION_REFERENCE_VIDEOS_DB_ID", "").strip()
-    if not (yt_key and notion_token and kw_db and ref_db):
-        sys.exit("필수 환경변수 누락: YOUTUBE_API_KEY, NOTION_TOKEN, "
-                 "NOTION_KEYWORD_MASTER_DB_ID, NOTION_REFERENCE_VIDEOS_DB_ID")
-
-    per_kw = int(os.environ.get("COLLECT_PER_KEYWORD", "15"))
-    days = int(os.environ.get("COLLECT_DAYS", "90"))
+    if not (notion_token and kw_db and ref_db):
+        sys.exit("Notion 환경변수가 필요해요 (NOTION_TOKEN, NOTION_KEYWORD_MASTER_DB_ID, "
+                 "NOTION_REFERENCE_VIDEOS_DB_ID). 빠른 테스트는 --keyword 와 --dry-run 사용.")
 
     keywords = read_keywords(notion_token, kw_db)
     if not keywords:
         sys.exit("ACTIVE 키워드가 없어요. Search Keyword Master DB에 Status=ACTIVE 인 행을 추가하세요.")
 
-    print(f"📋 ACTIVE 키워드 {len(keywords)}개 처리 시작 (키워드당 영상 {per_kw}개)")
-    yt = yt_client(yt_key)
+    print(f"📋 ACTIVE 키워드 {len(keywords)}개 처리 시작 (키워드당 영상 {args.per_keyword}개)")
     total_created, total_skipped = 0, 0
 
     for i, row in enumerate(keywords, 1):
         term = pick_search_term(row)
         region = row.get("region", "")
-        lang = (row.get("language") or "").lower()
-        if lang in ("kr",): lang = "ko"
-        elif lang in ("jp",): lang = "ja"
-        elif lang == "en": lang = "en"
-        elif lang == "fr": lang = "fr"
-        elif lang == "hi": lang = "hi"
+        lang = _normalize_lang(row.get("language") or "")
         print(f"\n[{i}/{len(keywords)}] '{row['keyword']}' → 검색어 '{term}' "
               f"(region={region or '-'}, lang={lang or '-'})")
         try:
             vids = collect_videos_for_keyword(
                 yt, keyword=term, region=region, lang=lang,
-                per_keyword=per_kw, days=days,
+                per_keyword=args.per_keyword, days=args.days,
             )
         except Exception as e:
             print(f"  ⚠️ 수집 실패: {e}", file=sys.stderr)
             continue
         if not vids:
             print("  · 영상 0개")
+            continue
+        if args.dry_run:
+            print(f"  ✅ 영상 {len(vids)}개 수집 (dry-run)")
+            print_videos(vids, term)
             continue
         created, skipped = upsert_videos(notion_token, ref_db, vids, row, term)
         total_created += created
