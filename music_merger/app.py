@@ -167,11 +167,20 @@ PIXABAY_API = "https://pixabay.com/api/"
 
 CROP_MODES = {
     "그대로": None,
-    "왼쪽만 (50%)": "left_50",
-    "오른쪽만 (50%)": "right_50",
-    "가운데만 (50%)": "center_50",
-    "왼쪽 위주 (70%)": "left_70",
-    "오른쪽 위주 (70%)": "right_70",
+    # 가로 자르기 ────
+    "왼쪽만 (가로 50%)": "left_50",
+    "오른쪽만 (가로 50%)": "right_50",
+    "가운데만 (가로 50%)": "center_50",
+    "왼쪽 위주 (가로 70%)": "left_70",
+    "오른쪽 위주 (가로 70%)": "right_70",
+    # 세로 자르기 ────
+    "위쪽만 (세로 50%)": "top_50",
+    "아래쪽만 (세로 50%)": "bottom_50",
+    "가운데만 (세로 50%)": "vcenter_50",
+    "위쪽 위주 (세로 70%)": "top_70",
+    "아래쪽 위주 (세로 70%)": "bottom_70",
+    # 사용자 정의 ────
+    "직접 지정 ✂️ (슬라이더)": "custom",
 }
 
 
@@ -242,28 +251,44 @@ def download_url_to(url, out_path):
     return out_path
 
 
-def _crop_box(w, h, mode):
+def _crop_box(w, h, mode, h_range=None, v_range=None):
+    """크롭 박스(left, top, right, bottom) 계산.
+    custom 모드면 h_range=(min%, max%) v_range=(min%, max%) 사용."""
+    if mode == "custom":
+        h_min, h_max = h_range if h_range else (0, 100)
+        v_min, v_max = v_range if v_range else (0, 100)
+        if h_min >= h_max or v_min >= v_max:
+            return None
+        return (
+            int(w * h_min / 100), int(h * v_min / 100),
+            int(w * h_max / 100), int(h * v_max / 100),
+        )
     return {
-        "left_50":  (0,            0, w // 2,       h),
-        "right_50": (w // 2,       0, w,            h),
-        "center_50":(w // 4,       0, 3 * w // 4,   h),
-        "left_70":  (0,            0, int(w * 0.7), h),
-        "right_70": (int(w * 0.3), 0, w,            h),
+        "left_50":   (0,            0,            w // 2,       h),
+        "right_50":  (w // 2,       0,            w,            h),
+        "center_50": (w // 4,       0,            3 * w // 4,   h),
+        "left_70":   (0,            0,            int(w * 0.7), h),
+        "right_70":  (int(w * 0.3), 0,            w,            h),
+        "top_50":    (0,            0,            w,            h // 2),
+        "bottom_50": (0,            h // 2,       w,            h),
+        "vcenter_50":(0,            h // 4,       w,            3 * h // 4),
+        "top_70":    (0,            0,            w,            int(h * 0.7)),
+        "bottom_70": (0,            int(h * 0.3), w,            h),
     }.get(mode)
 
 
-def crop_pil_image(pil_img, mode):
+def crop_pil_image(pil_img, mode, h_range=None, v_range=None):
     """PIL Image 메모리에서 자르기. 미리보기용."""
     if not mode:
         return pil_img
     if pil_img.mode in ("RGBA", "P"):
         pil_img = pil_img.convert("RGB")
-    box = _crop_box(*pil_img.size, mode)
+    box = _crop_box(*pil_img.size, mode, h_range, v_range)
     return pil_img.crop(box) if box else pil_img
 
 
-def crop_image(img_path, output_path, mode):
-    """이미지 좌우 자르기 (파일 저장). 생성 시 사용."""
+def crop_image(img_path, output_path, mode, h_range=None, v_range=None):
+    """이미지 자르기 (파일 저장). 생성 시 사용."""
     if not mode:
         if str(img_path) != str(output_path):
             import shutil as _sh
@@ -273,7 +298,7 @@ def crop_image(img_path, output_path, mode):
     img = Image.open(img_path)
     if img.mode in ("RGBA", "P"):
         img = img.convert("RGB")
-    box = _crop_box(*img.size, mode)
+    box = _crop_box(*img.size, mode, h_range, v_range)
     if not box:
         return img_path
     img.crop(box).save(output_path, quality=92)
@@ -805,6 +830,8 @@ if media_files:
                         crop_key = f"up_crop_{mf.name}_{mf.size}"
                         crop_label = st.session_state.get(crop_key, "그대로")
                         crop_mode_now = CROP_MODES.get(crop_label)
+                        h_range_now = st.session_state.get(f"{crop_key}_h", (0, 100))
+                        v_range_now = st.session_state.get(f"{crop_key}_v", (0, 100))
                         # 자르기 모드에 맞춰 미리보기를 즉시 잘린 모습으로 표시
                         try:
                             if crop_mode_now:
@@ -812,9 +839,15 @@ if media_files:
                                 from PIL import Image as _PILImage
                                 mf.seek(0)
                                 _pil = _PILImage.open(io.BytesIO(mf.getvalue()))
-                                _cropped = crop_pil_image(_pil, crop_mode_now)
+                                _cropped = crop_pil_image(
+                                    _pil, crop_mode_now,
+                                    h_range=h_range_now, v_range=v_range_now,
+                                )
                                 st.image(_cropped, use_container_width=True)
-                                st.caption(f"✂️ 자르기 적용: **{crop_label}**")
+                                if crop_mode_now == "custom":
+                                    st.caption(f"✂️ 직접 지정: 가로 {h_range_now[0]}-{h_range_now[1]}% · 세로 {v_range_now[0]}-{v_range_now[1]}%")
+                                else:
+                                    st.caption(f"✂️ 자르기 적용: **{crop_label}**")
                             else:
                                 st.image(mf, use_container_width=True)
                         except Exception:
@@ -829,6 +862,16 @@ if media_files:
                             key=crop_key,
                             label_visibility="collapsed",
                         )
+                        # 직접 지정이면 가로·세로 범위 슬라이더
+                        if st.session_state.get(crop_key) == "직접 지정 ✂️ (슬라이더)":
+                            st.slider(
+                                "가로 범위 (%)", 0, 100, value=(0, 100),
+                                key=f"{crop_key}_h",
+                            )
+                            st.slider(
+                                "세로 범위 (%)", 0, 100, value=(0, 100),
+                                key=f"{crop_key}_v",
+                            )
                         already_saved = (library_dir("images") / mf.name).exists()
                         if already_saved:
                             st.caption("💾 이미 라이브러리에 있음")
@@ -940,6 +983,8 @@ with st.expander("🌐 키워드로 스톡 이미지 검색 → 미리보고 선
                     crop_key = f"crop_{it['id']}"
                     crop_label = st.session_state.get(crop_key, "그대로")
                     crop_mode_now = CROP_MODES.get(crop_label)
+                    h_range_now = st.session_state.get(f"{crop_key}_h", (0, 100))
+                    v_range_now = st.session_state.get(f"{crop_key}_v", (0, 100))
                     # 자르기 모드 즉시 미리보기 반영 (썸네일은 캐시됨)
                     try:
                         if crop_mode_now:
@@ -947,9 +992,15 @@ with st.expander("🌐 키워드로 스톡 이미지 검색 → 미리보고 선
                             from PIL import Image as _PILImage
                             _thumb_bytes = fetch_thumb_bytes(it["thumb_url"])
                             _pil = _PILImage.open(io.BytesIO(_thumb_bytes))
-                            _cropped = crop_pil_image(_pil, crop_mode_now)
+                            _cropped = crop_pil_image(
+                                _pil, crop_mode_now,
+                                h_range=h_range_now, v_range=v_range_now,
+                            )
                             st.image(_cropped, use_container_width=True)
-                            st.caption(f"✂️ {crop_label}")
+                            if crop_mode_now == "custom":
+                                st.caption(f"✂️ 가로 {h_range_now[0]}-{h_range_now[1]}% · 세로 {v_range_now[0]}-{v_range_now[1]}%")
+                            else:
+                                st.caption(f"✂️ {crop_label}")
                         else:
                             st.image(it["thumb_url"], use_container_width=True)
                     except Exception:
@@ -961,6 +1012,15 @@ with st.expander("🌐 키워드로 스톡 이미지 검색 → 미리보고 선
                         key=crop_key,
                         label_visibility="collapsed",
                     )
+                    if st.session_state.get(crop_key) == "직접 지정 ✂️ (슬라이더)":
+                        st.slider(
+                            "가로 범위 (%)", 0, 100, value=(0, 100),
+                            key=f"{crop_key}_h",
+                        )
+                        st.slider(
+                            "세로 범위 (%)", 0, 100, value=(0, 100),
+                            key=f"{crop_key}_v",
+                        )
 
         if st.button("📥 선택한 것만 가져와서 풀에 추가", type="primary",
                      use_container_width=True, key="add_selected"):
@@ -980,10 +1040,13 @@ with st.expander("🌐 키워드로 스톡 이미지 검색 → 미리보고 선
                             offset = len(st.session_state["stock_paths"])
                             raw = stock_dir / f"raw_{offset:03d}.jpg"
                             download_url_to(it["full_url"], raw)
-                            crop_label = st.session_state.get(f"crop_{it['id']}", "그대로")
+                            ck = f"crop_{it['id']}"
+                            crop_label = st.session_state.get(ck, "그대로")
                             crop_mode = CROP_MODES.get(crop_label)
+                            h_r = st.session_state.get(f"{ck}_h", (0, 100)) if crop_mode == "custom" else None
+                            v_r = st.session_state.get(f"{ck}_v", (0, 100)) if crop_mode == "custom" else None
                             final = stock_dir / f"stock_{offset:03d}.jpg"
-                            crop_image(raw, final, crop_mode)
+                            crop_image(raw, final, crop_mode, h_range=h_r, v_range=v_r)
                             try:
                                 if raw.exists() and raw != final:
                                     raw.unlink()
@@ -1165,8 +1228,10 @@ if go:
                         crop_label = st.session_state.get(crop_key, "그대로")
                         crop_mode = CROP_MODES.get(crop_label)
                         if crop_mode:
+                            h_r = st.session_state.get(f"{crop_key}_h", (0, 100)) if crop_mode == "custom" else None
+                            v_r = st.session_state.get(f"{crop_key}_v", (0, 100)) if crop_mode == "custom" else None
                             cropped = workdir / f"media_{i:03d}_cropped{ext}"
-                            crop_image(p, cropped, crop_mode)
+                            crop_image(p, cropped, crop_mode, h_range=h_r, v_range=v_r)
                             p = cropped
                     media_paths.append(p)
             # 라이브러리에서 골라둔 이미지도 풀에 추가
