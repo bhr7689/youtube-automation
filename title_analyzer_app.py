@@ -218,8 +218,40 @@ def parse_input_lines(raw: str) -> tuple[list[str], list[str]]:
 # ============================================================
 # 카테고리 검색: YouTube Data API v3로 인기 영상 제목 수집
 # ============================================================
+def _parse_iso_duration_to_seconds(s: str) -> Optional[int]:
+    """ISO 8601 'PT#H#M#S' → 초. 실패시 None."""
+    if not s:
+        return None
+    try:
+        import isodate
+        return int(isodate.parse_duration(s).total_seconds())
+    except Exception:
+        m = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", s)
+        if not m:
+            return None
+        h, mi, se = (int(x) if x else 0 for x in m.groups())
+        return h * 3600 + mi * 60 + se
+
+
+def _fetch_durations(youtube, video_ids: list[str]) -> dict[str, int]:
+    """videos.list(contentDetails) 로 ID→초 매핑."""
+    result: dict[str, int] = {}
+    for i in range(0, len(video_ids), 50):
+        chunk = video_ids[i : i + 50]
+        resp = youtube.videos().list(
+            part="contentDetails", id=",".join(chunk), maxResults=50
+        ).execute()
+        for item in resp.get("items", []):
+            vid = item.get("id")
+            dur = item.get("contentDetails", {}).get("duration")
+            secs = _parse_iso_duration_to_seconds(dur)
+            if vid and secs is not None:
+                result[vid] = secs
+    return result
+
+
 @st.cache_data(show_spinner=False, ttl=1800)
-def search_titles_by_category(
+def search_videos_by_category(
     category: str,
     api_key: str,
     *,
@@ -228,8 +260,8 @@ def search_titles_by_category(
     max_results: int = 30,
     region_code: str = "KR",
     language: str = "ko",
-) -> tuple[list[str], Optional[str]]:
-    """카테고리 키워드 → YouTube 검색 → 제목 리스트. (titles, error_or_None)"""
+) -> tuple[list[dict], Optional[str]]:
+    """카테고리 검색 → [{title, duration_s, video_id}, ...]"""
     try:
         from googleapiclient.discovery import build
     except Exception as e:
@@ -242,10 +274,10 @@ def search_titles_by_category(
         ).isoformat(timespec="seconds").replace("+00:00", "Z")
 
         youtube = build("youtube", "v3", developerKey=api_key, cache_discovery=False)
-        titles: list[str] = []
+        videos: list[dict] = []
         page_token = None
-        while len(titles) < max_results:
-            page_size = min(50, max_results - len(titles))
+        while len(videos) < max_results:
+            page_size = min(50, max_results - len(videos))
             resp = youtube.search().list(
                 part="snippet",
                 q=category,
@@ -258,14 +290,65 @@ def search_titles_by_category(
                 pageToken=page_token,
             ).execute()
             for item in resp.get("items", []):
-                snippet = item.get("snippet", {})
-                title = snippet.get("title")
-                if title:
-                    titles.append(title)
+                vid = item.get("id", {}).get("videoId")
+                title = item.get("snippet", {}).get("title")
+                if vid and title:
+                    videos.append({"video_id": vid, "title": title, "duration_s": None})
             page_token = resp.get("nextPageToken")
             if not page_token:
                 break
-        return titles, None
+
+        if videos:
+            durations = _fetch_durations(youtube, [v["video_id"] for v in videos])
+            for v in videos:
+                v["duration_s"] = durations.get(v["video_id"])
+        return videos, None
+    except Exception as e:
+        return [], str(e)
+
+
+@st.cache_data(show_spinner=False, ttl=1800)
+def fetch_trending_videos(
+    api_key: str,
+    *,
+    region_code: str = "KR",
+    max_results: int = 30,
+    category_id: Optional[str] = None,
+) -> tuple[list[dict], Optional[str]]:
+    """한국 인기 급상승 → [{title, duration_s, video_id}, ...]"""
+    try:
+        from googleapiclient.discovery import build
+    except Exception as e:
+        return [], f"googleapiclient 모듈이 없어요: {e}"
+
+    try:
+        youtube = build("youtube", "v3", developerKey=api_key, cache_discovery=False)
+        videos: list[dict] = []
+        page_token = None
+        while len(videos) < max_results:
+            page_size = min(50, max_results - len(videos))
+            resp = youtube.videos().list(
+                part="snippet,contentDetails",
+                chart="mostPopular",
+                regionCode=region_code,
+                maxResults=page_size,
+                videoCategoryId=category_id,
+                pageToken=page_token,
+            ).execute()
+            for item in resp.get("items", []):
+                vid = item.get("id")
+                title = item.get("snippet", {}).get("title")
+                secs = _parse_iso_duration_to_seconds(
+                    item.get("contentDetails", {}).get("duration", "")
+                )
+                if vid and title:
+                    videos.append(
+                        {"video_id": vid, "title": title, "duration_s": secs}
+                    )
+            page_token = resp.get("nextPageToken")
+            if not page_token:
+                break
+        return videos, None
     except Exception as e:
         return [], str(e)
 
@@ -420,26 +503,232 @@ def build_formula(r: dict) -> tuple[str, list[str]]:
 
 
 # ============================================================
+# 결과 렌더링
+# ============================================================
+def _render_bar(label: str, pct: float):
+    st.markdown(
+        f"<div class='bar-bg'><span class='bar-text'>{label} · {pct:.0f}%</span>"
+        f"<div class='bar-fg' style='width:{min(pct,100):.0f}%'></div></div>",
+        unsafe_allow_html=True,
+    )
+
+
+def render_analysis(videos: list[dict], section_label: str = "", *, color: str = "purple"):
+    """videos: [{title, duration_s}] — 분석 결과 한 섹션을 렌더링."""
+    titles = [v["title"] for v in videos]
+    if len(titles) < 2:
+        st.info(f"{section_label} — 영상이 {len(titles)}개라 패턴 분석은 건너뛸게요.")
+        return
+
+    r = analyze_titles(titles)
+
+    if section_label:
+        st.markdown(f"## {section_label}")
+    st.markdown(
+        f"<div class='score-big'>{r['n']}</div>"
+        f"<div class='score-sub'>개 영상 제목 분석</div>",
+        unsafe_allow_html=True,
+    )
+
+    formula, insights = build_formula(r)
+
+    st.markdown("### 🎯 제목 공식")
+    st.markdown(f"<div class='formula-card'>{formula}</div>", unsafe_allow_html=True)
+
+    st.markdown("### 💎 핵심 인사이트")
+    for ins in insights:
+        st.markdown(f"- {ins}")
+
+    st.markdown("### 📊 특수문자/요소 사용률")
+    _render_bar("이모지", r["emoji_pct"])
+    _render_bar("숫자", r["number_pct"])
+    _render_bar("대괄호 [ ]", r["bracket_pct"])
+    _render_bar("느낌표 !", r["excl_pct"])
+    _render_bar("물음표 ?", r["quest_pct"])
+    _render_bar("구분자 |/", r["pipe_pct"])
+
+    if r["word_top"]:
+        st.markdown("### 🔑 알고리즘이 댕겨오는 키워드 TOP")
+        tags_html = ""
+        max_count = r["word_top"][0][1]
+        for w, c in r["word_top"]:
+            hot = "tag-hot" if c >= max(2, max_count * 0.5) else ""
+            tags_html += f"<span class='tag {hot}'>{w} · {c}</span>"
+        st.markdown(tags_html, unsafe_allow_html=True)
+
+    if r["hook_hits"]:
+        st.markdown("### 🔥 후킹 단어 (감정/매력 유발)")
+        tags_html = ""
+        for w, c in r["hook_hits"]:
+            tags_html += f"<span class='tag tag-hot'>{w} · {c}</span>"
+        st.markdown(tags_html, unsafe_allow_html=True)
+
+    if r["bracket_top"]:
+        st.markdown("### 📦 대괄호 안에 자주 들어가는 말")
+        tags_html = ""
+        for w, c in r["bracket_top"]:
+            tags_html += f"<span class='tag'>[{w}] · {c}</span>"
+        st.markdown(tags_html, unsafe_allow_html=True)
+
+    if r["emoji_top"]:
+        st.markdown("### ✨ 자주 쓰는 이모지")
+        tags_html = ""
+        for em, c in r["emoji_top"]:
+            tags_html += f"<span class='tag'>{em} · {c}</span>"
+        st.markdown(tags_html, unsafe_allow_html=True)
+
+    if r["first_top"]:
+        st.markdown("### 👀 제목 첫 단어 패턴")
+        tags_html = ""
+        for w, c in r["first_top"]:
+            tags_html += f"<span class='tag'>{w}… · {c}</span>"
+        st.markdown(tags_html, unsafe_allow_html=True)
+
+    with st.expander(f"📋 분석한 제목 {len(videos)}개 펼쳐보기"):
+        sorted_videos = sorted(videos, key=lambda v: -len(v["title"]))
+        for v in sorted_videos:
+            t = v["title"]
+            ln = len(t)
+            dur = v.get("duration_s")
+            if dur is not None:
+                m, s = divmod(int(dur), 60)
+                dur_txt = f" · ⏱ {m}:{s:02d}"
+            else:
+                dur_txt = ""
+            st.markdown(
+                f"<div class='title-row'><div class='t'>{t}</div>"
+                f"<div class='s'>길이 {ln}자{dur_txt}</div></div>",
+                unsafe_allow_html=True,
+            )
+
+
+def split_shorts_longs(videos: list[dict]) -> tuple[list[dict], list[dict], list[dict]]:
+    """(쇼츠 <60s, 롱폼 ≥60s, 길이 모름)"""
+    shorts, longs, unknown = [], [], []
+    for v in videos:
+        d = v.get("duration_s")
+        if d is None:
+            unknown.append(v)
+        elif d < 60:
+            shorts.append(v)
+        else:
+            longs.append(v)
+    return shorts, longs, unknown
+
+
+def render_with_split(videos: list[dict], split_on: bool):
+    """쇼츠/롱폼 토글에 따라 한 번 또는 두 번 렌더링."""
+    shorts, longs, unknown = split_shorts_longs(videos)
+    has_dur = any(v.get("duration_s") is not None for v in videos)
+
+    if split_on and has_dur:
+        st.markdown("---")
+        st.markdown(
+            f"<div style='text-align:center;font-size:0.95rem;color:#6b7280;'>"
+            f"전체 {len(videos)}개 · ⚡쇼츠 {len(shorts)} · 📹롱폼 {len(longs)}"
+            + (f" · ❓길이모름 {len(unknown)}" if unknown else "")
+            + "</div>",
+            unsafe_allow_html=True,
+        )
+        if shorts:
+            st.markdown("---")
+            render_analysis(shorts, "⚡ 쇼츠 분석 (60초 미만)")
+        if longs:
+            st.markdown("---")
+            render_analysis(longs, "📹 롱폼 분석 (60초 이상)")
+        if not shorts and not longs:
+            st.warning("쇼츠/롱폼으로 나눌 수 없어요.")
+    else:
+        st.markdown("---")
+        render_analysis(videos, "🎬 전체 분석")
+
+
+# ============================================================
 # UI
 # ============================================================
 st.title("🔬 제목 알고리즘 분석")
-st.markdown("'잘 먹히는 유튜브 제목 공식'을 뽑아드려요.")
+st.markdown("'잘 먹히는 유튜브 제목 공식'과 '요즘 알고리즘이 댕겨오는 키워드'를 뽑아드려요.")
 
 mode = st.radio(
     "어떻게 분석할까요?",
-    ["📂 카테고리로 자동 수집", "✍️ 제목/URL 직접 붙여넣기"],
+    [
+        "🔥 요즘 알고리즘 트렌드 키워드",
+        "📂 카테고리로 자동 수집",
+        "✍️ 제목/URL 직접 붙여넣기",
+    ],
     horizontal=False,
     label_visibility="visible",
 )
 
-titles: list[str] = []
-failed: list[str] = []
+split_shorts = st.toggle(
+    "⚡ 쇼츠 / 📹 롱폼 따로 분석 (60초 기준)",
+    value=True,
+    help="유튜브 API 모드에서만 작동해요. 직접 붙여넣기는 길이 정보가 없어 합쳐서 분석돼요.",
+)
+
+videos: list[dict] = []
 go = False
 
-if mode.startswith("📂"):
+
+def _get_api_key() -> str:
+    key = os.environ.get("YOUTUBE_API_KEY", "").strip()
+    if not key:
+        st.warning("🔑 `YOUTUBE_API_KEY` 가 설정 안 됐어요. 아래에 임시로 넣어주세요.")
+        key = st.text_input("YOUTUBE_API_KEY", type="password")
+    return key
+
+
+if mode.startswith("🔥"):
     st.markdown(
-        "원하는 **카테고리/키워드**를 적으면 유튜브에서 인기 영상 제목을 모아 분석해요."
+        "**시드 키워드**를 적으면 그 키워드의 요즘 핫한 영상을 모아 분석해요. "
+        "비우면 한국 **인기 급상승** 영상 전반에서 알고리즘이 밀어주는 키워드를 보여드려요."
     )
+    seed = st.text_input(
+        "시드 키워드 (선택)",
+        placeholder="예: 여름, 휴가, 다이어트, 트로트… (비워두면 인기 급상승 전반)",
+    )
+    col1, col2 = st.columns(2)
+    with col1:
+        max_results = st.selectbox("몇 개 모을까요", [20, 30, 50], index=1)
+    with col2:
+        days = st.selectbox(
+            "기간 (시드 있을 때만)",
+            [7, 14, 30, 60],
+            index=1,
+            format_func=lambda d: f"최근 {d}일",
+        )
+
+    api_key = _get_api_key()
+    go = st.button("🔥 트렌드 분석하기")
+    if go:
+        if not api_key:
+            st.error("YouTube API 키가 필요해요.")
+            st.stop()
+        if seed.strip():
+            with st.spinner(f"'{seed}' 트렌드 영상 모으는 중…"):
+                videos, err = search_videos_by_category(
+                    seed.strip(),
+                    api_key,
+                    order="viewCount",
+                    days=days,
+                    max_results=max_results,
+                )
+        else:
+            with st.spinner("한국 인기 급상승 영상 모으는 중…"):
+                videos, err = fetch_trending_videos(
+                    api_key, max_results=max_results
+                )
+        if err:
+            st.error(f"수집 실패: {err}")
+            st.stop()
+        if not videos:
+            st.error("결과가 없어요.")
+            st.stop()
+        label = f"'{seed}' 트렌드" if seed.strip() else "한국 인기 급상승"
+        st.success(f"✅ {label} 영상 {len(videos)}개 수집 완료")
+
+elif mode.startswith("📂"):
+    st.markdown("원하는 **카테고리/키워드**의 유튜브 인기 영상 제목을 모아 분석해요.")
     category = st.text_input(
         "카테고리 / 키워드",
         placeholder="예: 트로트 메들리, 효도 노래, 7080 발라드, 먹방, 다이어트…",
@@ -456,16 +745,10 @@ if mode.startswith("📂"):
             }[x],
         )
     with col2:
-        max_results = st.selectbox("몇 개 모을까요", [20, 30, 50], index=1)
+        max_results = st.selectbox("몇 개 모을까요", [20, 30, 50], index=1, key="cat_max")
     days = st.slider("최근 며칠 안의 영상", 7, 365, 30, step=7)
 
-    api_key = os.environ.get("YOUTUBE_API_KEY", "").strip()
-    if not api_key:
-        st.warning(
-            "🔑 `YOUTUBE_API_KEY` 가 설정 안 됐어요. 아래에 임시로 넣어주세요."
-        )
-        api_key = st.text_input("YOUTUBE_API_KEY", type="password")
-
+    api_key = _get_api_key()
     go = st.button("🔬 카테고리 분석하기")
     if go:
         if not category.strip():
@@ -475,7 +758,7 @@ if mode.startswith("📂"):
             st.error("YouTube API 키가 필요해요.")
             st.stop()
         with st.spinner(f"'{category}' 유튜브에서 인기 제목 모으는 중…"):
-            titles, err = search_titles_by_category(
+            videos, err = search_videos_by_category(
                 category.strip(),
                 api_key,
                 order=order,
@@ -485,14 +768,14 @@ if mode.startswith("📂"):
         if err:
             st.error(f"수집 실패: {err}")
             st.stop()
-        if not titles:
+        if not videos:
             st.error("결과가 없어요. 다른 키워드로 다시 시도해보세요.")
             st.stop()
-        st.success(f"✅ '{category}' 영상 제목 {len(titles)}개 수집 완료")
+        st.success(f"✅ '{category}' 영상 {len(videos)}개 수집 완료")
 
 else:
     st.markdown("유튜브 **URL** 이나 **제목**을 한 줄에 하나씩 넣어주세요.")
-    with st.expander("💡 예시 보기 (눌러서 펴기)"):
+    with st.expander("💡 예시 보기"):
         st.code(
             "[효도트로트] 엄마가 들으면 눈물 흘리는 명곡 메들리 🎵\n"
             "https://www.youtube.com/watch?v=xxxxxxxxxxx\n"
@@ -502,8 +785,7 @@ else:
             language="text",
         )
     raw_input = st.text_area(
-        "분석할 제목 / URL",
-        height=220,
+        "분석할 제목 / URL", height=220,
         placeholder="제목이나 유튜브 URL을 한 줄에 하나씩…",
     )
     go = st.button("🔬 패턴 분석하기")
@@ -517,91 +799,11 @@ else:
             st.warning(
                 f"⚠️ {len(failed)}개 URL은 제목을 못 가져왔어요 (비공개/삭제 영상일 수 있음)"
             )
+        videos = [{"title": t, "duration_s": None, "video_id": None} for t in titles]
 
-if go and titles:
-    if len(titles) < 2:
-        st.error("분석하려면 제목이 2개 이상 필요해요.")
-        st.stop()
-    r = analyze_titles(titles)
-
-    st.markdown("---")
-    st.markdown(f"<div class='score-big'>{r['n']}</div>", unsafe_allow_html=True)
-    st.markdown("<div class='score-sub'>개의 제목을 분석했어요</div>", unsafe_allow_html=True)
-
-    formula, insights = build_formula(r)
-
-    st.markdown("## 🎯 제목 공식")
-    st.markdown(f"<div class='formula-card'>{formula}</div>", unsafe_allow_html=True)
-
-    st.markdown("## 💎 핵심 인사이트")
-    for ins in insights:
-        st.markdown(f"- {ins}")
-
-    st.markdown("## 📊 특수문자/요소 사용률")
-
-    def render_bar(label: str, pct: float):
-        st.markdown(
-            f"<div class='bar-bg'><span class='bar-text'>{label} · {pct:.0f}%</span>"
-            f"<div class='bar-fg' style='width:{min(pct,100):.0f}%'></div></div>",
-            unsafe_allow_html=True,
-        )
-
-    render_bar("이모지", r["emoji_pct"])
-    render_bar("숫자", r["number_pct"])
-    render_bar("대괄호 [ ]", r["bracket_pct"])
-    render_bar("느낌표 !", r["excl_pct"])
-    render_bar("물음표 ?", r["quest_pct"])
-    render_bar("구분자 |/", r["pipe_pct"])
-
-    if r["word_top"]:
-        st.markdown("## 🔑 자주 쓰는 단어 TOP")
-        tags_html = ""
-        max_count = r["word_top"][0][1]
-        for w, c in r["word_top"]:
-            hot = "tag-hot" if c >= max(2, max_count * 0.5) else ""
-            tags_html += f"<span class='tag {hot}'>{w} · {c}</span>"
-        st.markdown(tags_html, unsafe_allow_html=True)
-
-    if r["hook_hits"]:
-        st.markdown("## 🔥 후킹 단어 (감정/매력 유발)")
-        tags_html = ""
-        for w, c in r["hook_hits"]:
-            tags_html += f"<span class='tag tag-hot'>{w} · {c}</span>"
-        st.markdown(tags_html, unsafe_allow_html=True)
-
-    if r["bracket_top"]:
-        st.markdown("## 📦 대괄호 안에 자주 들어가는 말")
-        tags_html = ""
-        for w, c in r["bracket_top"]:
-            tags_html += f"<span class='tag'>[{w}] · {c}</span>"
-        st.markdown(tags_html, unsafe_allow_html=True)
-
-    if r["emoji_top"]:
-        st.markdown("## ✨ 자주 쓰는 이모지")
-        tags_html = ""
-        for em, c in r["emoji_top"]:
-            tags_html += f"<span class='tag'>{em} · {c}</span>"
-        st.markdown(tags_html, unsafe_allow_html=True)
-
-    if r["first_top"]:
-        st.markdown("## 👀 제목 첫 단어 패턴")
-        tags_html = ""
-        for w, c in r["first_top"]:
-            tags_html += f"<span class='tag'>{w}… · {c}</span>"
-        st.markdown(tags_html, unsafe_allow_html=True)
-
-    st.markdown("## 📋 분석한 제목들")
-    sorted_titles = sorted(
-        zip(r["titles"], r["lengths"]), key=lambda x: x[1], reverse=True
-    )
-    for t, ln in sorted_titles:
-        st.markdown(
-            f"<div class='title-row'><div class='t'>{t}</div>"
-            f"<div class='s'>길이 {ln}자</div></div>",
-            unsafe_allow_html=True,
-        )
-
+if go and videos:
+    render_with_split(videos, split_shorts)
     st.markdown(
-        "<div class='caption-small'>💡 더 많은 제목을 넣을수록 공식이 정확해져요</div>",
+        "<div class='caption-small'>💡 더 많은 영상을 넣을수록 공식이 정확해져요</div>",
         unsafe_allow_html=True,
     )
