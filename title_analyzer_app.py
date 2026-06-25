@@ -689,27 +689,45 @@ def build_formula(r: dict) -> tuple[str, list[str]]:
 # 시드 키워드 후보 추출 (단어 + 2-gram 결합)
 # ============================================================
 SEED_BLOCKLIST = {
+    # 영어/공통
     "ft", "feat", "official", "audio", "video", "mv", "live", "lyrics",
     "shorts", "short", "youtube", "vlog", "ep", "full", "ver", "version",
+    "the", "and", "for", "with", "you", "your", "are", "was", "were",
+    "this", "that", "but", "from", "have", "has", "not", "all", "new",
+    # 한국어
     "그녀의", "그리고", "이렇게", "그래서", "내가",
+    # 스페인어/포르투갈어
+    "el", "la", "los", "las", "de", "en", "del", "que", "por",
+    "para", "con", "una", "uno", "se", "lo", "su", "mi", "te",
+    "do", "da", "os", "as", "no", "na",
+    # 일본어 조사/공통
+    "の", "は", "を", "に", "が", "と", "で", "へ", "や", "も",
+    # 힌디어/인도
+    "है", "के", "की", "का", "में", "और", "से", "को",
 }
+
+# 유니코드 친화 단어 정규식: 모든 알파벳/한자/한글/히라가나/카타가나/힌디/태국 등을 잡음 (숫자/언더스코어 제외).
+WORD_RE = re.compile(r"[^\W\d_]+", flags=re.UNICODE)
 
 
 def extract_seed_keywords(titles: list[str], top_n: int = 12) -> list[tuple[str, int]]:
-    """제목에서 알고리즘 시드 후보를 추출 (단어 + 인접 2-gram)."""
+    """제목에서 알고리즘 시드 후보를 추출 (단어 + 인접 2-gram).
+    한국어/영어/일본어/힌디/스페인어/포르투갈어 모두 작동."""
     if not titles:
         return []
     word_c: Counter[str] = Counter()
     bigram_c: Counter[str] = Counter()
     for t in titles:
         tokens: list[str] = []
-        for m in HANGUL_WORD_RE.findall(t):
-            if len(m) >= 2 and m.lower() not in STOPWORDS and m.lower() not in SEED_BLOCKLIST:
-                tokens.append(m)
-        for m in ENG_WORD_RE.findall(t):
+        for m in WORD_RE.findall(t):
             ml = m.lower()
-            if len(ml) >= 2 and ml not in STOPWORDS and ml not in SEED_BLOCKLIST:
-                tokens.append(ml)
+            if len(ml) < 2:
+                continue
+            if ml in STOPWORDS or ml in SEED_BLOCKLIST:
+                continue
+            tokens.append(m if any(0xAC00 <= ord(c) <= 0xD7A3 or 0x3040 <= ord(c) <= 0x9FFF
+                                    or 0x0900 <= ord(c) <= 0x097F or 0x0E00 <= ord(c) <= 0x0E7F
+                                    for c in m) else ml)
         for tok in tokens:
             word_c[tok] += 1
         for a, b in zip(tokens, tokens[1:]):
@@ -900,39 +918,152 @@ def split_shorts_longs(videos: list[dict]) -> tuple[list[dict], list[dict], list
     return shorts, longs, unknown
 
 
-def render_with_split(videos: list[dict], split_on: bool, *, show_gems: bool = False):
-    """쇼츠/롱폼 토글에 따라 한 번 또는 두 번 렌더링."""
-    # 최상단: 시드 키워드 후보 (다음 영상 제목용)
-    st.markdown("---")
-    render_seed_block(videos)
-    if show_gems:
-        render_hidden_gems(videos)
+def filter_by_length(videos: list[dict], length_mode: str) -> list[dict]:
+    """length_mode: 'all' | 'shorts' | 'longs'"""
+    if length_mode == "shorts":
+        return [v for v in videos if (v.get("duration_s") or 99999) < 60]
+    if length_mode == "longs":
+        return [v for v in videos if (v.get("duration_s") or 0) >= 60]
+    return videos
 
+
+def render_with_split(videos: list[dict], length_mode: str, *, show_gems: bool = False):
+    """선택한 길이 필터로 한 번 렌더링."""
     shorts, longs, unknown = split_shorts_longs(videos)
     has_dur = any(v.get("duration_s") is not None for v in videos)
 
-    if split_on and has_dur:
-        st.markdown("---")
+    if has_dur:
         st.markdown(
             f"<div style='text-align:center;font-size:0.95rem;color:#6b7280;'>"
-            f"전체 {len(videos)}개 · ⚡쇼츠 {len(shorts)} · 📹롱폼 {len(longs)}"
+            f"수집 {len(videos)}개 · ⚡쇼츠 {len(shorts)} · 📹롱폼 {len(longs)}"
             + (f" · ❓길이모름 {len(unknown)}" if unknown else "")
             + "</div>",
             unsafe_allow_html=True,
         )
-        if shorts:
-            st.markdown("---")
-            render_seed_block(shorts)
-            render_analysis(shorts, "⚡ 쇼츠 분석 (60초 미만)")
-        if longs:
-            st.markdown("---")
-            render_seed_block(longs)
-            render_analysis(longs, "📹 롱폼 분석 (60초 이상)")
-        if not shorts and not longs:
-            st.warning("쇼츠/롱폼으로 나눌 수 없어요.")
+
+    filtered = filter_by_length(videos, length_mode)
+    label = {"all": "🎬 전체", "shorts": "⚡ 쇼츠만 (60초 미만)", "longs": "📹 롱폼만 (60초 이상)"}[length_mode]
+
+    if not filtered:
+        st.warning(f"{label} 조건에 맞는 영상이 없어요. 다른 옵션으로 다시 시도해보세요.")
+        return
+
+    st.markdown("---")
+    render_seed_block(filtered)
+    if show_gems:
+        render_hidden_gems(filtered)
+    render_analysis(filtered, label)
+
+
+# ============================================================
+# 글로벌 국가 프리셋
+# ============================================================
+COUNTRIES = [
+    ("🇰🇷 한국",          "KR", "ko"),
+    ("🇺🇸 미국 (영어)",    "US", "en"),
+    ("🇬🇧 영국 (영어)",    "GB", "en"),
+    ("🇯🇵 일본",          "JP", "ja"),
+    ("🇮🇳 인도 (힌디)",    "IN", "hi"),
+    ("🇮🇳 인도 (영어)",    "IN", "en"),
+    ("🇲🇽 멕시코 (스페인어)", "MX", "es"),
+    ("🇪🇸 스페인 (스페인어)", "ES", "es"),
+    ("🇧🇷 브라질 (포르투갈어)", "BR", "pt"),
+    ("🇩🇪 독일",          "DE", "de"),
+    ("🇫🇷 프랑스",        "FR", "fr"),
+    ("🇮🇩 인도네시아",     "ID", "id"),
+    ("🇻🇳 베트남",        "VN", "vi"),
+    ("🇹🇭 태국",          "TH", "th"),
+    ("🇵🇭 필리핀 (영어)",  "PH", "en"),
+]
+COUNTRY_LABEL_TO_RL = {c[0]: (c[1], c[2]) for c in COUNTRIES}
+
+
+# ============================================================
+# 다국가 비교 렌더링 (🌍 공통 / 🏳️ 국가별 고유)
+# ============================================================
+def render_multi_country(results: dict[str, list[dict]], length_mode: str):
+    """results: {country_label: [videos]} — 국가별 시드 발굴 결과를 비교."""
+    # 1) 길이 필터 적용
+    filtered: dict[str, list[dict]] = {
+        k: filter_by_length(v, length_mode) for k, v in results.items()
+    }
+    filtered = {k: v for k, v in filtered.items() if v}
+    if not filtered:
+        st.warning("선택한 길이 조건에 맞는 영상이 한 국가도 없어요.")
+        return
+
+    # 2) 국가별 시드 추출
+    country_seeds: dict[str, list[tuple[str, int]]] = {
+        c: extract_seed_keywords([v["title"] for v in vids], top_n=20)
+        for c, vids in filtered.items()
+    }
+
+    # 3) 공통/고유 분리: 2개 이상 국가에서 등장하면 공통
+    appear_in: dict[str, set[str]] = {}
+    for c, seeds in country_seeds.items():
+        for term, _ in seeds:
+            appear_in.setdefault(term, set()).add(c)
+    common_terms = sorted(
+        [(t, cs) for t, cs in appear_in.items() if len(cs) >= 2],
+        key=lambda x: (-len(x[1]), x[0]),
+    )
+
+    # 4) 헤더
+    st.markdown("---")
+    st.markdown(
+        f"<div style='text-align:center;font-size:1.0rem;color:#4338ca;font-weight:700;'>"
+        f"🌍 {len(filtered)}개국 비교 분석"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    # 5) 글로벌 공통 시드
+    if common_terms:
+        chips = ""
+        for term, cs in common_terms[:15]:
+            flags = "".join(c.split()[0] for c in sorted(cs))
+            chips += (
+                f"<span class='seed-chip'>{term} <span style='font-size:0.85em;opacity:0.8'>{flags}</span></span>"
+            )
+        st.markdown(
+            "<div class='seed-card'>"
+            "<div class='seed-title'>🌍 글로벌 공통 시드 — 2개국 이상에서 동시에 잡힌 키워드 (안전한 글로벌 제목)</div>"
+            f"{chips}"
+            "</div>",
+            unsafe_allow_html=True,
+        )
     else:
-        st.markdown("---")
-        render_analysis(videos, "🎬 전체 분석")
+        st.info(
+            "🌍 2개국 이상에서 공통으로 잡힌 시드가 없어요 — 카테고리 차이가 큰 결과예요."
+        )
+
+    # 6) 국가별 고유 시드 + 미니 분석
+    st.markdown("## 🏳️ 국가별 고유 시드 (현지화 제목용)")
+    for country, vids in filtered.items():
+        seeds = country_seeds[country]
+        unique = [(t, c) for t, c in seeds if len(appear_in.get(t, set())) == 1]
+        with st.expander(f"{country} · 영상 {len(vids)}개 · 고유 시드 {len(unique)}개", expanded=True):
+            if unique:
+                chips = "".join(
+                    f"<span class='seed-chip seed-chip-2'>{t} · {c}</span>"
+                    for t, c in unique[:12]
+                )
+                st.markdown(chips, unsafe_allow_html=True)
+            else:
+                st.markdown(
+                    "<span style='color:#6b7280;font-size:0.9rem;'>이 국가만의 고유 시드는 없어요 (공통 시드만 나옴)</span>",
+                    unsafe_allow_html=True,
+                )
+            # 미니 인사이트
+            r = analyze_titles([v["title"] for v in vids])
+            if r:
+                st.markdown(
+                    f"<div style='font-size:0.88rem;color:#4b5563;margin-top:8px;'>"
+                    f"📏 평균 {r['len_avg']:.0f}자 · ✨이모지 {r['emoji_pct']:.0f}% · "
+                    f"🔢숫자 {r['number_pct']:.0f}% · 📦대괄호 {r['bracket_pct']:.0f}%"
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
 
 
 # ============================================================
@@ -956,10 +1087,17 @@ mode = st.radio(
     label_visibility="visible",
 )
 
-split_shorts = st.toggle(
-    "⚡ 쇼츠 / 📹 롱폼 따로 분석 (60초 기준)",
-    value=True,
-    help="유튜브 API 모드에서만 작동해요. 직접 붙여넣기는 길이 정보가 없어 합쳐서 분석돼요.",
+length_mode_label = st.radio(
+    "어떤 길이로 분석할까요?",
+    ["🎬 전체", "⚡ 쇼츠만 (60초 미만)", "📹 롱폼만 (60초 이상)"],
+    horizontal=True,
+    label_visibility="visible",
+    help="유튜브 API 모드에서만 길이 필터가 작동해요. 직접 붙여넣기는 길이 정보가 없어 전체로 처리돼요.",
+)
+length_mode = (
+    "shorts" if length_mode_label.startswith("⚡")
+    else "longs" if length_mode_label.startswith("📹")
+    else "all"
 )
 
 videos: list[dict] = []
@@ -975,16 +1113,27 @@ def _get_api_key() -> str:
 
 
 show_gems_flag = False
+multi_country_results: dict[str, list[dict]] = {}
 
 if mode.startswith("🪄"):
     st.markdown(
         "사용자 입력 없이 앱이 직접 찾아드려요. **시드를 모를 때 이걸 쓰세요.**"
     )
+
+    selected_countries = st.multiselect(
+        "🌍 어느 나라/언어에서 발굴할까요? (여러 개 선택하면 비교 모드)",
+        options=[c[0] for c in COUNTRIES],
+        default=["🇰🇷 한국"],
+        help="2개 이상 선택하면 글로벌 공통 시드 vs 국가별 고유 시드를 비교해드려요.",
+    )
+    if not selected_countries:
+        st.info("최소 1개 국가를 선택해주세요.")
+
     sub_mode = st.radio(
         "어디서 발굴할까요?",
         [
             "💎 히든 젬 (구독자 적은데 조회수 폭발) — 추천",
-            "📺 메인 피드 (한국 인기 급상승)",
+            "📺 메인 피드 (인기 급상승)",
         ],
         horizontal=False,
         label_visibility="visible",
@@ -1022,31 +1171,54 @@ if mode.startswith("🪄"):
         if not api_key:
             st.error("YouTube API 키가 필요해요.")
             st.stop()
-        if sub_mode.startswith("💎"):
-            with st.spinner(
-                f"최근 {days}일 영상 풀에서 '구독자 대비 폭발' 영상 찾는 중… (시간이 좀 걸려요)"
-            ):
-                videos, err = fetch_hidden_gems(
-                    api_key,
-                    days=days,
-                    pool_size=min(200, top_n * 6),
-                    top_n=top_n,
-                    min_ratio=float(min_ratio),
-                    min_views=int(min_views),
-                )
-            show_gems_flag = True
-            label = f"💎 히든 젬 (최근 {days}일, {min_ratio}배 이상)"
-        else:
-            with st.spinner("한국 인기 급상승 영상 모으는 중…"):
-                videos, err = fetch_trending_videos(api_key, max_results=top_n)
-            label = "📺 한국 인기 급상승"
-        if err:
-            st.error(f"수집 실패: {err}")
+        if not selected_countries:
+            st.error("국가를 1개 이상 선택해주세요.")
             st.stop()
-        if not videos:
-            st.error("결과가 없어요. 조건(배수/조회수)을 낮춰보세요.")
+
+        is_multi = len(selected_countries) >= 2
+
+        for label_country in selected_countries:
+            region, lang = COUNTRY_LABEL_TO_RL[label_country]
+            if sub_mode.startswith("💎"):
+                with st.spinner(
+                    f"{label_country} · 최근 {days}일 풀에서 '구독자 대비 폭발' 영상 찾는 중…"
+                ):
+                    vids, err = fetch_hidden_gems(
+                        api_key,
+                        region_code=region,
+                        language=lang,
+                        days=days,
+                        pool_size=min(200, top_n * 6),
+                        top_n=top_n,
+                        min_ratio=float(min_ratio),
+                        min_views=int(min_views),
+                    )
+                show_gems_flag = True
+            else:
+                with st.spinner(f"{label_country} · 인기 급상승 영상 모으는 중…"):
+                    vids, err = fetch_trending_videos(
+                        api_key, region_code=region, max_results=top_n
+                    )
+            if err:
+                st.warning(f"{label_country} 수집 실패: {err}")
+                continue
+            if vids:
+                multi_country_results[label_country] = vids
+                videos.extend(vids)
+
+        if not multi_country_results:
+            st.error("결과가 없어요. 조건(배수/조회수)을 낮춰보거나 다른 국가를 선택해보세요.")
             st.stop()
-        st.success(f"✅ {label} 영상 {len(videos)}개 찾았어요")
+
+        # 단일 국가면 비교 모드 끄기
+        if not is_multi:
+            multi_country_results = {}
+
+        total = sum(len(v) for v in (multi_country_results.values() if multi_country_results else [videos]))
+        sub_label = "💎 히든 젬" if sub_mode.startswith("💎") else "📺 인기 급상승"
+        st.success(
+            f"✅ {sub_label} · {len(selected_countries)}개국 · 영상 {total}개 찾았어요"
+        )
 
 elif mode.startswith("🔥"):
     st.markdown(
@@ -1172,7 +1344,10 @@ else:
         videos = [{"title": t, "duration_s": None, "video_id": None} for t in titles]
 
 if go and videos:
-    render_with_split(videos, split_shorts, show_gems=show_gems_flag)
+    if multi_country_results:
+        render_multi_country(multi_country_results, length_mode)
+    else:
+        render_with_split(videos, length_mode, show_gems=show_gems_flag)
     st.markdown(
         "<div class='caption-small'>💡 더 많은 영상을 넣을수록 공식이 정확해져요</div>",
         unsafe_allow_html=True,
