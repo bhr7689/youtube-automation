@@ -159,6 +159,60 @@ h3 { font-size: 1.05rem !important; }
     text-align: center;
     margin-top: 14px;
 }
+.seed-card {
+    background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+    border: 2px solid #10b981;
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin: 12px 0;
+}
+.seed-title {
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: #065f46;
+    margin-bottom: 8px;
+}
+.seed-chip {
+    display: inline-block;
+    padding: 8px 14px;
+    margin: 4px;
+    border-radius: 18px;
+    background: #10b981;
+    color: white;
+    font-size: 1.0rem;
+    font-weight: 700;
+    box-shadow: 0 2px 4px rgba(16,185,129,0.3);
+}
+.seed-chip-2 {
+    background: #34d399;
+    font-size: 0.95rem;
+}
+.gem-row {
+    background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin: 8px 0;
+    border-left: 4px solid #f97316;
+}
+.gem-title {
+    font-size: 0.98rem;
+    color: #7c2d12;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+.gem-stats {
+    font-size: 0.85rem;
+    color: #9a3412;
+}
+.gem-ratio {
+    display: inline-block;
+    padding: 3px 9px;
+    background: #f97316;
+    color: white;
+    border-radius: 12px;
+    font-weight: 800;
+    font-size: 0.85rem;
+}
 </style>
 """,
     unsafe_allow_html=True,
@@ -303,6 +357,135 @@ def search_videos_by_category(
             for v in videos:
                 v["duration_s"] = durations.get(v["video_id"])
         return videos, None
+    except Exception as e:
+        return [], str(e)
+
+
+@st.cache_data(show_spinner=False, ttl=900)
+def fetch_hidden_gems(
+    api_key: str,
+    *,
+    region_code: str = "KR",
+    language: str = "ko",
+    days: int = 7,
+    pool_size: int = 200,
+    top_n: int = 30,
+    min_ratio: float = 2.0,
+    min_views: int = 5000,
+    keyword: str = "",
+) -> tuple[list[dict], Optional[str]]:
+    """구독자 대비 조회수가 폭발하는 영상 발굴.
+
+    1) 최근 N일 영상을 viewCount 정렬로 풀(pool) 수집
+    2) videos.list 로 viewCount + duration + channelId
+    3) channels.list 로 subscriberCount
+    4) viral_ratio = viewCount / max(subscriberCount, 100) 계산
+    5) min_ratio 이상 + min_views 이상만 남기고 ratio 내림차순 정렬, top_n 반환
+
+    반환 dict: title, duration_s, video_id, channel_title, view_count,
+              subscriber_count, viral_ratio
+    """
+    try:
+        from googleapiclient.discovery import build
+    except Exception as e:
+        return [], f"googleapiclient 모듈이 없어요: {e}"
+
+    try:
+        from datetime import datetime, timedelta, timezone
+        published_after = (
+            datetime.now(timezone.utc) - timedelta(days=days)
+        ).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+        youtube = build("youtube", "v3", developerKey=api_key, cache_discovery=False)
+
+        # 1) 후보 ID 풀
+        candidate_ids: list[str] = []
+        page_token = None
+        while len(candidate_ids) < pool_size:
+            page_size = min(50, pool_size - len(candidate_ids))
+            resp = youtube.search().list(
+                part="id",
+                q=keyword or "",
+                type="video",
+                order="viewCount",
+                publishedAfter=published_after,
+                maxResults=page_size,
+                regionCode=region_code or None,
+                relevanceLanguage=language or None,
+                pageToken=page_token,
+            ).execute()
+            for item in resp.get("items", []):
+                vid = item.get("id", {}).get("videoId")
+                if vid:
+                    candidate_ids.append(vid)
+            page_token = resp.get("nextPageToken")
+            if not page_token:
+                break
+
+        if not candidate_ids:
+            return [], None
+
+        # 2) videos.list 로 통계+길이+채널
+        videos_map: dict[str, dict] = {}
+        for i in range(0, len(candidate_ids), 50):
+            chunk = candidate_ids[i : i + 50]
+            resp = youtube.videos().list(
+                part="snippet,statistics,contentDetails",
+                id=",".join(chunk),
+                maxResults=50,
+            ).execute()
+            for item in resp.get("items", []):
+                vid = item.get("id")
+                snip = item.get("snippet", {})
+                stat = item.get("statistics", {})
+                cd = item.get("contentDetails", {})
+                videos_map[vid] = {
+                    "video_id": vid,
+                    "title": snip.get("title", ""),
+                    "channel_id": snip.get("channelId"),
+                    "channel_title": snip.get("channelTitle", ""),
+                    "view_count": int(stat.get("viewCount", 0) or 0),
+                    "duration_s": _parse_iso_duration_to_seconds(cd.get("duration", "")),
+                }
+
+        # 3) channels.list 로 구독자 수
+        channel_ids = list({v["channel_id"] for v in videos_map.values() if v.get("channel_id")})
+        sub_map: dict[str, int] = {}
+        hidden_sub_channels: set[str] = set()
+        for i in range(0, len(channel_ids), 50):
+            chunk = channel_ids[i : i + 50]
+            resp = youtube.channels().list(
+                part="statistics", id=",".join(chunk), maxResults=50,
+            ).execute()
+            for item in resp.get("items", []):
+                cid = item.get("id")
+                stat = item.get("statistics", {})
+                hidden = stat.get("hiddenSubscriberCount", False)
+                if hidden:
+                    hidden_sub_channels.add(cid)
+                    continue
+                sub_map[cid] = int(stat.get("subscriberCount", 0) or 0)
+
+        # 4) 비율 계산 + 필터
+        results = []
+        for v in videos_map.values():
+            cid = v.get("channel_id")
+            if not cid or cid in hidden_sub_channels:
+                continue
+            subs = sub_map.get(cid, 0)
+            views = v["view_count"]
+            if views < min_views:
+                continue
+            denom = max(subs, 100)
+            ratio = views / denom
+            if ratio < min_ratio:
+                continue
+            v["subscriber_count"] = subs
+            v["viral_ratio"] = ratio
+            results.append(v)
+
+        results.sort(key=lambda x: x["viral_ratio"], reverse=True)
+        return results[:top_n], None
     except Exception as e:
         return [], str(e)
 
@@ -503,8 +686,109 @@ def build_formula(r: dict) -> tuple[str, list[str]]:
 
 
 # ============================================================
+# 시드 키워드 후보 추출 (단어 + 2-gram 결합)
+# ============================================================
+SEED_BLOCKLIST = {
+    "ft", "feat", "official", "audio", "video", "mv", "live", "lyrics",
+    "shorts", "short", "youtube", "vlog", "ep", "full", "ver", "version",
+    "그녀의", "그리고", "이렇게", "그래서", "내가",
+}
+
+
+def extract_seed_keywords(titles: list[str], top_n: int = 12) -> list[tuple[str, int]]:
+    """제목에서 알고리즘 시드 후보를 추출 (단어 + 인접 2-gram)."""
+    if not titles:
+        return []
+    word_c: Counter[str] = Counter()
+    bigram_c: Counter[str] = Counter()
+    for t in titles:
+        tokens: list[str] = []
+        for m in HANGUL_WORD_RE.findall(t):
+            if len(m) >= 2 and m.lower() not in STOPWORDS and m.lower() not in SEED_BLOCKLIST:
+                tokens.append(m)
+        for m in ENG_WORD_RE.findall(t):
+            ml = m.lower()
+            if len(ml) >= 2 and ml not in STOPWORDS and ml not in SEED_BLOCKLIST:
+                tokens.append(ml)
+        for tok in tokens:
+            word_c[tok] += 1
+        for a, b in zip(tokens, tokens[1:]):
+            bigram_c[f"{a} {b}"] += 1
+
+    seeds: list[tuple[str, int]] = []
+    seen_terms: set[str] = set()
+    # 2회 이상 등장한 2-gram을 우선 (구체적인 시드일수록 가치 높음)
+    for term, c in bigram_c.most_common():
+        if c < 2:
+            break
+        seeds.append((term, c))
+        for w in term.split():
+            seen_terms.add(w)
+    for term, c in word_c.most_common():
+        if c < 2:
+            continue
+        if term in seen_terms:
+            continue
+        seeds.append((term, c))
+        seen_terms.add(term)
+    seeds.sort(key=lambda x: x[1], reverse=True)
+    return seeds[:top_n]
+
+
+# ============================================================
 # 결과 렌더링
 # ============================================================
+def render_seed_block(videos: list[dict]):
+    """결과 최상단에 '시드 키워드 후보' 카드 — 다음 영상 제목에 바로 쓰는 핵심 출력."""
+    titles = [v["title"] for v in videos]
+    seeds = extract_seed_keywords(titles, top_n=12)
+    if not seeds:
+        return
+    chips = ""
+    max_c = seeds[0][1]
+    for term, c in seeds:
+        cls = "seed-chip" if c >= max(2, max_c * 0.6) else "seed-chip seed-chip-2"
+        chips += f"<span class='{cls}'>{term} · {c}</span>"
+    st.markdown(
+        "<div class='seed-card'>"
+        "<div class='seed-title'>🎯 시드 키워드 후보 — 이걸 다음 영상 제목에 써보세요</div>"
+        f"{chips}"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def render_hidden_gems(videos: list[dict]):
+    """히든 젬 영상 카드 — 채널/구독자/조회수/배수 표시."""
+    if not videos or "viral_ratio" not in videos[0]:
+        return
+    st.markdown("### 💎 히든 젬 — 작은 채널인데 알고리즘이 밀어주는 영상")
+    for v in videos:
+        ratio = v.get("viral_ratio", 0)
+        subs = v.get("subscriber_count", 0)
+        views = v.get("view_count", 0)
+
+        def fmt(n: int) -> str:
+            if n >= 10_000_000:
+                return f"{n/10_000_000:.1f}천만"
+            if n >= 10_000:
+                return f"{n/10_000:.1f}만"
+            if n >= 1_000:
+                return f"{n/1_000:.1f}K"
+            return str(n)
+
+        ratio_txt = f"⚡ {ratio:.0f}배" if ratio >= 1 else f"⚡ {ratio:.1f}배"
+        st.markdown(
+            f"<div class='gem-row'>"
+            f"<div class='gem-title'>{v['title']}</div>"
+            f"<div class='gem-stats'>"
+            f"<span class='gem-ratio'>{ratio_txt}</span> &nbsp;"
+            f"📺 {v.get('channel_title','')} · 구독자 {fmt(subs)} → 조회수 {fmt(views)}"
+            f"</div></div>",
+            unsafe_allow_html=True,
+        )
+
+
 def _render_bar(label: str, pct: float):
     st.markdown(
         f"<div class='bar-bg'><span class='bar-text'>{label} · {pct:.0f}%</span>"
@@ -616,8 +900,14 @@ def split_shorts_longs(videos: list[dict]) -> tuple[list[dict], list[dict], list
     return shorts, longs, unknown
 
 
-def render_with_split(videos: list[dict], split_on: bool):
+def render_with_split(videos: list[dict], split_on: bool, *, show_gems: bool = False):
     """쇼츠/롱폼 토글에 따라 한 번 또는 두 번 렌더링."""
+    # 최상단: 시드 키워드 후보 (다음 영상 제목용)
+    st.markdown("---")
+    render_seed_block(videos)
+    if show_gems:
+        render_hidden_gems(videos)
+
     shorts, longs, unknown = split_shorts_longs(videos)
     has_dur = any(v.get("duration_s") is not None for v in videos)
 
@@ -632,9 +922,11 @@ def render_with_split(videos: list[dict], split_on: bool):
         )
         if shorts:
             st.markdown("---")
+            render_seed_block(shorts)
             render_analysis(shorts, "⚡ 쇼츠 분석 (60초 미만)")
         if longs:
             st.markdown("---")
+            render_seed_block(longs)
             render_analysis(longs, "📹 롱폼 분석 (60초 이상)")
         if not shorts and not longs:
             st.warning("쇼츠/롱폼으로 나눌 수 없어요.")
@@ -647,11 +939,15 @@ def render_with_split(videos: list[dict], split_on: bool):
 # UI
 # ============================================================
 st.title("🔬 제목 알고리즘 분석")
-st.markdown("'잘 먹히는 유튜브 제목 공식'과 '요즘 알고리즘이 댕겨오는 키워드'를 뽑아드려요.")
+st.markdown(
+    "**시드 키워드를 모를 때** → 앱이 알고리즘이 밀어주는 키워드를 발굴해드려요.\n\n"
+    "**시드를 알 때** → 그 키워드의 '제목 공식'을 뽑아드려요."
+)
 
 mode = st.radio(
     "어떻게 분석할까요?",
     [
+        "🪄 시드 키워드 자동 발굴 (추천)",
         "🔥 요즘 알고리즘 트렌드 키워드",
         "📂 카테고리로 자동 수집",
         "✍️ 제목/URL 직접 붙여넣기",
@@ -678,7 +974,81 @@ def _get_api_key() -> str:
     return key
 
 
-if mode.startswith("🔥"):
+show_gems_flag = False
+
+if mode.startswith("🪄"):
+    st.markdown(
+        "사용자 입력 없이 앱이 직접 찾아드려요. **시드를 모를 때 이걸 쓰세요.**"
+    )
+    sub_mode = st.radio(
+        "어디서 발굴할까요?",
+        [
+            "💎 히든 젬 (구독자 적은데 조회수 폭발) — 추천",
+            "📺 메인 피드 (한국 인기 급상승)",
+        ],
+        horizontal=False,
+        label_visibility="visible",
+    )
+    if sub_mode.startswith("💎"):
+        col1, col2 = st.columns(2)
+        with col1:
+            days = st.selectbox(
+                "최근 며칠 영상", [3, 7, 14, 30], index=1,
+                format_func=lambda d: f"최근 {d}일",
+            )
+        with col2:
+            top_n = st.selectbox("결과 개수", [15, 30, 50], index=1, key="gem_top")
+        min_ratio = st.slider(
+            "구독자 대비 조회수 배수 (이상)", 2, 50, 5,
+            help="조회수 ÷ 구독자수. 5배 이상이면 '구독자 1000명 채널인데 조회수 5000+' = 알고리즘 푸시 신호",
+        )
+        min_views = st.select_slider(
+            "최소 조회수",
+            options=[1000, 5000, 10_000, 50_000, 100_000],
+            value=5000,
+            format_func=lambda n: f"{n:,}회",
+        )
+    else:
+        col1, _ = st.columns(2)
+        with col1:
+            top_n = st.selectbox("결과 개수", [20, 30, 50], index=1, key="trend_top")
+        days = 0
+        min_ratio = 0
+        min_views = 0
+
+    api_key = _get_api_key()
+    go = st.button("🪄 알고리즘 시드 발굴하기")
+    if go:
+        if not api_key:
+            st.error("YouTube API 키가 필요해요.")
+            st.stop()
+        if sub_mode.startswith("💎"):
+            with st.spinner(
+                f"최근 {days}일 영상 풀에서 '구독자 대비 폭발' 영상 찾는 중… (시간이 좀 걸려요)"
+            ):
+                videos, err = fetch_hidden_gems(
+                    api_key,
+                    days=days,
+                    pool_size=min(200, top_n * 6),
+                    top_n=top_n,
+                    min_ratio=float(min_ratio),
+                    min_views=int(min_views),
+                )
+            show_gems_flag = True
+            label = f"💎 히든 젬 (최근 {days}일, {min_ratio}배 이상)"
+        else:
+            with st.spinner("한국 인기 급상승 영상 모으는 중…"):
+                videos, err = fetch_trending_videos(api_key, max_results=top_n)
+            label = "📺 한국 인기 급상승"
+        if err:
+            st.error(f"수집 실패: {err}")
+            st.stop()
+        if not videos:
+            st.error("결과가 없어요. 조건(배수/조회수)을 낮춰보세요.")
+            st.stop()
+        st.success(f"✅ {label} 영상 {len(videos)}개 찾았어요")
+
+elif mode.startswith("🔥"):
     st.markdown(
         "**시드 키워드**를 적으면 그 키워드의 요즘 핫한 영상을 모아 분석해요. "
         "비우면 한국 **인기 급상승** 영상 전반에서 알고리즘이 밀어주는 키워드를 보여드려요."
@@ -802,7 +1172,7 @@ else:
         videos = [{"title": t, "duration_s": None, "video_id": None} for t in titles]
 
 if go and videos:
-    render_with_split(videos, split_shorts)
+    render_with_split(videos, split_shorts, show_gems=show_gems_flag)
     st.markdown(
         "<div class='caption-small'>💡 더 많은 영상을 넣을수록 공식이 정확해져요</div>",
         unsafe_allow_html=True,
