@@ -200,14 +200,33 @@ def preprocess_to_segment(input_path, output_path, fixed_duration=None, pan_dire
     if is_image(input_path):
         duration = fixed_duration or IMG_INTERVAL
         if pan_direction in ("ltr", "rtl"):
-            # 좌우 패닝: 캔버스를 키운 뒤 1280x720 뷰포트가 가로로 이동
             if pan_direction == "ltr":
                 x_expr = f"(iw-1280)*t/{duration}"
             else:
                 x_expr = f"(iw-1280)*(1-t/{duration})"
+
+            # 파노라마 친화: 가로가 충분히 긴 이미지면 전체 폭을 그대로 패닝.
+            # 일반 비율은 캔버스를 키워 패닝 여백을 만든다.
+            try:
+                from PIL import Image
+                with Image.open(input_path) as _img:
+                    iw_src, ih_src = _img.size
+                scaled_w_at_720h = int(iw_src * 720 / ih_src) if ih_src > 0 else 1280
+            except Exception:
+                scaled_w_at_720h = 0
+
+            if scaled_w_at_720h > 1280:
+                # 파노라마 또는 가로로 긴 이미지: 높이만 720으로 맞추고 전체 폭 가로지름
+                scale_str = "scale=-2:720"
+                y_expr = "0"
+            else:
+                # 일반/세로 이미지: 캔버스 확대 후 패닝 여백 확보
+                scale_str = "scale=2240:1260:force_original_aspect_ratio=increase"
+                y_expr = "(ih-720)/2"
+
             vf = (
-                f"scale=2240:1260:force_original_aspect_ratio=increase,"
-                f"crop=1280:720:'{x_expr}':'(ih-720)/2',"
+                f"{scale_str},"
+                f"crop=1280:720:'{x_expr}':'{y_expr}',"
                 f"setsar=1,fps=30"
             )
         else:
@@ -524,7 +543,8 @@ order_mode = st.radio(
 
 # 5) 배경 이미지·영상 (선택, 직접 업로드)
 st.markdown('<div class="big-label">5️⃣ 배경 이미지·영상 (선택)</div>', unsafe_allow_html=True)
-st.caption("직접 올린 이미지(4분 30초씩) · 영상(본래 길이)을 왔다 갔다 보여줘요")
+st.caption("직접 올린 이미지(4분 30초씩) · 영상(본래 길이)을 왔다 갔다 보여줘요 · "
+           "**파노라마(가로로 긴 이미지)** 는 전체 폭을 그대로 가로지르며 패닝돼요")
 media_files = st.file_uploader(
     "JPG / PNG / MP4 / MOV 여러 개",
     type=["jpg", "jpeg", "png", "webp", "bmp", "mp4", "mov", "webm", "mkv", "m4v"],
@@ -542,6 +562,29 @@ if media_files:
         if st.button("🗑️ 빼기", key="clear_media", use_container_width=True):
             _clear_uploader("media")
             st.rerun()
+
+    # 업로드한 이미지: 미리보기 + 좌우 자르기 모드 (이미지만 — 영상은 그대로)
+    image_uploads = [m for m in media_files if Path(m.name).suffix.lower() in IMG_EXTS]
+    if image_uploads:
+        with st.expander(f"🔪 업로드한 이미지 {len(image_uploads)}장 미리보고 좌우 자르기"):
+            st.caption("이미지마다 사용할 부분을 골라요. 영상 파일은 자르기 없음 (원본 그대로).")
+            for row_start in range(0, len(image_uploads), 2):
+                row = image_uploads[row_start:row_start + 2]
+                cols = st.columns(2)
+                for col, mf in zip(cols, row):
+                    with col:
+                        try:
+                            st.image(mf, use_container_width=True)
+                        except Exception:
+                            pass
+                        st.caption(f"📁 {mf.name[:24]}")
+                        crop_key = f"up_crop_{mf.name}_{mf.size}"
+                        st.selectbox(
+                            "자르기",
+                            options=list(CROP_MODES.keys()),
+                            key=crop_key,
+                            label_visibility="collapsed",
+                        )
 
 # 6) 스톡 이미지 검색 · 미리보기 · 선택 · 자르기
 st.markdown(
@@ -816,6 +859,15 @@ if go:
                     p = workdir / f"media_{i:03d}{ext}"
                     with open(p, "wb") as f:
                         f.write(imf.getbuffer())
+                    # 업로드한 이미지에 자르기 모드 선택돼 있으면 적용
+                    if ext in IMG_EXTS:
+                        crop_key = f"up_crop_{imf.name}_{imf.size}"
+                        crop_label = st.session_state.get(crop_key, "그대로")
+                        crop_mode = CROP_MODES.get(crop_label)
+                        if crop_mode:
+                            cropped = workdir / f"media_{i:03d}_cropped{ext}"
+                            crop_image(p, cropped, crop_mode)
+                            p = cropped
                     media_paths.append(p)
             for stock_p in st.session_state.get("stock_paths", []):
                 if os.path.exists(stock_p):
