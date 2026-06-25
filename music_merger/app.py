@@ -573,9 +573,10 @@ with st.expander("⚙️ 막혔을 때 — 모든 업로드 한꺼번에 비우�
                   "lib_image_paths", "audio_path", "video_path", "workdir", "audio_label",
                   "search_results"):
             st.session_state.pop(k, None)
-        # 라이브러리 체크박스도 해제 (파일은 유지, 선택만 비움)
+        # 라이브러리 체크박스/자르기 키도 해제 (파일은 유지, 선택만 비움)
         for k in list(st.session_state.keys()):
-            if k.startswith("use_lib_img_") or k.startswith("use_lib_vid_"):
+            if (k.startswith("use_lib_img_") or k.startswith("use_lib_vid_")
+                    or k.startswith("lib_crop_")):
                 st.session_state.pop(k, None)
         st.rerun()
 
@@ -743,19 +744,50 @@ if total_lib > 0:
     ):
         st.caption("체크해서 이번에 사용 · 🗑️ 로 라이브러리에서 영구 삭제")
 
-        # 이미지 먼저
+        # 이미지 먼저 (자르기 + 미리보기)
         if saved_images:
-            st.markdown("**🖼️ 이미지**")
+            st.markdown("**🖼️ 이미지** (자르기 모드 골라서 사용)")
             for row_start in range(0, len(saved_images), 2):
                 row = saved_images[row_start:row_start + 2]
                 cols = st.columns(2)
                 for col, img in zip(cols, row):
                     with col:
+                        crop_key = f"lib_crop_{img.name}"
+                        crop_label = st.session_state.get(crop_key, "그대로")
+                        crop_mode_now = CROP_MODES.get(crop_label)
+                        h_range_now = st.session_state.get(f"{crop_key}_h", (0, 100))
+                        v_range_now = st.session_state.get(f"{crop_key}_v", (0, 100))
+                        # 자르기 적용된 미리보기
                         try:
-                            st.image(str(img), use_container_width=True)
+                            if crop_mode_now:
+                                from PIL import Image as _PILImage
+                                _pil = _PILImage.open(str(img))
+                                _cropped = crop_pil_image(
+                                    _pil, crop_mode_now,
+                                    h_range=h_range_now, v_range=v_range_now,
+                                )
+                                st.image(_cropped, use_container_width=True)
+                                if crop_mode_now == "custom":
+                                    st.caption(f"✂️ 가로 {h_range_now[0]}-{h_range_now[1]}% · 세로 {v_range_now[0]}-{v_range_now[1]}%")
+                                else:
+                                    st.caption(f"✂️ {crop_label}")
+                            else:
+                                st.image(str(img), use_container_width=True)
                         except Exception:
-                            pass
+                            try:
+                                st.image(str(img), use_container_width=True)
+                            except Exception:
+                                pass
                         st.caption(f"📁 {img.name[:24]}")
+                        st.selectbox(
+                            "자르기 (즉시 미리보기 반영)",
+                            options=list(CROP_MODES.keys()),
+                            key=crop_key,
+                            label_visibility="collapsed",
+                        )
+                        if st.session_state.get(crop_key) == "직접 지정 ✂️ (슬라이더)":
+                            st.slider("가로 범위 (%)", 0, 100, value=(0, 100), key=f"{crop_key}_h")
+                            st.slider("세로 범위 (%)", 0, 100, value=(0, 100), key=f"{crop_key}_v")
                         c1, c2 = st.columns([3, 1])
                         with c1:
                             st.checkbox("이번에 쓰기", key=f"use_lib_img_{img.name}")
@@ -1234,10 +1266,24 @@ if go:
                             crop_image(p, cropped, crop_mode, h_range=h_r, v_range=v_r)
                             p = cropped
                     media_paths.append(p)
-            # 라이브러리에서 골라둔 이미지도 풀에 추가
-            for lib_p in st.session_state.get("lib_image_paths", []):
-                if os.path.exists(lib_p):
-                    media_paths.append(Path(lib_p))
+            # 라이브러리에서 골라둔 이미지·영상 풀에 추가 (이미지는 자르기 모드 적용)
+            for lib_p_str in st.session_state.get("lib_image_paths", []):
+                if not os.path.exists(lib_p_str):
+                    continue
+                lib_p = Path(lib_p_str)
+                if lib_p.suffix.lower() in IMG_EXTS:
+                    lib_ck = f"lib_crop_{lib_p.name}"
+                    lib_crop_label = st.session_state.get(lib_ck, "그대로")
+                    lib_crop_mode = CROP_MODES.get(lib_crop_label)
+                    if lib_crop_mode:
+                        h_r = st.session_state.get(f"{lib_ck}_h", (0, 100)) if lib_crop_mode == "custom" else None
+                        v_r = st.session_state.get(f"{lib_ck}_v", (0, 100)) if lib_crop_mode == "custom" else None
+                        ext_lib = lib_p.suffix.lower()
+                        cropped_lib = workdir / f"lib_cropped_{lib_p.stem}{ext_lib}"
+                        crop_image(lib_p, cropped_lib, lib_crop_mode, h_range=h_r, v_range=v_r)
+                        media_paths.append(cropped_lib)
+                        continue
+                media_paths.append(lib_p)
             for stock_p in st.session_state.get("stock_paths", []):
                 if os.path.exists(stock_p):
                     media_paths.append(Path(stock_p))
