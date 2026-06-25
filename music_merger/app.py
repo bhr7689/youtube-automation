@@ -65,6 +65,17 @@ h2 { font-size: 1.3rem !important; }
 }
 .footer-links a { color: #666; margin: 0 0.5rem; }
 [data-testid="stFileUploaderDropzone"] { padding: 0.8rem; }
+
+/* 잘못 올린 파일의 X 버튼이 툴팁에 가려 안 눌리는 문제 — 강제로 위로 올림 */
+[data-testid="stFileUploaderFile"] button,
+[data-testid="stFileUploader"] button[kind="icon"] {
+    z-index: 9999 !important;
+    position: relative !important;
+}
+[data-testid="stFileUploaderFile"] [data-testid="stTooltipIcon"],
+[data-testid="stFileUploader"] [role="tooltip"] {
+    pointer-events: none !important;
+}
 </style>
 """,
     unsafe_allow_html=True,
@@ -327,9 +338,23 @@ def build_video(media_paths, audio_path, total_seconds, workdir, progress_cb=Non
     return video_out
 
 
+def _clear_uploader(key):
+    """파일 업로더 칸을 비운다. X 버튼이 안 눌릴 때 대안."""
+    st.session_state.pop(key, None)
+
+
 # ===================== UI =====================
 st.title("🎵 음악 이어붙이기")
 st.caption("음악과 이미지를 골라 긴 영상으로 만들어요 · 캡컷에 그대로 가져가세요")
+
+# 전역 초기화 버튼 (잘못 올린 파일이 X 버튼 안 눌릴 때 비상용)
+with st.expander("⚙️ 막혔을 때 — 모든 업로드 한꺼번에 비우기"):
+    st.caption("X 버튼이 안 눌릴 때 누르세요. 모든 업로드 칸이 비어요.")
+    if st.button("🔄 모두 비우고 처음부터", key="clear_all"):
+        for k in ("music", "nature", "media", "stock_paths", "stock_dir",
+                  "audio_path", "video_path", "workdir", "audio_label"):
+            st.session_state.pop(k, None)
+        st.rerun()
 
 # 1) 음악 업로드
 st.markdown('<div class="big-label">1️⃣ 음악 파일 올리기 <span style="color:#dc2626;">*필수</span></div>', unsafe_allow_html=True)
@@ -341,7 +366,13 @@ music_files = st.file_uploader(
     key="music",
 )
 if music_files:
-    st.caption(f"✅ {len(music_files)}곡 선택됨")
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        st.caption(f"✅ {len(music_files)}곡 선택됨")
+    with c2:
+        if st.button("🗑️ 빼기", key="clear_music", use_container_width=True):
+            _clear_uploader("music")
+            st.rerun()
 
 # 2) 자연의 소리 (선택)
 st.markdown('<div class="big-label">2️⃣ 자연의 소리 (선택)</div>', unsafe_allow_html=True)
@@ -358,7 +389,13 @@ nature_pattern = "계속 들리게"
 nature_on_sec = 0
 nature_off_sec = 0
 if nature_file is not None:
-    st.caption(f"🌿 {nature_file.name}")
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        st.caption(f"🌿 {nature_file.name}")
+    with c2:
+        if st.button("🗑️ 빼기", key="clear_nature", use_container_width=True):
+            _clear_uploader("nature")
+            st.rerun()
     nature_volume_pct = st.slider(
         "자연의 소리 크기 (음악 대비 %)",
         min_value=5, max_value=100, value=30, step=5,
@@ -421,7 +458,13 @@ media_files = st.file_uploader(
 if media_files:
     n_img = sum(1 for m in media_files if Path(m.name).suffix.lower() in IMG_EXTS)
     n_vid = len(media_files) - n_img
-    st.caption(f"🖼️ 이미지 {n_img}장 · 🎞️ 영상 {n_vid}개 선택됨")
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        st.caption(f"🖼️ 이미지 {n_img}장 · 🎞️ 영상 {n_vid}개 선택됨")
+    with c2:
+        if st.button("🗑️ 빼기", key="clear_media", use_container_width=True):
+            _clear_uploader("media")
+            st.rerun()
 
 # 6) 스톡 이미지·영상 가져오기 (Pexels)
 st.markdown(
