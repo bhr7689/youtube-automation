@@ -273,9 +273,10 @@ def build_audio(music_paths, total_seconds, workdir,
     return mixed
 
 
-def build_video(media_paths, audio_path, total_seconds, workdir, progress_cb=None):
-    """이미지/영상 혼합을 핑퐁 순서로 잇고, 음악 길이만큼 채우는 영상.
+def build_video(media_paths, total_seconds, workdir, audio_path=None, progress_cb=None):
+    """이미지/영상 혼합을 핑퐁 순서로 잇고, 정해진 길이로 채우는 영상.
 
+    audio_path=None 이면 무음 영상 (캡컷에서 음악과 따로 합치기 좋게).
     이미지는 4:30씩, 영상은 본래 길이대로 나옴."""
     # 1) 각 입력을 1280x720 30fps mp4 세그먼트로 정규화
     segments = []
@@ -307,22 +308,37 @@ def build_video(media_paths, audio_path, total_seconds, workdir, progress_cb=Non
                 f.write(f"file '{s.as_posix()}'\n")
 
     # 5) 합치기 (포맷 통일됐으니 비디오는 copy 가능)
-    # 오디오는 AAC 로 재인코딩 — 캡컷·아이폰 호환성 위해 MP3-in-MP4 회피
     video_out = workdir / "output_video.mp4"
-    cmd = [
-        "ffmpeg", "-y",
-        "-f", "concat", "-safe", "0", "-i", str(seg_list),
-        "-i", str(audio_path),
-        "-c:v", "copy",
-        "-c:a", "aac", "-b:a", "192k",
-        "-t", str(total_seconds),
-        "-shortest",
-        str(video_out),
-    ]
-    res = subprocess.run(cmd, capture_output=True, text=True)
-    if res.returncode != 0:
-        # copy 실패 시 재인코딩으로 폴백
-        cmd_re = [
+    if audio_path is None:
+        # 무음 영상 — 캡컷에서 음악·자연소리와 따로 합치기 좋게
+        cmd = [
+            "ffmpeg", "-y",
+            "-f", "concat", "-safe", "0", "-i", str(seg_list),
+            "-c:v", "copy", "-an",
+            "-t", str(total_seconds),
+            str(video_out),
+        ]
+        fallback = [
+            "ffmpeg", "-y",
+            "-f", "concat", "-safe", "0", "-i", str(seg_list),
+            "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+            "-an",
+            "-t", str(total_seconds),
+            str(video_out),
+        ]
+    else:
+        # 음악·자연소리를 그대로 영상에 깔기 (AAC 재인코딩)
+        cmd = [
+            "ffmpeg", "-y",
+            "-f", "concat", "-safe", "0", "-i", str(seg_list),
+            "-i", str(audio_path),
+            "-c:v", "copy",
+            "-c:a", "aac", "-b:a", "192k",
+            "-t", str(total_seconds),
+            "-shortest",
+            str(video_out),
+        ]
+        fallback = [
             "ffmpeg", "-y",
             "-f", "concat", "-safe", "0", "-i", str(seg_list),
             "-i", str(audio_path),
@@ -332,7 +348,9 @@ def build_video(media_paths, audio_path, total_seconds, workdir, progress_cb=Non
             "-shortest",
             str(video_out),
         ]
-        res2 = subprocess.run(cmd_re, capture_output=True, text=True)
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode != 0:
+        res2 = subprocess.run(fallback, capture_output=True, text=True)
         if res2.returncode != 0:
             raise RuntimeError(res2.stderr[-800:])
     return video_out
@@ -541,6 +559,17 @@ with st.expander("🌐 키워드로 무료 스톡 자동으로 가져오기 (Pex
     if pool_n > 0:
         st.caption(f"📦 스톡 풀: **{pool_n}개** (만들기 누르면 위 직접 업로드와 함께 사용돼요)")
 
+# 영상에 오디오 포함 여부 (기본: 무음 — 캡컷에서 합치기 좋게)
+bake_audio_in_video = st.checkbox(
+    "🎬 영상 MP4 에 음악·자연소리도 같이 깔기",
+    value=False,
+    help="기본은 무음 영상이에요 — 캡컷에서 음악과 따로 합치기 좋아요. 체크하면 음악과 자연소리가 영상에 같이 들어가요.",
+)
+if not bake_audio_in_video:
+    st.caption("ℹ️ 영상은 **무음**으로 만들어요. MP3 와 MP4 를 따로 받아 캡컷에서 합치세요.")
+else:
+    st.caption("ℹ️ 영상에 음악·자연소리가 같이 들어가요. MP4 한 개로 바로 업로드 가능.")
+
 st.markdown("---")
 
 # ── 만들기 직전 요약 카드 ─────────────────────────
@@ -575,9 +604,11 @@ if n_media_total > 0:
         parts.append(f"직접 {n_media_uploaded}개")
     if n_stock:
         parts.append(f"스톡 {n_stock}개")
-    summary_lines.append(f"🎬 배경 미디어 {n_media_total}개 ({' + '.join(parts)}) → 영상도 함께")
+    extra = "음악 같이 깔린 영상" if (bake_audio_in_video and n_music) else "무음 영상 (캡컷용)"
+    summary_lines.append(f"🎬 배경 미디어 {n_media_total}개 ({' + '.join(parts)}) → **{extra}**")
 else:
-    summary_lines.append("🎬 배경 없음 → MP3만 생성")
+    if n_music:
+        summary_lines.append("🎬 배경 없음 → MP3 만 생성")
 summary_lines.append(f"⏱️ 예상 소요 **약 {est_min}분** _(PC 성능에 따라 달라요)_")
 
 st.markdown(
@@ -593,8 +624,10 @@ st.markdown(
 go = st.button("🎬 만들기 시작", type="primary")
 
 if go:
-    if not music_files:
-        st.error("음악 파일을 먼저 올려주세요!")
+    has_music = bool(music_files)
+    has_media_input = bool(media_files) or bool(st.session_state.get("stock_paths"))
+    if not has_music and not has_media_input:
+        st.error("음악 또는 이미지/영상 중 하나는 꼭 올려주세요!")
     else:
         # 이전 임시폴더 정리 (디스크 청소)
         import shutil as _sh
@@ -613,45 +646,42 @@ if go:
             workdir = Path(tempfile.mkdtemp(prefix="merger_"))
             st.session_state["workdir"] = str(workdir)
 
-            # 음악 파일 저장
-            progress.progress(10, text="음악 파일 저장 중...")
-            music_paths = []
-            for i, mf in enumerate(music_files):
-                # 파일명에 따옴표/공백이 있어도 안전하도록 새 이름 부여
-                safe_name = f"track_{i:03d}{Path(mf.name).suffix.lower()}"
-                p = workdir / safe_name
-                with open(p, "wb") as f:
-                    f.write(mf.getbuffer())
-                music_paths.append(p)
+            audio_out = None
 
-            # 순서
-            if order_mode == "랜덤 섞기":
-                random.shuffle(music_paths)
+            if has_music:
+                # 음악 파일 저장
+                progress.progress(10, text="음악 파일 저장 중...")
+                music_paths = []
+                for i, mf in enumerate(music_files):
+                    safe_name = f"track_{i:03d}{Path(mf.name).suffix.lower()}"
+                    p = workdir / safe_name
+                    with open(p, "wb") as f:
+                        f.write(mf.getbuffer())
+                    music_paths.append(p)
+                if order_mode == "랜덤 섞기":
+                    random.shuffle(music_paths)
 
-            # 자연의 소리 저장 (있으면)
-            nature_path = None
-            if nature_file is not None:
-                ext = Path(nature_file.name).suffix.lower() or ".mp3"
-                nature_path = workdir / f"nature{ext}"
-                with open(nature_path, "wb") as f:
-                    f.write(nature_file.getbuffer())
+                # 자연의 소리 저장 (있으면)
+                nature_path = None
+                if nature_file is not None:
+                    ext = Path(nature_file.name).suffix.lower() or ".mp3"
+                    nature_path = workdir / f"nature{ext}"
+                    with open(nature_path, "wb") as f:
+                        f.write(nature_file.getbuffer())
 
-            # 음악 합치기 (+ 자연의 소리 믹스)
-            stage_msg = f"{duration_choice} 분량으로 이어붙이는 중... (몇 분 걸려요)"
-            if nature_path is not None:
-                stage_msg = f"{duration_choice} 분량 + 자연의 소리 섞는 중... (몇 분 걸려요)"
-            progress.progress(25, text=stage_msg)
-            audio_out = build_audio(
-                music_paths, target_sec, workdir,
-                nature_path=nature_path,
-                nature_volume=nature_volume_pct / 100.0,
-                nature_on_sec=nature_on_sec,
-                nature_off_sec=nature_off_sec,
-            )
-
-            st.session_state["audio_path"] = str(audio_out)
-            st.session_state["audio_label"] = duration_choice
-            st.session_state.pop("video_path", None)
+                stage_msg = f"{duration_choice} 분량으로 이어붙이는 중... (몇 분 걸려요)"
+                if nature_path is not None:
+                    stage_msg = f"{duration_choice} 분량 + 자연의 소리 섞는 중... (몇 분 걸려요)"
+                progress.progress(25, text=stage_msg)
+                audio_out = build_audio(
+                    music_paths, target_sec, workdir,
+                    nature_path=nature_path,
+                    nature_volume=nature_volume_pct / 100.0,
+                    nature_on_sec=nature_on_sec,
+                    nature_off_sec=nature_off_sec,
+                )
+                st.session_state["audio_path"] = str(audio_out)
+                st.session_state["audio_label"] = duration_choice
 
             # 배경 미디어(직접 업로드 + 스톡 풀) 모으기
             media_paths = []
@@ -667,16 +697,20 @@ if go:
                     media_paths.append(Path(stock_p))
 
             if media_paths:
-                progress.progress(55, text=f"배경 영상 만드는 중... ({len(media_paths)}개 미디어 정규화)")
+                mode_msg = "음악 깔린 영상" if (bake_audio_in_video and audio_out) else "무음 영상"
+                progress.progress(55, text=f"{mode_msg} 만드는 중... ({len(media_paths)}개 미디어 정규화)")
 
                 def _prog(done, total):
                     pct = 55 + int(35 * done / max(1, total))
                     progress.progress(min(pct, 90), text=f"미디어 정규화 {done}/{total}...")
 
+                video_audio = audio_out if (bake_audio_in_video and audio_out) else None
                 video_out = build_video(
-                    media_paths, audio_out, target_sec, workdir, progress_cb=_prog,
+                    media_paths, target_sec, workdir,
+                    audio_path=video_audio, progress_cb=_prog,
                 )
                 st.session_state["video_path"] = str(video_out)
+                st.session_state["audio_label"] = duration_choice
 
             progress.progress(100, text="완성!")
             st.success("✅ 다 됐어요! 아래에서 다운로드 받으세요.")
