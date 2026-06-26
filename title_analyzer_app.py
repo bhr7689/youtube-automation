@@ -831,6 +831,63 @@ def render_hidden_gems(videos: list[dict]):
         )
 
 
+def render_notion_save_panel(videos: list[dict], *, search_label: str,
+                              default_main: str = "유튜브 플레이리스트",
+                              default_middle: str = "", default_sub: str = ""):
+    """결과 위에 'Notion에 저장' 패널 — 토큰·DB·카테고리 입력 + 버튼."""
+    if not videos:
+        return
+    with st.expander(f"💾 이 결과 {len(videos)}개 영상을 Notion에 저장", expanded=False):
+        env_token = os.environ.get("NOTION_TOKEN", "").strip()
+        env_db = os.environ.get("NOTION_REFERENCE_VIDEOS_DB_ID", "").strip()
+
+        notion_token = st.text_input(
+            "Notion Token", value=env_token, type="password",
+            help=".env 에 NOTION_TOKEN 적어두면 자동 채워져요.",
+        )
+        notion_db = st.text_input(
+            "Reference Videos DB ID", value=env_db,
+            help="DB 페이지 URL 의 32자 hex (예: notion.so/2026/abcd1234.../?v=… 의 abcd1234…)",
+        )
+        col_a, col_b, col_c = st.columns(3)
+        with col_a:
+            main_cat = st.text_input("대 카테고리", value=default_main, key="save_main")
+        with col_b:
+            middle_cat = st.text_input("중 카테고리", value=default_middle, key="save_middle")
+        with col_c:
+            sub_cat = st.text_input("소 카테고리", value=default_sub, key="save_sub")
+        kw_label = st.text_input(
+            "Search Keyword 라벨", value=search_label,
+            help="이 결과가 어떤 검색 조건으로 나온 것인지 라벨링하는 텍스트. Notion에서 필터·정렬용.",
+        )
+
+        if st.button("💾 Notion에 저장하기", key=f"notion_save_{search_label}", type="primary"):
+            if not notion_token or not notion_db:
+                st.error("Notion Token 과 DB ID 를 입력해주세요.")
+                return
+            try:
+                from keyword_collector import upsert_videos
+            except Exception as e:
+                st.error(f"keyword_collector import 실패: {e}")
+                return
+            kw_row = {
+                "keyword": kw_label,
+                "main": main_cat or None,
+                "middle": middle_cat or None,
+                "sub": sub_cat or None,
+            }
+            with st.spinner(f"{len(videos)}개 영상 Notion 저장 중…"):
+                try:
+                    created, skipped = upsert_videos(
+                        notion_token, notion_db, videos, kw_row, kw_label,
+                    )
+                except Exception as e:
+                    st.error(f"저장 실패: {e}")
+                    return
+            st.success(f"✅ 신규 {created}건 · 기존 업데이트 {skipped}건 저장 완료")
+            st.balloons()
+
+
 def render_videos_table(videos: list[dict], title: str = ""):
     """HiView 스타일의 표 — 썸네일/제목/조회수/구독자/실적도/게시일/좋아요/댓글/길이/채널."""
     if not videos:
@@ -1011,7 +1068,8 @@ def filter_by_length(videos: list[dict], length_mode: str) -> list[dict]:
 
 
 def render_with_split(videos: list[dict], length_mode: str, *,
-                      show_gems: bool = False, view_mode: str = "table"):
+                      show_gems: bool = False, view_mode: str = "table",
+                      search_label: str = "", category_default: tuple = ("", "", "")):
     """선택한 길이 필터로 한 번 렌더링."""
     shorts, longs, unknown = split_shorts_longs(videos)
     has_dur = any(v.get("duration_s") is not None for v in videos)
@@ -1033,6 +1091,13 @@ def render_with_split(videos: list[dict], length_mode: str, *,
         return
 
     st.markdown("---")
+    if search_label:
+        m, mi, s = (category_default + ("", "", ""))[:3]
+        render_notion_save_panel(
+            filtered, search_label=search_label,
+            default_main=m or "유튜브 플레이리스트",
+            default_middle=mi, default_sub=s,
+        )
     render_seed_block(filtered)
 
     if view_mode == "table":
@@ -1070,7 +1135,9 @@ COUNTRY_LABEL_TO_RL = {c[0]: (c[1], c[2]) for c in COUNTRIES}
 # 다국가 비교 렌더링 (🌍 공통 / 🏳️ 국가별 고유)
 # ============================================================
 def render_multi_country(results: dict[str, list[dict]], length_mode: str,
-                          view_mode: str = "table"):
+                          view_mode: str = "table",
+                          search_label: str = "",
+                          category_default: tuple = ("", "", "")):
     """results: {country_label: [videos]} — 국가별 시드 발굴 결과를 비교."""
     # 1) 길이 필터 적용
     filtered: dict[str, list[dict]] = {
@@ -1126,9 +1193,17 @@ def render_multi_country(results: dict[str, list[dict]], length_mode: str,
             "🌍 2개국 이상에서 공통으로 잡힌 시드가 없어요 — 카테고리 차이가 큰 결과예요."
         )
 
-    # 6) 국가별 고유 시드 + 미니 분석 (또는 표)
+    # 6) 국가별 고유 시드 + 미니 분석 (또는 표) + 국가별 Notion 저장
     st.markdown("## 🏳️ 국가별 고유 시드 (현지화 제목용)")
     for country, vids in filtered.items():
+        if search_label:
+            m, mi, s = (category_default + ("", "", ""))[:3]
+            render_notion_save_panel(
+                vids,
+                search_label=f"{search_label} · {country}",
+                default_main=m or "유튜브 플레이리스트",
+                default_middle=mi, default_sub=s,
+            )
         seeds = country_seeds[country]
         unique = [(t, c) for t, c in seeds if len(appear_in.get(t, set())) == 1]
         with st.expander(f"{country} · 영상 {len(vids)}개 · 고유 시드 {len(unique)}개", expanded=True):
@@ -1166,6 +1241,24 @@ st.markdown(
     "**시드 키워드를 모를 때** → 앱이 알고리즘이 밀어주는 키워드를 발굴해드려요.\n\n"
     "**시드를 알 때** → 그 키워드의 '제목 공식'을 뽑아드려요."
 )
+
+with st.expander("🤖 매일 자동 수집 + Notion 저장 켜는 법 (한 번만 셋업)"):
+    st.markdown(
+        "**자동 수집 흐름** — GitHub Actions 가 매일 새벽 정해진 시간에 사용자님이 "
+        "Notion 의 'Search Keyword Master' DB에 등록한 ACTIVE 키워드들을 모두 검색해서, "
+        "결과 영상을 'YouTube Reference Videos' DB에 한 줄씩 자동 저장해줘요.\n\n"
+        "**셋업 4단계**\n"
+        "1. Notion → Settings → Connections → '+ New integration' → token 복사\n"
+        "2. Notion 에 DB 2개 만들기 (Search Keyword Master + YouTube Reference Videos). "
+        "   두 DB 모두 우상단 ··· → Connections 에 방금 만든 integration 추가\n"
+        "3. GitHub 저장소 → Settings → Secrets → 4개 등록:\n"
+        "   `YOUTUBE_API_KEY` · `NOTION_TOKEN` · `NOTION_KEYWORD_MASTER_DB_ID` · "
+        "`NOTION_REFERENCE_VIDEOS_DB_ID`\n"
+        "4. GitHub 저장소 → Actions 탭 → '📚 키워드별 레퍼런스 영상 수집 (WF-1)' "
+        "워크플로우 활성화. 매일 03:30 KST 자동 실행.\n\n"
+        "**수동 저장**: 자동 수집을 안 켜도 결과 화면의 **💾 Notion에 저장** 버튼으로 "
+        "지금 본 영상을 즉시 DB에 넣을 수 있어요. (Notion DB 만들기는 같은 셋업 필요)"
+    )
 
 mode = st.radio(
     "어떻게 분석할까요?",
@@ -1215,6 +1308,8 @@ def _get_api_key() -> str:
 
 show_gems_flag = False
 multi_country_results: dict[str, list[dict]] = {}
+search_label_for_save = ""
+category_default_for_save: tuple = ("", "", "")
 
 if mode.startswith("🪄"):
     st.markdown(
@@ -1320,6 +1415,10 @@ if mode.startswith("🪄"):
         st.success(
             f"✅ {sub_label} · {len(selected_countries)}개국 · 영상 {total}개 찾았어요"
         )
+        from datetime import datetime as _dt
+        search_label_for_save = (
+            f"{sub_label} · {','.join(selected_countries)} · {_dt.now().strftime('%Y-%m-%d')}"
+        )
 
 elif mode.startswith("🔥"):
     st.markdown(
@@ -1369,6 +1468,7 @@ elif mode.startswith("🔥"):
             st.stop()
         label = f"'{seed}' 트렌드" if seed.strip() else "한국 인기 급상승"
         st.success(f"✅ {label} 영상 {len(videos)}개 수집 완료")
+        search_label_for_save = label
 
 elif mode.startswith("📂"):
     st.markdown("원하는 **카테고리/키워드**의 유튜브 인기 영상 제목을 모아 분석해요.")
@@ -1415,6 +1515,7 @@ elif mode.startswith("📂"):
             st.error("결과가 없어요. 다른 키워드로 다시 시도해보세요.")
             st.stop()
         st.success(f"✅ '{category}' 영상 {len(videos)}개 수집 완료")
+        search_label_for_save = category.strip()
 
 else:
     st.markdown("유튜브 **URL** 이나 **제목**을 한 줄에 하나씩 넣어주세요.")
@@ -1443,12 +1544,22 @@ else:
                 f"⚠️ {len(failed)}개 URL은 제목을 못 가져왔어요 (비공개/삭제 영상일 수 있음)"
             )
         videos = [{"title": t, "duration_s": None, "video_id": None} for t in titles]
+        from datetime import datetime as _dt
+        search_label_for_save = f"수동 입력 · {_dt.now().strftime('%Y-%m-%d')}"
 
 if go and videos:
     if multi_country_results:
-        render_multi_country(multi_country_results, length_mode, view_mode=view_mode)
+        render_multi_country(
+            multi_country_results, length_mode, view_mode=view_mode,
+            search_label=search_label_for_save,
+            category_default=category_default_for_save,
+        )
     else:
-        render_with_split(videos, length_mode, show_gems=show_gems_flag, view_mode=view_mode)
+        render_with_split(
+            videos, length_mode, show_gems=show_gems_flag, view_mode=view_mode,
+            search_label=search_label_for_save,
+            category_default=category_default_for_save,
+        )
     st.markdown(
         "<div class='caption-small'>💡 더 많은 영상을 넣을수록 공식이 정확해져요</div>",
         unsafe_allow_html=True,
