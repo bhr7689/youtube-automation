@@ -466,13 +466,15 @@ def build_audio(music_paths, total_seconds, workdir,
     return mixed
 
 
-def build_video(media_paths, total_seconds, workdir, audio_path=None, pan_enabled=True, progress_cb=None):
+def build_video(media_paths, total_seconds, workdir, audio_path=None,
+                pan_enabled=True, image_duration=None, progress_cb=None):
     """이미지/영상 혼합을 핑퐁 순서로 잇고, 정해진 길이로 채우는 영상.
 
     audio_path=None 이면 무음 영상 (캡컷에서 음악과 따로 합치기 좋게).
-    pan_enabled=True 이면 이미지마다 좌우 패닝(켄번스). 짝수번 이미지는 왼→오,
-    홀수번은 오→왼 으로 번갈아 가며 '왔다 갔다' 느낌이 살아남.
-    이미지는 4:30씩, 영상은 본래 길이대로 나옴."""
+    pan_enabled=True 이면 이미지마다 좌우 패닝(켄번스).
+    image_duration: 각 이미지가 표시되는 시간(초). None 이면 4:30(기본).
+                    미리보기 영상에는 5 같은 작은 값을 넣어 빠르게 확인."""
+    img_dur = image_duration or IMG_INTERVAL
     # 1) 각 입력을 1280x720 30fps mp4 세그먼트로 정규화
     segments = []
     image_idx = 0
@@ -482,7 +484,7 @@ def build_video(media_paths, total_seconds, workdir, audio_path=None, pan_enable
         if pan_enabled and is_image(p):
             direction = "ltr" if image_idx % 2 == 0 else "rtl"
             image_idx += 1
-        preprocess_to_segment(p, seg, fixed_duration=IMG_INTERVAL, pan_direction=direction)
+        preprocess_to_segment(p, seg, fixed_duration=img_dur, pan_direction=direction)
         segments.append(seg)
         if progress_cb:
             progress_cb(i + 1, len(media_paths))
@@ -1175,8 +1177,86 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# 만들기 버튼
-go = st.button("🎬 만들기 시작", type="primary")
+# 미리보기 + 만들기 버튼
+col_p, col_g = st.columns([1, 1])
+with col_p:
+    preview_clicked = st.button(
+        "🔍 미리보기 30초",
+        use_container_width=True,
+        help="짧은 샘플 영상으로 어떻게 합쳐지는지 미리 봐요 (이미지 5초씩 빠르게 패닝)",
+    )
+with col_g:
+    go = st.button("🎬 만들기 시작", type="primary", use_container_width=True)
+
+# 미리보기 처리 — 선택된 미디어로 30초 무음 샘플 영상 생성
+if preview_clicked:
+    has_media_for_preview = (
+        bool(media_files)
+        or bool(st.session_state.get("stock_paths"))
+        or bool(st.session_state.get("lib_image_paths"))
+    )
+    if not has_media_for_preview:
+        st.warning("미리보기는 이미지·영상을 한 장이라도 선택한 후 가능해요!")
+    else:
+        with st.spinner("🔍 30초 미리보기 영상 만드는 중... (10~20초 걸려요)"):
+            try:
+                preview_dir = Path(tempfile.mkdtemp(prefix="preview_"))
+                # 미디어 수집 + 자르기 적용 (만들기 로직과 동일하지만 preview_dir 에 저장)
+                preview_media = []
+                if media_files:
+                    for i, imf in enumerate(media_files):
+                        ext = Path(imf.name).suffix.lower() or ".jpg"
+                        p = preview_dir / f"media_{i:03d}{ext}"
+                        with open(p, "wb") as f:
+                            f.write(imf.getbuffer())
+                        if ext in IMG_EXTS:
+                            ck = f"up_crop_{imf.name}_{imf.size}"
+                            cmode = CROP_MODES.get(st.session_state.get(ck, "그대로"))
+                            if cmode:
+                                h_r = st.session_state.get(f"{ck}_h", (0, 100)) if cmode == "custom" else None
+                                v_r = st.session_state.get(f"{ck}_v", (0, 100)) if cmode == "custom" else None
+                                cp = preview_dir / f"media_{i:03d}_c{ext}"
+                                crop_image(p, cp, cmode, h_range=h_r, v_range=v_r)
+                                p = cp
+                        preview_media.append(p)
+                for lib_p_str in st.session_state.get("lib_image_paths", []):
+                    if not os.path.exists(lib_p_str):
+                        continue
+                    lib_p = Path(lib_p_str)
+                    if lib_p.suffix.lower() in IMG_EXTS:
+                        ck = f"lib_crop_{lib_p.name}"
+                        cmode = CROP_MODES.get(st.session_state.get(ck, "그대로"))
+                        if cmode:
+                            h_r = st.session_state.get(f"{ck}_h", (0, 100)) if cmode == "custom" else None
+                            v_r = st.session_state.get(f"{ck}_v", (0, 100)) if cmode == "custom" else None
+                            cp = preview_dir / f"lib_c_{lib_p.stem}{lib_p.suffix}"
+                            crop_image(lib_p, cp, cmode, h_range=h_r, v_range=v_r)
+                            preview_media.append(cp)
+                            continue
+                    preview_media.append(lib_p)
+                for stock_p in st.session_state.get("stock_paths", []):
+                    if os.path.exists(stock_p):
+                        preview_media.append(Path(stock_p))
+
+                if not preview_media:
+                    st.error("미리볼 미디어가 없어요!")
+                else:
+                    # 각 이미지 5초씩 + 총 30초 (이미지 많으면 핑퐁 한 사이클)
+                    preview_out = build_video(
+                        preview_media, 30, preview_dir,
+                        audio_path=None,
+                        pan_enabled=pan_enabled,
+                        image_duration=5,
+                    )
+                    st.session_state["preview_path"] = str(preview_out)
+            except Exception as e:
+                st.error(f"미리보기 실패: {e}")
+
+# 미리보기 영상 표시
+if st.session_state.get("preview_path") and os.path.exists(st.session_state["preview_path"]):
+    st.markdown("#### 🔍 30초 미리보기 (실제 영상은 이미지마다 4분 30초씩 천천히 패닝)")
+    st.video(st.session_state["preview_path"])
+    st.caption("⬆️ 어떻게 합쳐지고 흐를지 미리 보고, 마음에 들면 ⬇️ '만들기 시작' 누르세요.")
 
 if go:
     has_music = bool(music_files)
@@ -1313,27 +1393,33 @@ if go:
             st.error(f"오류가 났어요: {e}")
 
 # 결과 다운로드 + 미리보기 + 다시 시작하기
-if st.session_state.get("audio_path") and os.path.exists(st.session_state["audio_path"]):
+_has_audio_out = bool(st.session_state.get("audio_path")) and os.path.exists(
+    st.session_state.get("audio_path", "")
+)
+_has_video_out = bool(st.session_state.get("video_path")) and os.path.exists(
+    st.session_state.get("video_path", "")
+)
+
+if _has_audio_out or _has_video_out:
     st.markdown("### 🎁 결과물")
-    audio_path = st.session_state["audio_path"]
     label = st.session_state.get("audio_label", "")
-    audio_size_mb = os.path.getsize(audio_path) / (1024 * 1024)
 
-    # 음악 다운로드 + 미리듣기
-    with open(audio_path, "rb") as f:
-        st.download_button(
-            f"📥 음악 MP3 다운로드 ({audio_size_mb:.1f} MB)",
-            f,
-            file_name=f"music_{label}.mp3",
-            mime="audio/mpeg",
-            key="dl_audio",
-        )
-    with st.expander("🔊 다운로드 전 미리듣기"):
-        st.caption("긴 파일은 처음 부분만 듣고 마음에 들면 다운로드하세요.")
-        st.audio(audio_path, format="audio/mp3")
+    if _has_audio_out:
+        audio_path = st.session_state["audio_path"]
+        audio_size_mb = os.path.getsize(audio_path) / (1024 * 1024)
+        with open(audio_path, "rb") as f:
+            st.download_button(
+                f"📥 음악 MP3 다운로드 ({audio_size_mb:.1f} MB)",
+                f,
+                file_name=f"music_{label}.mp3",
+                mime="audio/mpeg",
+                key="dl_audio",
+            )
+        with st.expander("🔊 다운로드 전 미리듣기"):
+            st.caption("긴 파일은 처음 부분만 듣고 마음에 들면 다운로드하세요.")
+            st.audio(audio_path, format="audio/mp3")
 
-    # 영상 다운로드 + 미리보기
-    if st.session_state.get("video_path") and os.path.exists(st.session_state["video_path"]):
+    if _has_video_out:
         video_path = st.session_state["video_path"]
         video_size_mb = os.path.getsize(video_path) / (1024 * 1024)
         with open(video_path, "rb") as f:
@@ -1359,7 +1445,7 @@ if st.session_state.get("audio_path") and os.path.exists(st.session_state["audio
                 _sh.rmtree(wd)
             except Exception:
                 pass
-        for k in ("audio_path", "video_path", "workdir", "audio_label"):
+        for k in ("audio_path", "video_path", "workdir", "audio_label", "preview_path"):
             st.session_state.pop(k, None)
         st.rerun()
 
