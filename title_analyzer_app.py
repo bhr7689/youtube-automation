@@ -444,13 +444,22 @@ def fetch_hidden_gems(
                     "title": snip.get("title", ""),
                     "channel_id": snip.get("channelId"),
                     "channel_title": snip.get("channelTitle", ""),
+                    "published_at": (snip.get("publishedAt", "") or "")[:10],
+                    "thumbnail_url": (
+                        snip.get("thumbnails", {}).get("medium", {}).get("url")
+                        or snip.get("thumbnails", {}).get("default", {}).get("url")
+                        or ""
+                    ),
                     "view_count": int(stat.get("viewCount", 0) or 0),
+                    "like_count": int(stat.get("likeCount", 0) or 0),
+                    "comment_count": int(stat.get("commentCount", 0) or 0),
                     "duration_s": _parse_iso_duration_to_seconds(cd.get("duration", "")),
                 }
 
-        # 3) channels.list 로 구독자 수
+        # 3) channels.list 로 구독자 수 + 채널 영상 총 개수
         channel_ids = list({v["channel_id"] for v in videos_map.values() if v.get("channel_id")})
         sub_map: dict[str, int] = {}
+        chan_videos_map: dict[str, int] = {}
         hidden_sub_channels: set[str] = set()
         for i in range(0, len(channel_ids), 50):
             chunk = channel_ids[i : i + 50]
@@ -461,6 +470,7 @@ def fetch_hidden_gems(
                 cid = item.get("id")
                 stat = item.get("statistics", {})
                 hidden = stat.get("hiddenSubscriberCount", False)
+                chan_videos_map[cid] = int(stat.get("videoCount", 0) or 0)
                 if hidden:
                     hidden_sub_channels.add(cid)
                     continue
@@ -481,6 +491,7 @@ def fetch_hidden_gems(
             if ratio < min_ratio:
                 continue
             v["subscriber_count"] = subs
+            v["channel_video_count"] = chan_videos_map.get(cid, 0)
             v["viral_ratio"] = ratio
             results.append(v)
 
@@ -511,7 +522,7 @@ def fetch_trending_videos(
         while len(videos) < max_results:
             page_size = min(50, max_results - len(videos))
             resp = youtube.videos().list(
-                part="snippet,contentDetails",
+                part="snippet,contentDetails,statistics",
                 chart="mostPopular",
                 regionCode=region_code,
                 maxResults=page_size,
@@ -520,14 +531,27 @@ def fetch_trending_videos(
             ).execute()
             for item in resp.get("items", []):
                 vid = item.get("id")
-                title = item.get("snippet", {}).get("title")
+                snip = item.get("snippet", {})
+                stat = item.get("statistics", {})
+                title = snip.get("title")
                 secs = _parse_iso_duration_to_seconds(
                     item.get("contentDetails", {}).get("duration", "")
                 )
                 if vid and title:
-                    videos.append(
-                        {"video_id": vid, "title": title, "duration_s": secs}
-                    )
+                    videos.append({
+                        "video_id": vid, "title": title, "duration_s": secs,
+                        "channel_title": snip.get("channelTitle", ""),
+                        "channel_id": snip.get("channelId", ""),
+                        "published_at": (snip.get("publishedAt", "") or "")[:10],
+                        "thumbnail_url": (
+                            snip.get("thumbnails", {}).get("medium", {}).get("url")
+                            or snip.get("thumbnails", {}).get("default", {}).get("url")
+                            or ""
+                        ),
+                        "view_count": int(stat.get("viewCount", 0) or 0),
+                        "like_count": int(stat.get("likeCount", 0) or 0),
+                        "comment_count": int(stat.get("commentCount", 0) or 0),
+                    })
             page_token = resp.get("nextPageToken")
             if not page_token:
                 break
@@ -807,6 +831,65 @@ def render_hidden_gems(videos: list[dict]):
         )
 
 
+def render_videos_table(videos: list[dict], title: str = ""):
+    """HiView 스타일의 표 — 썸네일/제목/조회수/구독자/실적도/게시일/좋아요/댓글/길이/채널."""
+    if not videos:
+        return
+    try:
+        import pandas as pd
+    except Exception:
+        st.warning("pandas 가 없어서 표 모드를 못 띄워요. 카드 모드로 보세요.")
+        return
+
+    rows = []
+    for v in videos:
+        dur = v.get("duration_s")
+        if dur is not None:
+            m, s = divmod(int(dur), 60)
+            dur_txt = f"{m}:{s:02d}"
+        else:
+            dur_txt = "-"
+        ratio = v.get("viral_ratio")
+        ratio_txt = f"⚡{ratio:.1f}배" if ratio else "-"
+        rows.append({
+            "썸네일": v.get("thumbnail_url", ""),
+            "제목": v["title"],
+            "🔗": f"https://www.youtube.com/watch?v={v.get('video_id','')}",
+            "조회수": v.get("view_count") or 0,
+            "구독자": v.get("subscriber_count") or 0,
+            "⚡실적도": ratio if ratio else 0,
+            "게시일": v.get("published_at", "") or "",
+            "👍좋아요": v.get("like_count") or 0,
+            "💬댓글": v.get("comment_count") or 0,
+            "길이": dur_txt,
+            "채널": v.get("channel_title", ""),
+        })
+
+    df = pd.DataFrame(rows)
+    if title:
+        st.markdown(f"### {title}")
+    st.dataframe(
+        df,
+        hide_index=True,
+        use_container_width=True,
+        height=min(620, 80 + 70 * len(rows)),
+        column_config={
+            "썸네일": st.column_config.ImageColumn("썸네일", width="small"),
+            "제목":   st.column_config.TextColumn("제목", width="large"),
+            "🔗":    st.column_config.LinkColumn("🔗", display_text="열기", width="small"),
+            "조회수": st.column_config.NumberColumn("조회수", format="%d"),
+            "구독자": st.column_config.NumberColumn("구독자", format="%d"),
+            "⚡실적도": st.column_config.NumberColumn("⚡실적도", format="%.1f배"),
+            "게시일": st.column_config.TextColumn("게시일", width="small"),
+            "👍좋아요": st.column_config.NumberColumn("👍좋아요", format="%d"),
+            "💬댓글": st.column_config.NumberColumn("💬댓글", format="%d"),
+            "길이":   st.column_config.TextColumn("길이", width="small"),
+            "채널":   st.column_config.TextColumn("채널", width="medium"),
+        },
+    )
+    st.caption("💡 각 컬럼 헤더 클릭하면 정렬돼요. 🔗 '열기' 누르면 새 탭에서 영상이 뜹니다.")
+
+
 def _render_bar(label: str, pct: float):
     st.markdown(
         f"<div class='bar-bg'><span class='bar-text'>{label} · {pct:.0f}%</span>"
@@ -927,7 +1010,8 @@ def filter_by_length(videos: list[dict], length_mode: str) -> list[dict]:
     return videos
 
 
-def render_with_split(videos: list[dict], length_mode: str, *, show_gems: bool = False):
+def render_with_split(videos: list[dict], length_mode: str, *,
+                      show_gems: bool = False, view_mode: str = "table"):
     """선택한 길이 필터로 한 번 렌더링."""
     shorts, longs, unknown = split_shorts_longs(videos)
     has_dur = any(v.get("duration_s") is not None for v in videos)
@@ -950,9 +1034,13 @@ def render_with_split(videos: list[dict], length_mode: str, *, show_gems: bool =
 
     st.markdown("---")
     render_seed_block(filtered)
-    if show_gems:
-        render_hidden_gems(filtered)
-    render_analysis(filtered, label)
+
+    if view_mode == "table":
+        render_videos_table(filtered, title=f"📊 {label} · {len(filtered)}개")
+    else:
+        if show_gems:
+            render_hidden_gems(filtered)
+        render_analysis(filtered, label)
 
 
 # ============================================================
@@ -981,7 +1069,8 @@ COUNTRY_LABEL_TO_RL = {c[0]: (c[1], c[2]) for c in COUNTRIES}
 # ============================================================
 # 다국가 비교 렌더링 (🌍 공통 / 🏳️ 국가별 고유)
 # ============================================================
-def render_multi_country(results: dict[str, list[dict]], length_mode: str):
+def render_multi_country(results: dict[str, list[dict]], length_mode: str,
+                          view_mode: str = "table"):
     """results: {country_label: [videos]} — 국가별 시드 발굴 결과를 비교."""
     # 1) 길이 필터 적용
     filtered: dict[str, list[dict]] = {
@@ -1037,7 +1126,7 @@ def render_multi_country(results: dict[str, list[dict]], length_mode: str):
             "🌍 2개국 이상에서 공통으로 잡힌 시드가 없어요 — 카테고리 차이가 큰 결과예요."
         )
 
-    # 6) 국가별 고유 시드 + 미니 분석
+    # 6) 국가별 고유 시드 + 미니 분석 (또는 표)
     st.markdown("## 🏳️ 국가별 고유 시드 (현지화 제목용)")
     for country, vids in filtered.items():
         seeds = country_seeds[country]
@@ -1054,16 +1143,19 @@ def render_multi_country(results: dict[str, list[dict]], length_mode: str):
                     "<span style='color:#6b7280;font-size:0.9rem;'>이 국가만의 고유 시드는 없어요 (공통 시드만 나옴)</span>",
                     unsafe_allow_html=True,
                 )
-            # 미니 인사이트
-            r = analyze_titles([v["title"] for v in vids])
-            if r:
-                st.markdown(
-                    f"<div style='font-size:0.88rem;color:#4b5563;margin-top:8px;'>"
-                    f"📏 평균 {r['len_avg']:.0f}자 · ✨이모지 {r['emoji_pct']:.0f}% · "
-                    f"🔢숫자 {r['number_pct']:.0f}% · 📦대괄호 {r['bracket_pct']:.0f}%"
-                    "</div>",
-                    unsafe_allow_html=True,
-                )
+            # 표 모드면 표, 카드 모드면 미니 인사이트
+            if view_mode == "table":
+                render_videos_table(vids)
+            else:
+                r = analyze_titles([v["title"] for v in vids])
+                if r:
+                    st.markdown(
+                        f"<div style='font-size:0.88rem;color:#4b5563;margin-top:8px;'>"
+                        f"📏 평균 {r['len_avg']:.0f}자 · ✨이모지 {r['emoji_pct']:.0f}% · "
+                        f"🔢숫자 {r['number_pct']:.0f}% · 📦대괄호 {r['bracket_pct']:.0f}%"
+                        "</div>",
+                        unsafe_allow_html=True,
+                    )
 
 
 # ============================================================
@@ -1099,6 +1191,15 @@ length_mode = (
     else "longs" if length_mode_label.startswith("📹")
     else "all"
 )
+
+view_mode_label = st.radio(
+    "결과를 어떻게 보여드릴까요?",
+    ["📊 표 (정렬·비교 쉬움)", "🎴 카드 (시드 키워드 + 인사이트 상세)"],
+    horizontal=True,
+    label_visibility="visible",
+    help="표 모드는 컬럼 헤더 클릭으로 정렬할 수 있어요. 카드 모드는 시드 키워드와 분석 인사이트까지 보여줘요.",
+)
+view_mode = "table" if view_mode_label.startswith("📊") else "card"
 
 videos: list[dict] = []
 go = False
@@ -1345,9 +1446,9 @@ else:
 
 if go and videos:
     if multi_country_results:
-        render_multi_country(multi_country_results, length_mode)
+        render_multi_country(multi_country_results, length_mode, view_mode=view_mode)
     else:
-        render_with_split(videos, length_mode, show_gems=show_gems_flag)
+        render_with_split(videos, length_mode, show_gems=show_gems_flag, view_mode=view_mode)
     st.markdown(
         "<div class='caption-small'>💡 더 많은 영상을 넣을수록 공식이 정확해져요</div>",
         unsafe_allow_html=True,
