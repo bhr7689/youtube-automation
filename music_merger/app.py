@@ -84,6 +84,15 @@ h2 { font-size: 1.3rem !important; }
 
 DUR_MAP = {"1시간": 3600, "2시간": 7200, "3시간": 10800, "6시간": 21600}
 IMG_INTERVAL = 270  # 4분 30초
+
+# 패닝 방향 모드 — 라벨: 내부코드
+PAN_MODES = {
+    "번갈아 자동 (이미지마다 방향 교대)": "alternate",
+    "왔다 갔다 (왼→오→왼 부드럽게)": "bounce_lr",
+    "왔다 갔다 (오→왼→오 부드럽게)": "bounce_rl",
+    "모두 왼쪽 → 오른쪽": "all_ltr",
+    "모두 오른쪽 → 왼쪽": "all_rtl",
+}
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 VID_EXTS = {".mp4", ".mov", ".webm", ".mkv", ".m4v"}
 
@@ -321,11 +330,16 @@ def preprocess_to_segment(input_path, output_path, fixed_duration=None, pan_dire
     영상 파일은 무시(원본 모션 유지)."""
     if is_image(input_path):
         duration = fixed_duration or IMG_INTERVAL
-        if pan_direction in ("ltr", "rtl"):
+        if pan_direction in ("ltr", "rtl", "bounce_lr", "bounce_rl"):
             if pan_direction == "ltr":
                 x_expr = f"(iw-1280)*t/{duration}"
-            else:
+            elif pan_direction == "rtl":
                 x_expr = f"(iw-1280)*(1-t/{duration})"
+            elif pan_direction == "bounce_lr":
+                # 왼→오→왼 부드러운 왕복 (cos 곡선)
+                x_expr = f"(iw-1280)*(0.5-0.5*cos(2*PI*t/{duration}))"
+            else:  # bounce_rl: 오→왼→오
+                x_expr = f"(iw-1280)*(0.5+0.5*cos(2*PI*t/{duration}))"
 
             # 파노라마 친화: 가로가 충분히 긴 이미지면 전체 폭을 그대로 패닝.
             # 일반 비율은 캔버스를 키워 패닝 여백을 만든다.
@@ -467,22 +481,32 @@ def build_audio(music_paths, total_seconds, workdir,
 
 
 def build_video(media_paths, total_seconds, workdir, audio_path=None,
-                pan_enabled=True, image_duration=None, progress_cb=None):
+                pan_enabled=True, pan_mode="alternate",
+                image_duration=None, progress_cb=None):
     """이미지/영상 혼합을 핑퐁 순서로 잇고, 정해진 길이로 채우는 영상.
 
-    audio_path=None 이면 무음 영상 (캡컷에서 음악과 따로 합치기 좋게).
-    pan_enabled=True 이면 이미지마다 좌우 패닝(켄번스).
-    image_duration: 각 이미지가 표시되는 시간(초). None 이면 4:30(기본).
-                    미리보기 영상에는 5 같은 작은 값을 넣어 빠르게 확인."""
+    pan_mode:
+      - alternate: 1번 LTR, 2번 RTL 번갈아 (기본)
+      - all_ltr:   모두 왼→오
+      - all_rtl:   모두 오→왼
+      - bounce_lr: 각 이미지 내에서 왼→오→왼 (cos 부드러운 왕복)
+      - bounce_rl: 각 이미지 내에서 오→왼→오
+    image_duration: 미리보기 등 이미지 표시 시간 조정용."""
     img_dur = image_duration or IMG_INTERVAL
-    # 1) 각 입력을 1280x720 30fps mp4 세그먼트로 정규화
     segments = []
     image_idx = 0
     for i, p in enumerate(media_paths):
         seg = workdir / f"seg_{i:03d}.mp4"
         direction = None
         if pan_enabled and is_image(p):
-            direction = "ltr" if image_idx % 2 == 0 else "rtl"
+            if pan_mode == "all_ltr":
+                direction = "ltr"
+            elif pan_mode == "all_rtl":
+                direction = "rtl"
+            elif pan_mode in ("bounce_lr", "bounce_rl"):
+                direction = pan_mode
+            else:  # alternate (default)
+                direction = "ltr" if image_idx % 2 == 0 else "rtl"
             image_idx += 1
         preprocess_to_segment(p, seg, fixed_duration=img_dur, pan_direction=direction)
         segments.append(seg)
@@ -1108,10 +1132,22 @@ with st.expander("🌐 키워드로 스톡 이미지 검색 → 미리보고 선
 pan_enabled = st.checkbox(
     "🎞️ 이미지에 좌우 패닝 효과 넣기 (살짝 움직임)",
     value=True,
-    help="이미지가 4분 30초 동안 왼→오 또는 오→왼 으로 천천히 움직여요. "
-         "캡컷에서 좌우로 붙인 합성 이미지(예: 에펠탑+카페)에 특히 잘 어울려요. "
+    help="이미지가 4분 30초 동안 천천히 가로로 움직여요. "
          "체크 안 하면 정지 이미지로 컷 전환만 됩니다.",
 )
+pan_mode = "alternate"
+if pan_enabled:
+    pan_mode_label = st.selectbox(
+        "패닝 방향",
+        options=list(PAN_MODES.keys()),
+        index=2,  # 기본: 왔다 갔다 (오→왼→오) — 사용자 요청에 맞춤
+        help=(
+            "**번갈아 자동**: 이미지마다 방향 교대 (자연스러운 다양성)\n\n"
+            "**왔다 갔다**: 한 이미지 안에서 한쪽으로 갔다가 부드럽게 되돌아옴 (멈춤 없음)\n\n"
+            "**모두 같은 방향**: 모든 이미지가 같은 방향으로 패닝"
+        ),
+    )
+    pan_mode = PAN_MODES[pan_mode_label]
 
 # 영상에 오디오 포함 여부 (기본: 무음 — 캡컷에서 합치기 좋게)
 bake_audio_in_video = st.checkbox(
@@ -1246,6 +1282,7 @@ if preview_clicked:
                         preview_media, 30, preview_dir,
                         audio_path=None,
                         pan_enabled=pan_enabled,
+                        pan_mode=pan_mode,
                         image_duration=5,
                     )
                     st.session_state["preview_path"] = str(preview_out)
@@ -1381,6 +1418,7 @@ if go:
                     media_paths, target_sec, workdir,
                     audio_path=video_audio,
                     pan_enabled=pan_enabled,
+                    pan_mode=pan_mode,
                     progress_cb=_prog,
                 )
                 st.session_state["video_path"] = str(video_out)
