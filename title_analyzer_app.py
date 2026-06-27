@@ -898,6 +898,7 @@ def render_videos_table(videos: list[dict], title: str = ""):
         st.warning("pandas 가 없어서 표 모드를 못 띄워요. 카드 모드로 보세요.")
         return
 
+    has_lang = any(v.get("search_lang_label") for v in videos)
     rows = []
     for v in videos:
         dur = v.get("duration_s")
@@ -907,8 +908,7 @@ def render_videos_table(videos: list[dict], title: str = ""):
         else:
             dur_txt = "-"
         ratio = v.get("viral_ratio")
-        ratio_txt = f"⚡{ratio:.1f}배" if ratio else "-"
-        rows.append({
+        row = {
             "썸네일": v.get("thumbnail_url", ""),
             "제목": v["title"],
             "🔗": f"https://www.youtube.com/watch?v={v.get('video_id','')}",
@@ -920,7 +920,11 @@ def render_videos_table(videos: list[dict], title: str = ""):
             "💬댓글": v.get("comment_count") or 0,
             "길이": dur_txt,
             "채널": v.get("channel_title", ""),
-        })
+        }
+        if has_lang:
+            row["🌐 언어"] = v.get("search_lang_label", "")
+            row["검색어"] = v.get("search_query", "")
+        rows.append(row)
 
     df = pd.DataFrame(rows)
     if title:
@@ -942,6 +946,8 @@ def render_videos_table(videos: list[dict], title: str = ""):
             "💬댓글": st.column_config.NumberColumn("💬댓글", format="%d"),
             "길이":   st.column_config.TextColumn("길이", width="small"),
             "채널":   st.column_config.TextColumn("채널", width="medium"),
+            "🌐 언어": st.column_config.TextColumn("🌐 언어", width="small"),
+            "검색어": st.column_config.TextColumn("검색어", width="medium"),
         },
     )
     st.caption("💡 각 컬럼 헤더 클릭하면 정렬돼요. 🔗 '열기' 누르면 새 탭에서 영상이 뜹니다.")
@@ -1263,6 +1269,7 @@ with st.expander("🤖 매일 자동 수집 + Notion 저장 켜는 법 (한 번�
 mode = st.radio(
     "어떻게 분석할까요?",
     [
+        "🌐 다국어 자동 번역 + 동시 검색 (글로벌 시야 ⭐)",
         "🪄 시드 키워드 자동 발굴 (추천)",
         "🔥 요즘 알고리즘 트렌드 키워드",
         "📂 카테고리로 자동 수집",
@@ -1311,7 +1318,118 @@ multi_country_results: dict[str, list[dict]] = {}
 search_label_for_save = ""
 category_default_for_save: tuple = ("", "", "")
 
-if mode.startswith("🪄"):
+if mode.startswith("🌐"):
+    st.markdown(
+        "**한국어 키워드 하나** 만 적으면 → 선택한 나라 언어로 **자동 번역** → "
+        "각 나라 유튜브에서 동시에 검색해서 **한 표로** 보여드려요. "
+        "어느 언어 검색에서 잡혔는지 컬럼으로 표시돼요."
+    )
+    try:
+        from multilang_search import LANGUAGES as _ML_LANGS
+        ml_labels = [l[0] for l in _ML_LANGS]
+    except Exception:
+        ml_labels = []
+        st.error("multilang_search 모듈을 못 불러왔어요.")
+
+    ko_keyword = st.text_input(
+        "한국어 키워드 (또는 어느 언어든)",
+        placeholder="예: 여름 플레이리스트, 효도 트로트 메들리, 로파이 카페 음악…",
+    )
+    selected_ml_labels = st.multiselect(
+        "🌍 어느 나라 언어로 동시 검색할까요?",
+        options=ml_labels,
+        default=[
+            "🇰🇷 한국어", "🇺🇸 영어 (미국)", "🇯🇵 일본어",
+            "🇲🇽 스페인어 (멕시코)", "🇫🇷 프랑스어",
+        ],
+        help="번역은 Gemini가 처리해요 — 각 나라 사람들이 실제로 검색창에 칠 만한 자연스러운 표현으로.",
+    )
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        ml_per_lang = st.selectbox("언어당 영상 수", [10, 15, 20, 30], index=1)
+    with col2:
+        ml_days = st.selectbox(
+            "기간", [7, 14, 30, 60, 90, 365],
+            index=2, format_func=lambda d: f"최근 {d}일",
+        )
+    with col3:
+        ml_order = st.selectbox(
+            "정렬", ["viewCount", "relevance", "date"],
+            format_func=lambda x: {
+                "viewCount": "🔥 조회수 순", "relevance": "🎯 관련도 순", "date": "🆕 최신 순",
+            }[x],
+        )
+    ml_min_ratio = st.slider(
+        "최소 바이럴 배수 (구독자 대비 조회수)", 0, 50, 0,
+        help="0이면 필터 끔. 5 이상이면 알고리즘 푸시 신호.",
+    )
+
+    api_key = _get_api_key()
+    gemini_key_env = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not gemini_key_env:
+        st.warning("🔑 `GEMINI_API_KEY` 가 설정 안 됐어요. 아래에 임시로 넣어주세요.")
+        gemini_key_input = st.text_input("GEMINI_API_KEY", type="password")
+    else:
+        gemini_key_input = ""
+
+    go = st.button("🌐 번역 + 다국어 동시 검색")
+    if go:
+        if not ko_keyword.strip():
+            st.warning("키워드를 입력해주세요.")
+            st.stop()
+        if not selected_ml_labels:
+            st.warning("언어를 1개 이상 선택해주세요.")
+            st.stop()
+        if not api_key:
+            st.error("YouTube API 키가 필요해요.")
+            st.stop()
+
+        gemini_key = (gemini_key_input or gemini_key_env).strip()
+        if not gemini_key:
+            st.error("Gemini API 키가 필요해요 (번역용).")
+            st.stop()
+
+        from multilang_search import translate_keyword, search_multilang
+        with st.spinner(f"Gemini로 {len(selected_ml_labels)}개 언어 번역 중…"):
+            translations, terr = translate_keyword(
+                ko_keyword.strip(), selected_ml_labels, api_key=gemini_key,
+            )
+        if terr:
+            st.warning(f"번역 일부 실패: {terr}")
+        if translations:
+            st.markdown("### 🌐 번역 결과")
+            cols = st.columns(min(3, len(translations)))
+            for i, (label, term) in enumerate(translations.items()):
+                with cols[i % len(cols)]:
+                    st.markdown(
+                        f"**{label}**<br>"
+                        f"<code style='font-size:0.95rem;'>{term}</code>",
+                        unsafe_allow_html=True,
+                    )
+
+        with st.spinner(
+            f"{len(translations)}개 언어로 유튜브에서 동시 검색 중… (병렬)"
+        ):
+            videos, err = search_multilang(
+                api_key, translations,
+                per_lang=ml_per_lang, days=ml_days, order=ml_order,
+                min_ratio=float(ml_min_ratio), min_views=0,
+            )
+        if err:
+            st.error(f"검색 실패: {err}")
+            st.stop()
+        if not videos:
+            st.error("결과가 없어요. 기간/배수 조건을 풀어보세요.")
+            st.stop()
+        st.success(
+            f"✅ {len(translations)}개 언어 검색 · 영상 {len(videos)}개 (중복 제거 후)"
+        )
+        search_label_for_save = (
+            f"🌐 {ko_keyword.strip()} · {len(selected_ml_labels)}개국"
+        )
+
+elif mode.startswith("🪄"):
     st.markdown(
         "사용자 입력 없이 앱이 직접 찾아드려요. **시드를 모를 때 이걸 쓰세요.**"
     )
