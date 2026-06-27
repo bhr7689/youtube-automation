@@ -38,6 +38,50 @@ SUNO_SECTION_MAP = {
 }
 
 
+# ────────────────────────────────────────────────────────────────────────────
+# 다국어 — 언어별 Suno 스타일 키워드 매핑
+# ────────────────────────────────────────────────────────────────────────────
+LANGUAGES: dict[str, dict] = {
+    "한국어":              {"flag": "🇰🇷", "english": "Korean",                     "style_hint": "Korean"},
+    "영어":                {"flag": "🇺🇸", "english": "English",                    "style_hint": "Western pop"},
+    "일본어":              {"flag": "🇯🇵", "english": "Japanese",                   "style_hint": "J-pop / Japanese enka"},
+    "대만식 중국어 (번체)": {"flag": "🇹🇼", "english": "Traditional Chinese (Taiwan)", "style_hint": "Mandopop"},
+    "멕시코식 스페인어":    {"flag": "🇲🇽", "english": "Mexican Spanish",             "style_hint": "Mexican ranchera / Latin"},
+    "스페인어 (스페인)":    {"flag": "🇪🇸", "english": "Spanish (Spain)",             "style_hint": "Spanish flamenco-pop"},
+    "프랑스어":            {"flag": "🇫🇷", "english": "French",                     "style_hint": "French chanson"},
+    "힌디어 (인도)":        {"flag": "🇮🇳", "english": "Hindi",                      "style_hint": "Bollywood"},
+    "베트남어":            {"flag": "🇻🇳", "english": "Vietnamese",                 "style_hint": "V-pop / Vietnamese bolero"},
+    "인도네시아어":        {"flag": "🇮🇩", "english": "Indonesian",                  "style_hint": "Indonesian dangdut-pop"},
+    "태국어":              {"flag": "🇹🇭", "english": "Thai",                       "style_hint": "Thai luk thung-pop"},
+    "포르투갈어 (브라질)":  {"flag": "🇧🇷", "english": "Brazilian Portuguese",        "style_hint": "Brazilian MPB / sertanejo"},
+}
+
+
+# 장르의 base Suno 스타일에서 'Korean / K-pop' 같은 한국 식별자를
+# 선택한 언어/지역 스타일로 교체. 마지막에 'sung in {english}' 명시.
+_GENRE_LOCALIZE_RULES = [
+    ("Korean upbeat trot", "{hint} upbeat folk-pop"),
+    ("Korean trot",         "{hint} ballad with trot rhythm"),
+    ("Korean ballad",       "{hint} ballad"),
+    ("Korean 70s 80s folk", "{hint} 70s 80s folk"),
+    ("K-pop",               "{hint}-influenced pop"),
+    ("traditional Korean ballad feel", "traditional {english} ballad feel"),
+]
+
+
+def build_suno_style(genre_key: str, language: str) -> str:
+    """장르 base style + 언어 → 언어/지역에 맞춰진 Suno 스타일 프롬프트."""
+    base = GENRE_PERSONAS[genre_key]["suno_style"]
+    if language == "한국어" or language not in LANGUAGES:
+        return base
+    hint = LANGUAGES[language]["style_hint"]
+    english = LANGUAGES[language]["english"]
+    adapted = base
+    for needle, repl in _GENRE_LOCALIZE_RULES:
+        adapted = adapted.replace(needle, repl.format(hint=hint, english=english))
+    return f"{adapted}, sung in {english}, {english} lyrics"
+
+
 def to_suno_lyrics(sections: list[dict], fallback_text: str = "") -> str:
     """sections → Suno 표준 태그 포맷 텍스트.
 
@@ -289,14 +333,29 @@ duration_label = st.radio(
 )
 duration_sec = duration_options[duration_labels.index(duration_label)]
 
-st.markdown("#### 3️⃣ 주제 (선택)")
+st.markdown("#### 3️⃣ 어떤 언어로? (여러 개 동시 선택 가능)")
+language_labels = [f"{v['flag']} {k}" for k, v in LANGUAGES.items()]
+language_keys = list(LANGUAGES.keys())
+selected_language_labels = st.multiselect(
+    label="언어",
+    options=language_labels,
+    default=[language_labels[0]],  # 한국어 기본
+    label_visibility="collapsed",
+    help="여러 언어를 고르면 같은 정서·구조로 각 언어 가사를 모두 만들어 드려요. "
+         "수노 스타일도 그 언어/지역(샹송·랜체라·볼리우드·만도팝 등)에 맞춰 자동 변환됩니다.",
+)
+selected_languages = [
+    language_keys[language_labels.index(lbl)] for lbl in selected_language_labels
+] or ["한국어"]
+
+st.markdown("#### 4️⃣ 주제 (선택)")
 theme = st.text_input(
     label="주제",
     placeholder="예) 시골에 두고 온 어머니, 첫사랑의 가을, 한 잔 술…",
     label_visibility="collapsed",
 )
 
-st.markdown("#### 4️⃣ 몇 곡 만들까요?")
+st.markdown("#### 5️⃣ 언어당 몇 곡씩 만들까요?")
 n_variants = st.radio(
     "개수",
     options=[1, 2, 3],
@@ -321,8 +380,18 @@ if go:
         st.stop()
 
     persona = GENRE_PERSONAS[genre]["persona"]
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    with st.spinner(f"🎵 {genre} · {duration_label} · {n_variants}곡 만드는 중… (10~30초)"):
+    # 언어별로 한 번씩 호출 — 각 언어의 자연스러운 가요 운율 확보
+    results_by_lang: dict[str, list[dict]] = {}
+    total_jobs = len(selected_languages)
+    progress = st.progress(0.0, text=f"🎵 0 / {total_jobs} 언어 작업 중…")
+
+    for idx, lang in enumerate(selected_languages, 1):
+        progress.progress(
+            (idx - 1) / total_jobs,
+            text=f"🎵 [{idx}/{total_jobs}] {LANGUAGES[lang]['flag']} {lang} 가사 만드는 중…",
+        )
         try:
             variants = generate_lyrics(
                 persona=persona,
@@ -330,20 +399,29 @@ if go:
                 n=int(n_variants),
                 theme=theme,
                 genre=genre,
+                language=lang,
                 api_key=api_key,
             )
-        except Exception as e:  # noqa: BLE001 — 사용자에게 친근한 메시지
+        except Exception as e:  # noqa: BLE001
             st.error(
-                f"가사를 만들지 못했어요. 잠시 후 다시 시도해 주세요.\n\n"
-                f"**원인:** `{type(e).__name__}: {e}`"
+                f"**{LANGUAGES[lang]['flag']} {lang}** 가사를 만들지 못했어요.\n\n"
+                f"원인: `{type(e).__name__}: {e}`"
             )
-            st.stop()
+            continue
+        results_by_lang[lang] = variants or []
 
-    if not variants:
+    progress.progress(1.0, text="✅ 완료!")
+    progress.empty()
+
+    total_songs = sum(len(v) for v in results_by_lang.values())
+    if total_songs == 0:
         st.warning("결과가 비어 있어요. 주제를 조금 다르게 적고 다시 시도해 보세요.")
         st.stop()
 
-    st.success(f"🎉 {len(variants)}곡 완성!  아래 3개 박스를 그대로 **수노(Suno)**에 붙여넣으면 끝이에요.")
+    st.success(
+        f"🎉 **{len(results_by_lang)}개 언어 × {n_variants}곡 = 총 {total_songs}곡** 완성!  "
+        f"각 카드 3개 박스를 그대로 **수노(Suno) Custom 모드**에 붙여넣으면 끝이에요."
+    )
 
     with st.expander("📖 수노에 붙여넣는 방법 (펼쳐 보기)", expanded=False):
         st.markdown(
@@ -351,58 +429,66 @@ if go:
             1. [suno.com](https://suno.com) 접속 → **Create** 클릭
             2. 우측 상단 **Custom** 모드 켜기 (필수!)
             3. 아래 3개 박스를 **각각 복사해서 붙여넣기**:
-               - **🎨 Style of Music** ← 스타일 박스
-               - **📝 Lyrics** ← 가사 박스
+               - **🎨 Style of Music** ← 스타일 박스 (언어/지역 스타일 자동 반영됨)
+               - **📝 Lyrics** ← 가사 박스 (Suno 표준 섹션 태그 자동 변환됨)
                - **📛 Title** ← 제목 박스
-            4. **Create** 버튼 누르면 약 1~2분 뒤 곡이 완성돼요.
+            4. **Create** 누르면 약 1~2분 뒤 곡 완성!
 
             💡 **팁:** 각 박스 우측 상단의 📋 아이콘을 누르면 한 번에 복사돼요.
+            💡 **다국어 팁:** 스타일에 "sung in French" 처럼 명시되어 수노가 그 언어로 부릅니다.
             """
         )
 
-    suno_style = GENRE_PERSONAS[genre]["suno_style"]
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # 언어별 섹션
+    card_no = 0
+    for lang, variants in results_by_lang.items():
+        if not variants:
+            continue
+        flag = LANGUAGES[lang]["flag"]
+        suno_style = build_suno_style(genre, lang)
+        st.markdown(f"## {flag} {lang}  ({len(variants)}곡)")
 
-    for i, v in enumerate(variants, 1):
-        title = v.get("title") or f"가사 {i}"
-        v_theme = v.get("theme") or ""
-        sections = v.get("sections") or []
-        suno_lyrics = to_suno_lyrics(sections, fallback_text=v.get("lyrics_text") or "")
+        for v in variants:
+            card_no += 1
+            title = v.get("title") or f"가사 {card_no}"
+            v_theme = v.get("theme") or ""
+            sections = v.get("sections") or []
+            suno_lyrics = to_suno_lyrics(sections, fallback_text=v.get("lyrics_text") or "")
 
-        st.markdown(
-            f"""
-            <div class="lyric-card">
-                <div class="lyric-title">{i}. {title}</div>
-                <div class="lyric-theme">🎯 {v_theme}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+            st.markdown(
+                f"""
+                <div class="lyric-card">
+                    <div class="lyric-title">{card_no}. {title}</div>
+                    <div class="lyric-theme">{flag} {lang} · 🎯 {v_theme}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
-        st.markdown("**📛 제목 (Suno → Title)**")
-        st.code(title, language="text")
+            st.markdown("**📛 제목 (Suno → Title)**")
+            st.code(title, language="text")
 
-        st.markdown("**🎨 스타일 (Suno → Style of Music)**")
-        st.code(suno_style, language="text")
+            st.markdown("**🎨 스타일 (Suno → Style of Music)**")
+            st.code(suno_style, language="text")
 
-        st.markdown("**📝 가사 (Suno → Lyrics)**")
-        st.code(suno_lyrics, language="text")
+            st.markdown("**📝 가사 (Suno → Lyrics)**")
+            st.code(suno_lyrics, language="text")
 
-        # 통합 TXT — 한 파일로 백업
-        bundle = (
-            f"=== TITLE ===\n{title}\n\n"
-            f"=== STYLE OF MUSIC ===\n{suno_style}\n\n"
-            f"=== LYRICS ===\n{suno_lyrics}\n"
-        )
-        st.download_button(
-            label=f"⬇️ 전체 TXT 백업 다운로드  ({title})",
-            data=bundle.encode("utf-8"),
-            file_name=f"suno_{i}_{title}_{timestamp}.txt",
-            mime="text/plain",
-            key=f"dl_{i}",
-            use_container_width=True,
-        )
-        st.markdown("---")
+            bundle = (
+                f"=== LANGUAGE ===\n{lang} ({LANGUAGES[lang]['english']})\n\n"
+                f"=== TITLE ===\n{title}\n\n"
+                f"=== STYLE OF MUSIC ===\n{suno_style}\n\n"
+                f"=== LYRICS ===\n{suno_lyrics}\n"
+            )
+            st.download_button(
+                label=f"⬇️ 전체 TXT 백업 다운로드  ({flag} {title})",
+                data=bundle.encode("utf-8"),
+                file_name=f"suno_{card_no}_{lang}_{title}_{timestamp}.txt",
+                mime="text/plain",
+                key=f"dl_{card_no}",
+                use_container_width=True,
+            )
+            st.markdown("---")
 
 # ────────────────────────────────────────────────────────────────────────────
 # 푸터
