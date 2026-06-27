@@ -146,6 +146,19 @@ python pipeline.py --init                              # 파이프라인 폴더 
   - 모든 결과 출력은 `st.code()` 블록으로 통일(우상단 📋 아이콘 복사). 통합
     페르소나·가사 본문도 텍스트 영역에서 코드 블록으로 교체. 각 탭 상단에
     복사 안내 캡션 1회 노출.
+- [x] ☀️ **오늘의 시그니처(채널 사운드 정체성)**(2026-06-27, lyrics-auto-generator-9pf34x):
+  `daily_signature.py` 신규 + `daily_signature.json` 로컬 저장. 첫 시드 시리즈 =
+  사용자가 명시한 **"Parisian Chanson Café"** (스텔라장식, soft acoustic piano +
+  romantic accordion + upright bass + warm string pad, 보컬 whispering airy female,
+  분위기 charming/cozy/dreamy, **strictly no drums, no guitars**).
+  - 곡마다 액센트 1개만 자동 변주(glockenspiel/vibraphone/muted trumpet/flute/cello/celeste)
+  - day_count 자동 증가 — 같은 시그니처 50곡 쌓아 채널 정체성 확립
+  - 사이드바에서 시그니처 편집(악기·보컬·분위기·액센트 팔레트 수정 가능)
+  - Suno Style of Music = 시리즈명(Day N) + 금지 악기 + 핵심 악기 + 보컬 + 분위기 +
+    레퍼런스 아티스트 + 언어 명시 + [today's accent: …]
+  - `lyrics_generator.build_prompt` 에 `signature_brief` 주입 → LLM 이 섹션마다
+    sound_direction(괄호) + stage_direction(대괄호) 자동 작성
+  - 결과 가사 = 사용자 예시 동일 형식: `[Intro]\n(사운드)\n[Stage]\n가사`
 - [x] 🎤 **가사 자동 생성기 단독 앱**(2026-06-27, lyrics-auto-generator-9pf34x):
   `lyrics_app.py` 신규 — 모바일 세로 우선 단일 페이지 Streamlit. 장르(트로트5070/
   트로트흥/발라드/K-POP/포크7080) + 길이(2:30~6:00) + **언어 멀티셀렉트(12개국)** +
