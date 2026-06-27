@@ -146,7 +146,18 @@ python pipeline.py --init                              # 파이프라인 폴더 
   - 모든 결과 출력은 `st.code()` 블록으로 통일(우상단 📋 아이콘 복사). 통합
     페르소나·가사 본문도 텍스트 영역에서 코드 블록으로 교체. 각 탭 상단에
     복사 안내 캡션 1회 노출.
+- [x] 🎤 **가사 자동 생성기 단독 앱**(2026-06-27, lyrics-auto-generator-9pf34x):
+  `lyrics_app.py` 신규 — 모바일 세로 우선 단일 페이지 Streamlit. 장르(트로트5070/
+  트로트흥/발라드/K-POP/포크7080) + 길이(2:30~6:00) + 주제 선택 + 변주개수(1~3) →
+  Gemini → N개 가사 변주. **결과 카드를 3블록(제목/스타일/가사)으로 분리**해
+  **수노(Suno) Custom 모드에 그대로 붙여넣기** 가능. 섹션 태그는 Suno 표준
+  `[Verse 1]/[Chorus]/[Bridge]/[Outro]` 로 자동 변환. 장르별 영어 스타일 프롬프트
+  (BPM·악기·보컬 톤) 자동 매핑. 전체 백업 TXT 다운로드.
+  - 엔진: `lyrics_generator.py` 재사용(이미 검증된 모듈)
+  - 실행: `streamlit run lyrics_app.py` 또는 `가사생성기실행.bat` (포트 8503)
+  - import + Suno 섹션 변환 함수 동작 검증 완료. HTTP 200 페이지 렌더 확인.
 - [ ] 실제 API 키로 end-to-end 점검(collect→score→검수→역설계→pipeline) — 키 필요해 미수행
 - [ ] `automation.py`(laughing-hawking) cron 레이어를 통합할지 결정
 - [ ] sleepy-fermat-76R13 의 reverse_app.py 를 default 브랜치(eqO5N)로 머지해야 사용자 화면에 반영됨
+- [ ] lyrics-auto-generator-9pf34x 를 default 브랜치(eqO5N)로 머지해야 사용자 화면에 반영됨
 - (작업하며 갱신할 것)
