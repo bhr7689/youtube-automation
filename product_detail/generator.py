@@ -17,6 +17,11 @@ try:
 except Exception:  # pragma: no cover
     genai = None
 
+try:
+    from openai import OpenAI as _OpenAI
+except Exception:  # pragma: no cover
+    _OpenAI = None
+
 
 COPY_SYSTEM = """너는 한국의 식품 상세페이지 카피라이터다.
 모든 카피는 다음 심리 흐름을 의도적으로 따라야 한다:
@@ -39,12 +44,18 @@ COPY_USER_TEMPLATE = """제품 정보:
 - 메모(원산지·중량·특징 등 자유): {note}
 
 다음 JSON 스키마로 작성하라. 각 필드의 톤은 주석을 따른다.
+모든 텍스트는 한국어. image_prompts 만 영문 (Gemini 이미지 생성용).
 
 {{
   "product_name": "최종 제품명 (15자 이내, 신선·산지 느낌)",
   "subtitle": "부제 (20자 이내, 1단계 맛있겠다 자극)",
   "hero_headline": "히어로 한 줄 카피 (12자 이내, 임팩트)",
   "hero_sub": "히어로 보조 카피 (25자 이내, 산지/신선/오늘 잡은 식)",
+  "hook_section": {{
+    "kicker": "후크 윗 한 줄 (10자, 예: 한 번 먹으면)",
+    "title": "큰 후크 헤드라인 (18자, 1단계 맛있겠다 폭격)",
+    "body": "후크 보조 1~2문장. 침이 고이는 묘사."
+  }},
   "appeals": [
     "소구점1 (10자 이내, 예: 새벽 직송)",
     "소구점2",
@@ -54,18 +65,22 @@ COPY_USER_TEMPLATE = """제품 정보:
     "title": "맛 섹션 제목 (먹고 싶다 단계, 15자 이내)",
     "body": "맛/식감/향 묘사 2~3문장. 입에 넣은 그 순간을 상상하게."
   }},
+  "size_section": {{
+    "title": "크기·중량 섹션 제목 (15자 이내, 예: 손에 잡히는 크기)",
+    "body": "사이즈·실측 묘사 1~2문장.",
+    "items": [
+      {{"label": "한 개 크기", "value": "예: 손바닥 한 뼘"}},
+      {{"label": "1박스", "value": "예: 약 8~12개"}},
+      {{"label": "총 중량", "value": "예: 3kg"}}
+    ]
+  }},
   "fresh_section": {{
     "title": "신선/산지 섹션 제목 (사고 싶다 단계, 15자 이내)",
     "body": "산지·새벽잡이·콜드체인 등 신선도 근거 2~3문장."
   }},
-  "spec_section": {{
-    "title": "제품 정보 섹션 제목 (15자 이내)",
-    "items": [
-      {{"label": "원산지", "value": "예: 통영 욕지도"}},
-      {{"label": "중량", "value": "예: 1kg (2~3마리)"}},
-      {{"label": "포장", "value": "예: 진공·아이스팩"}},
-      {{"label": "보관", "value": "예: 냉동 -18℃ 6개월"}}
-    ]
+  "farm_section": {{
+    "title": "생산자/농장 섹션 제목 (15자 이내, 예: 직접 키운 농부)",
+    "body": "생산자 이야기/철학 2~3문장. 신뢰감 형성."
   }},
   "cook_section": {{
     "title": "조리 섹션 제목 (먹고 싶다 재점화, 15자 이내)",
@@ -75,19 +90,43 @@ COPY_USER_TEMPLATE = """제품 정보:
       "조리법3"
     ]
   }},
+  "spec_section": {{
+    "title": "제품 정보 섹션 제목 (15자 이내)",
+    "items": [
+      {{"label": "원산지", "value": ""}},
+      {{"label": "중량", "value": ""}},
+      {{"label": "포장", "value": ""}},
+      {{"label": "보관", "value": ""}}
+    ]
+  }},
+  "package_section": {{
+    "title": "포장/배송 섹션 제목 (15자 이내)",
+    "body": "박스·아이스팩·신선유지 묘사 1~2문장."
+  }},
+  "reviews_section": {{
+    "title": "후기 섹션 제목 (15자 이내, 예: 먼저 받아본 분들)",
+    "items": [
+      {{"name": "김○○", "stars": 5, "text": "리뷰 한 줄 (자연스럽게, 과장 X)"}},
+      {{"name": "이○○", "stars": 5, "text": "리뷰 한 줄"}},
+      {{"name": "박○○", "stars": 5, "text": "리뷰 한 줄"}}
+    ]
+  }},
   "trust_section": {{
     "title": "안심 섹션 제목 (사야겠다 단계, 15자 이내)",
     "points": [
       "신선도 불만족 시 100% 환불",
       "오전 10시 전 주문 시 당일 출고",
-      "수산물 이력관리 정품"
+      "원산지·이력 정품 보장"
     ]
   }},
   "cta": "구매 버튼 카피 (10자 이내, 행동 촉구)",
   "image_prompts": {{
-    "hero": "히어로 이미지 영문 프롬프트 (식욕 자극 메인 컷)",
-    "close_up": "클로즈업 디테일 컷 영문 프롬프트 (질감·윤기)",
-    "cook_example": "조리 완성 컷 영문 프롬프트 (식탁 연출)"
+    "hero": "히어로 영문 프롬프트 (식욕 자극 메인 컷)",
+    "close_up": "클로즈업 영문 프롬프트 (질감·윤기·한 입 베어문 단면)",
+    "size_compare": "크기 비교 영문 프롬프트 (손에 든 컷 또는 자/동전 옆 실측)",
+    "farm": "농장/산지 영문 프롬프트 (밭/바다/생산자 손)",
+    "package": "포장/박스 영문 프롬프트 (배송 박스, 아이스팩, 정성 포장)",
+    "cook_example": "조리 완성 영문 프롬프트 (식탁 연출, 김 모락)"
   }}
 }}
 """
@@ -99,14 +138,20 @@ class CopyResult:
     subtitle: str = ""
     hero_headline: str = ""
     hero_sub: str = ""
+    hook_section: dict = field(default_factory=dict)
     appeals: list = field(default_factory=list)
     taste_section: dict = field(default_factory=dict)
+    size_section: dict = field(default_factory=dict)
     fresh_section: dict = field(default_factory=dict)
-    spec_section: dict = field(default_factory=dict)
+    farm_section: dict = field(default_factory=dict)
     cook_section: dict = field(default_factory=dict)
+    spec_section: dict = field(default_factory=dict)
+    package_section: dict = field(default_factory=dict)
+    reviews_section: dict = field(default_factory=dict)
     trust_section: dict = field(default_factory=dict)
     cta: str = "지금 구매하기"
     image_prompts: dict = field(default_factory=dict)
+    provider: str = "fallback"
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -128,6 +173,11 @@ def _fallback_copy(raw_name: str, category: str, note: str) -> CopyResult:
         subtitle="산지에서 바로, 신선함 그대로",
         hero_headline="오늘 잡은 신선함",
         hero_sub="새벽 산지직송, 식탁까지 신선하게",
+        hook_section={
+            "kicker": "한 번 먹으면",
+            "title": "잊을 수 없는 그 맛",
+            "body": "입에 넣자마자 퍼지는 진한 풍미. 가족이 먼저 손을 뻗습니다.",
+        },
         appeals=["새벽 산지직송", "당일 진공포장", "신선도 100% 보장"],
         taste_section={
             "title": "한 입에 퍼지는 진짜 맛",
@@ -136,12 +186,36 @@ def _fallback_copy(raw_name: str, category: str, note: str) -> CopyResult:
                 "씹을수록 깊어지는 단맛이 살아 있어요. 가족 모두가 좋아하는 그 맛."
             ),
         },
+        size_section={
+            "title": "보기 좋은 실한 크기",
+            "body": "손에 잡히는 묵직한 사이즈. 한 입에 풍성하게 즐기세요.",
+            "items": [
+                {"label": "한 개 크기", "value": "손바닥 한 뼘"},
+                {"label": "1박스", "value": "약 8~12개"},
+                {"label": "총 중량", "value": "약 3kg"},
+            ],
+        },
         fresh_section={
             "title": "새벽 산지에서 바로",
             "body": (
                 "오늘 새벽 산지에서 직접 받아 콜드체인으로 보냅니다. "
                 "유통 단계를 줄여, 신선함이 그대로 식탁에 닿습니다."
             ),
+        },
+        farm_section={
+            "title": "직접 키운 농부의 손",
+            "body": (
+                "30년 외길, 한 농가가 정성으로 키웠습니다. "
+                "땅과 햇볕, 시간을 들인 만큼 맛이 정직합니다."
+            ),
+        },
+        cook_section={
+            "title": "이렇게 드시면 더 맛있어요",
+            "tips": [
+                "구이 — 중불 4~5분, 노릇하게",
+                "찜 — 양념과 함께 10분, 부드럽게",
+                "탕 — 무·파와 함께 시원하게",
+            ],
         },
         spec_section={
             "title": "제품 정보",
@@ -152,12 +226,16 @@ def _fallback_copy(raw_name: str, category: str, note: str) -> CopyResult:
                 {"label": "보관", "value": "냉동 -18℃ 6개월"},
             ],
         },
-        cook_section={
-            "title": "이렇게 드시면 더 맛있어요",
-            "tips": [
-                "구이 — 중불 4~5분, 노릇하게",
-                "찜 — 양념과 함께 10분, 부드럽게",
-                "탕 — 무·파와 함께 시원하게",
+        package_section={
+            "title": "정성스러운 포장",
+            "body": "전용 박스에 아이스팩과 함께. 받으시는 그 순간까지 신선하게.",
+        },
+        reviews_section={
+            "title": "먼저 받아본 분들",
+            "items": [
+                {"name": "김○○", "stars": 5, "text": "신선해서 비린내 하나 없어요. 재구매!"},
+                {"name": "이○○", "stars": 5, "text": "포장이 꼼꼼하고, 양도 푸짐했어요."},
+                {"name": "박○○", "stars": 5, "text": "부모님 선물했는데 너무 좋아하셨어요."},
             ],
         },
         trust_section={
@@ -171,40 +249,51 @@ def _fallback_copy(raw_name: str, category: str, note: str) -> CopyResult:
         cta="지금 신선하게 받기",
         image_prompts={
             "hero": (
-                "Hyper-realistic top-down food photography of fresh Korean seafood, "
+                "Hyper-realistic top-down food photography of fresh Korean food, "
                 "glossy texture, soft natural light, wooden cutting board, "
                 "appetizing, magazine quality, shallow depth of field"
             ),
             "close_up": (
                 "Extreme close-up macro shot showing fresh texture and moisture, "
-                "natural daylight, vivid colors, mouth-watering detail"
+                "natural daylight, vivid colors, mouth-watering detail, "
+                "one piece bitten open showing the inside"
+            ),
+            "size_compare": (
+                "A hand holding the product to show its size, natural daylight, "
+                "lifestyle shot, clean background, sense of scale"
+            ),
+            "farm": (
+                "Korean farm or sea origin scene, farmer's hands harvesting, "
+                "warm golden hour light, documentary feel, trust-building"
+            ),
+            "package": (
+                "A delivery box with the product carefully packaged with ice packs, "
+                "clean white studio background, soft shadow, premium feel"
             ),
             "cook_example": (
                 "Beautifully plated Korean home-style dish on ceramic plate, "
                 "steam rising, warm dinner table setting, cinematic light"
             ),
         },
+        provider="fallback",
     )
 
 
-def generate_copy(
-    raw_name: str,
-    category: str = "수산물",
-    note: str = "",
-    api_key: Optional[str] = None,
-    model: str = "gemini-2.0-flash",
-) -> CopyResult:
-    """Gemini로 식품 상세페이지 카피를 한 번에 생성한다."""
-    key = api_key or os.getenv("GEMINI_API_KEY")
-    if not key or genai is None:
-        return _fallback_copy(raw_name, category, note)
+def _merge_into(base: CopyResult, data: dict, provider: str) -> CopyResult:
+    for k, v in (data or {}).items():
+        if hasattr(base, k) and v:
+            setattr(base, k, v)
+    base.provider = provider
+    return base
 
+
+def _gen_gemini(raw_name, category, note, key, model) -> Optional[CopyResult]:
+    if not key or genai is None:
+        return None
     try:
         genai.configure(api_key=key)
         prompt = COPY_USER_TEMPLATE.format(
-            category=category or "식품",
-            raw_name=raw_name or "",
-            note=note or "",
+            category=category or "식품", raw_name=raw_name or "", note=note or "",
         )
         gm = genai.GenerativeModel(
             model_name=model,
@@ -213,11 +302,77 @@ def generate_copy(
         )
         resp = gm.generate_content(prompt)
         text = _strip_codefence(getattr(resp, "text", "") or "")
-        data = json.loads(text)
-        result = _fallback_copy(raw_name, category, note)
-        for k, v in data.items():
-            if hasattr(result, k) and v:
-                setattr(result, k, v)
-        return result
+        return _merge_into(_fallback_copy(raw_name, category, note),
+                           json.loads(text), provider="gemini")
     except Exception:
-        return _fallback_copy(raw_name, category, note)
+        return None
+
+
+def _gen_openai(raw_name, category, note, key, model) -> Optional[CopyResult]:
+    if not key or _OpenAI is None:
+        return None
+    try:
+        client = _OpenAI(api_key=key)
+        prompt = COPY_USER_TEMPLATE.format(
+            category=category or "식품", raw_name=raw_name or "", note=note or "",
+        )
+        resp = client.chat.completions.create(
+            model=model,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": COPY_SYSTEM},
+                {"role": "user", "content": prompt},
+            ],
+        )
+        text = _strip_codefence(resp.choices[0].message.content or "")
+        return _merge_into(_fallback_copy(raw_name, category, note),
+                           json.loads(text), provider="openai")
+    except Exception:
+        return None
+
+
+def generate_copy(
+    raw_name: str,
+    category: str = "수산물",
+    note: str = "",
+    api_key: Optional[str] = None,
+    model: str = "gemini-2.0-flash",
+    provider: str = "gemini",
+) -> CopyResult:
+    """단일 LLM으로 카피 생성. provider='gemini'|'openai'.
+
+    실패/키 없음 → 안전 폴백.
+    """
+    if provider == "openai":
+        key = api_key or os.getenv("OPENAI_API_KEY")
+        out = _gen_openai(raw_name, category, note, key, model or "gpt-4o-mini")
+    else:
+        key = api_key or os.getenv("GEMINI_API_KEY")
+        out = _gen_gemini(raw_name, category, note, key, model or "gemini-2.0-flash")
+    return out or _fallback_copy(raw_name, category, note)
+
+
+def generate_copy_compare(
+    raw_name: str,
+    category: str = "수산물",
+    note: str = "",
+    gemini_key: Optional[str] = None,
+    openai_key: Optional[str] = None,
+    gemini_model: str = "gemini-2.0-flash",
+    openai_model: str = "gpt-4o-mini",
+) -> dict:
+    """두 모델로 동시 생성. 비교 후 사용자 선택용.
+
+    반환: {"gemini": CopyResult|None, "openai": CopyResult|None}
+    키가 없거나 실패한 쪽은 None.
+    """
+    return {
+        "gemini": _gen_gemini(
+            raw_name, category, note,
+            gemini_key or os.getenv("GEMINI_API_KEY"), gemini_model,
+        ),
+        "openai": _gen_openai(
+            raw_name, category, note,
+            openai_key or os.getenv("OPENAI_API_KEY"), openai_model,
+        ),
+    }

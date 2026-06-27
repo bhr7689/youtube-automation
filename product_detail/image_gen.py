@@ -66,7 +66,7 @@ def generate_detail_images(
     base_image: Image.Image,
     prompts: dict,
     api_key: Optional[str] = None,
-    max_count: int = 3,
+    max_count: int = 6,
 ) -> list[GeneratedImage]:
     """업로드 이미지를 기반으로 디테일 컷을 생성한다.
 
