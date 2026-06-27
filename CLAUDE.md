@@ -176,5 +176,18 @@ python pipeline.py --init                              # 파이프라인 폴더 
 - [ ] 실제 API 키로 end-to-end 점검(collect→score→검수→역설계→pipeline) — 키 필요해 미수행
 - [ ] `automation.py`(laughing-hawking) cron 레이어를 통합할지 결정
 - [ ] sleepy-fermat-76R13 의 reverse_app.py 를 default 브랜치(eqO5N)로 머지해야 사용자 화면에 반영됨
-- [ ] lyrics-auto-generator-9pf34x 를 default 브랜치(eqO5N)로 머지해야 사용자 화면에 반영됨
+- [x] 🌍 **나라별 작사 도서관**(2026-06-27, lyrics-auto-generator-9pf34x):
+  `nation_prompts.py` + `nation_prompts.json` (gitignore — 사용자 편집 로컬 보존,
+  시드는 코드 안 SEED_NATION_PROMPTS). **12개국 작사 DNA 시드**:
+  한국어/영어/일본어/대만식 중국어/멕시코식·스페인 스페인어/프랑스어/힌디어/
+  베트남어/인도네시아어/태국어/브라질 포르투갈어. 각 나라마다 6필드 — 작사가
+  페르소나·자주 쓰는 모티프(9개 내외)·운율 형식 규칙·대표 작사가·피해야 할 것·
+  한 줄 샘플(톤 참고). 가사 생성 시 `build_combined_persona()` 가 자동으로
+  장르 페르소나 + 그 나라 작사 DNA 를 합쳐 generate_lyrics 에 주입.
+  사이드바에서 나라별 편집·저장 UI(드롭다운 + expander). 결과 카드에 적용된
+  작사 DNA(대표 작사가) 표시. 새 언어 시드 추가 시 기존 사용자 편집 보존하며
+  자동 보충.
+- [x] **lyrics-auto-generator-9pf34x → default 브랜치(eqO5N) 머지 완료**
+  (2026-06-27, rebase + no-ff merge). 사용자 PC `유튜브실행.bat` 로 받으면
+  가사 생성기 자동 포함.
 - (작업하며 갱신할 것)
