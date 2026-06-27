@@ -305,11 +305,17 @@ def search_multilang(
     chan_ids = list({v["channel_id"] for v in videos_meta.values() if v.get("channel_id")})
     chan_meta = _hydrate_channels(yt, chan_ids)
 
-    # 4) 합치기 + lang_label 부여 (가장 먼저 잡힌 언어 유지)
+    # 4) 합치기 — 한 영상이 여러 언어 검색에 잡히면 모든 언어 라벨 누적
     seen: dict[str, dict] = {}
     for label, ids in lang_ids.items():
         for vid in ids:
-            if vid in seen or vid not in videos_meta:
+            if vid not in videos_meta:
+                continue
+            if vid in seen:
+                # 이미 본 영상 — 라벨/검색어만 추가
+                if label not in seen[vid]["search_lang_labels"]:
+                    seen[vid]["search_lang_labels"].append(label)
+                    seen[vid]["search_queries"].append(translations.get(label, ""))
                 continue
             v = dict(videos_meta[vid])
             ch = chan_meta.get(v.get("channel_id") or "", {})
@@ -321,9 +327,25 @@ def search_multilang(
             v["viral_ratio"] = (
                 v["view_count"] / max(subs, 100) if v.get("view_count") else 0.0
             )
+            v["search_lang_labels"] = [label]
+            v["search_queries"] = [translations.get(label, "")]
+            # 첫 번째 라벨/쿼리는 호환성을 위해 단일 필드로도 유지
             v["search_lang_label"] = label
             v["search_query"] = translations.get(label, "")
             seen[vid] = v
+
+    # 콤마구분 라벨 만들기 (표/카드에서 보여주기 쉽게)
+    for v in seen.values():
+        labels_list = v.get("search_lang_labels", [])
+        # 국기 부분만 골라서 짧게
+        flags = []
+        for lab in labels_list:
+            # "🇰🇷 한국어" → "🇰🇷"
+            parts = lab.split()
+            if parts:
+                flags.append(parts[0])
+        v["search_lang_flags"] = " ".join(flags)
+        v["search_lang_count"] = len(labels_list)
 
     results = list(seen.values())
 
