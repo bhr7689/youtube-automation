@@ -49,6 +49,7 @@ def build_prompt(
     theme: str = "",
     genre: str = "",
     language: str = "한국어",
+    signature_brief: str = "",
 ) -> str:
     """Gemini 에 줄 가사 생성 지시문.
 
@@ -84,8 +85,26 @@ def build_prompt(
             f"  (제목 title 과 주제 theme 도 {lang}로 작성)."
         )
 
-    return f"""{persona_block}
+    signature_section = f"\n{signature_brief.strip()}\n" if signature_brief.strip() else ""
 
+    suno_format_rules = """
+[수노(Suno) 가사 출력 형식 — 매우 중요]
+- 각 섹션마다 다음 세 가지를 함께 생성:
+  1) **sound_direction**: 그 섹션의 악기·연주·분위기를 한 줄 영어로 묘사
+     (가사 출력 시 섹션 태그 바로 아래에 (괄호) 로 감쌈)
+     예: "soft piano alone, accordion enters gently, warm string pad embraces"
+  2) **stage_direction**: 보컬 연기 지시 (선택, 필요한 섹션만)
+     (가사 출력 시 [대괄호] 로 감쌈)
+     예: "Sweet and Airy" / "Whispering" / "Slower" / "Fading Out"
+  3) **lines**: 실제 가사 줄들 (Intro/Break/Outro 처럼 기악만이면 빈 배열)
+- sound_direction 은 반드시 시그니처의 [핵심 악기]와 [섹션별 사운드 레시피] 위에서 작성.
+  금지 악기는 어떤 섹션에도 등장 금지. 오늘의 액센트는 한두 섹션에만 살짝.
+- stage_direction 은 시그니처가 제공한 어휘 풀에서 어울리는 것을 골라 사용.
+- Intro / Break / Outro 같이 가사 없는 기악 섹션은 lines 를 빈 배열로 두고
+  sound_direction 만 충실히 작성."""
+
+    return f"""{persona_block}
+{signature_section}
 이 페르소나의 화법으로 새 가사를 작사합니다. 같은 화자·정서·운율을 유지하되,
 {n}개의 서로 다른 가사를 만드세요. 각각은 주제·풍경·결말이 달라야 합니다.
 
@@ -93,6 +112,7 @@ def build_prompt(
 - 약 {duration_sec}초 분량 ({structure.get('label','')})
 - 구조: {structure_desc}
 - 총 가사 줄 수 약 {structure.get('approx_lines', 18)}줄
+- Intro / Break(악기 솔로) / Outro 도 섹션에 포함 (가사 없이 사운드 지문만)
 
 [주제 / 장르]
 {theme_block}
@@ -103,6 +123,7 @@ def build_prompt(
 - 후렴은 같은 글이 그대로 반복되어야 함(가사 안에서 후렴이 반복될 때 동일 텍스트).
 - 같은 줄이 의미 없이 반복되는 자동 자막 스타일 금지.
 - 결과 가사들은 같은 페르소나지만 충분히 다른 이야기로.
+{suno_format_rules}
 
 [반드시 아래 JSON 만 출력 — 마크다운/설명/주석 금지]
 {{
@@ -111,11 +132,14 @@ def build_prompt(
       "title": "<곡 제목>",
       "theme": "<이 가사의 주제 한 줄>",
       "sections": [
-        {{"section": "verse 1", "lines": ["...", "..."]}},
-        {{"section": "chorus", "lines": ["...", "..."]}},
-        ... (구조 목표대로)
+        {{"section": "Intro",    "sound_direction": "...", "stage_direction": "",                  "lines": []}},
+        {{"section": "Verse 1",  "sound_direction": "",    "stage_direction": "Sweet and Airy",     "lines": ["...", "..."]}},
+        {{"section": "Chorus",   "sound_direction": "...", "stage_direction": "",                   "lines": ["...", "..."]}},
+        {{"section": "Break",    "sound_direction": "...", "stage_direction": "",                   "lines": []}},
+        {{"section": "Outro",    "sound_direction": "...", "stage_direction": "Fading Out",         "lines": []}}
+        // 구조 목표(verses {structure['verses']}, chorus {structure['chorus_reps']}회{', bridge 1' if structure.get('bridge') else ''})에 맞게
       ],
-      "lyrics_text": "<위 sections 를 줄바꿈으로 이어붙인 전체 가사>"
+      "lyrics_text": ""
     }}
     // {n}개
   ]
@@ -131,26 +155,52 @@ def _loads(raw: str) -> dict:
 
 
 def _section_to_text(sec: dict) -> str:
-    label = sec.get("section", "")
+    """섹션 dict → Suno 표준 텍스트 블록.
+
+    [Section]
+    (sound_direction)         ← 있으면
+    [stage_direction]         ← 있으면
+    lyric line 1
+    lyric line 2
+    """
+    label = sec.get("section", "") or ""
+    sound = (sec.get("sound_direction") or "").strip()
+    stage = (sec.get("stage_direction") or "").strip()
     lines = [str(line).strip() for line in (sec.get("lines") or []) if str(line).strip()]
-    body = "\n".join(lines)
-    return f"[{label}]\n{body}" if label else body
+
+    parts: list[str] = []
+    if label:
+        parts.append(f"[{label}]")
+    if sound:
+        parts.append(f"({sound})")
+    if stage:
+        parts.append(f"[{stage}]")
+    if lines:
+        parts.append("\n".join(lines))
+    return "\n".join(parts)
 
 
 def _reconstruct_text(sections: list[dict]) -> str:
     return "\n\n".join(_section_to_text(s) for s in sections if s)
 
 
+def _has_content(sec: dict) -> bool:
+    return bool(
+        (sec.get("lines") or [])
+        or (sec.get("sound_direction") or "").strip()
+        or (sec.get("stage_direction") or "").strip()
+    )
+
+
 def parse(raw: str, *, expected: int = 0) -> list[dict]:
-    """JSON → 변주 리스트. lyrics_text 가 비어 있으면 sections 로 재구성."""
+    """JSON → 변주 리스트. sound_direction / stage_direction 보존."""
     data = _loads(raw)
     variants = data.get("variants") or []
     out: list[dict] = []
     for v in variants:
         sections = v.get("sections") or []
-        text = (v.get("lyrics_text") or "").strip()
-        if not text and sections:
-            text = _reconstruct_text(sections)
+        # 항상 sections 에서 재구성 — Suno 포맷(괄호 사운드 + 대괄호 Stage)을 정확히 유지
+        text = _reconstruct_text(sections) if sections else (v.get("lyrics_text") or "").strip()
         if not text:
             continue
         out.append({
@@ -160,7 +210,6 @@ def parse(raw: str, *, expected: int = 0) -> list[dict]:
             "lyrics_text": text,
         })
     if expected and out and len(out) < expected:
-        # 부족하면 부족한 대로 반환 — 호출 측에서 추가 호출 결정
         pass
     return out
 
@@ -185,14 +234,15 @@ def generate_lyrics(
     theme: str = "",
     genre: str = "",
     language: str = "한국어",
+    signature_brief: str = "",
     llm_call=None,
     api_key: str | None = None,
     model: str = DEFAULT_MODEL,
 ) -> list[dict]:
     """페르소나 + 길이/주제 → N개 가사 변주.
 
-    Gemini 가 큰 N 에서 품질이 떨어지므로, 호출 측에서 5개씩 끊어 여러 번
-    호출하고 결과를 합치는 것을 권장(이 함수는 단일 호출).
+    signature_brief: 오늘의 시그니처 요약(daily_signature.signature_brief_for_prompt).
+    있으면 LLM 이 sound_direction / stage_direction 을 시그니처 위에서 작성.
     """
     if not (persona or "").strip():
         raise ValueError("persona(작사가 페르소나)가 필요합니다.")
@@ -200,6 +250,7 @@ def generate_lyrics(
     prompt = build_prompt(
         persona=persona, structure=structure, duration_sec=duration_sec,
         n=n, theme=theme, genre=genre, language=language,
+        signature_brief=signature_brief,
     )
     if llm_call is None:
         if not api_key:

@@ -15,6 +15,7 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from lyrics_generator import DURATION_PRESETS, generate_lyrics
+import daily_signature as ds
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -285,6 +286,54 @@ if "gemini_key" not in st.session_state:
     st.session_state["gemini_key"] = default_key
 
 with st.sidebar:
+    # ── ☀️ 오늘의 시그니처 (사운드 정체성) ───────────────────────────
+    sig_data = ds.load_signatures()
+    sig = ds.get_current(sig_data)
+    st.markdown("### ☀️ 오늘의 시그니처")
+    st.markdown(
+        f"**{sig.get('name','(없음)')}** · Day {sig.get('day_count', 1)}\n\n"
+        f"🎹 {', '.join((sig.get('core_instruments') or [])[:2])}…  \n"
+        f"🎤 {sig.get('vocal','')[:50]}…  \n"
+        f"💭 {sig.get('mood','')[:50]}…"
+    )
+    excluded = sig.get("excluded_instruments") or []
+    if excluded:
+        st.caption("🚫 **금지 악기:** " + ", ".join(excluded))
+
+    with st.expander("✏️ 시그니처 편집", expanded=False):
+        new_name = st.text_input("시리즈명", value=sig.get("name", ""))
+        new_core = st.text_area(
+            "핵심 악기 (한 줄에 하나)",
+            value="\n".join(sig.get("core_instruments") or []),
+            height=120,
+        )
+        new_excluded = st.text_input(
+            "절대 금지 악기 (쉼표 구분)",
+            value=", ".join(sig.get("excluded_instruments") or []),
+        )
+        new_vocal = st.text_area("보컬", value=sig.get("vocal", ""), height=70)
+        new_mood = st.text_area("분위기", value=sig.get("mood", ""), height=70)
+        new_tempo = st.text_input("템포 라벨", value=sig.get("tempo_label", ""))
+        new_ref = st.text_input("레퍼런스 아티스트", value=sig.get("reference_artist", ""))
+        new_accents = st.text_area(
+            "액센트 팔레트 (한 줄에 하나, 매 곡 1개 자동 선택)",
+            value="\n".join(sig.get("accent_palette") or []),
+            height=120,
+        )
+        if st.button("💾 시그니처 저장", use_container_width=True):
+            sig["name"] = new_name.strip()
+            sig["core_instruments"] = [x.strip() for x in new_core.splitlines() if x.strip()]
+            sig["excluded_instruments"] = [x.strip() for x in new_excluded.split(",") if x.strip()]
+            sig["vocal"] = new_vocal.strip()
+            sig["mood"] = new_mood.strip()
+            sig["tempo_label"] = new_tempo.strip()
+            sig["reference_artist"] = new_ref.strip()
+            sig["accent_palette"] = [x.strip() for x in new_accents.splitlines() if x.strip()]
+            ds.upsert_series(sig_data.get("current"), sig)
+            st.success("저장됨!")
+            st.rerun()
+
+    st.markdown("---")
     st.markdown("### ⚙️ 설정")
     st.text_input(
         "Gemini API 키",
@@ -301,7 +350,7 @@ with st.sidebar:
         """
         **이용약관 / 개인정보**
 
-        - 본 앱은 **입력값/결과를 저장하지 않습니다.**
+        - 본 앱은 **입력값/결과를 저장하지 않습니다** (시그니처만 로컬 저장).
         - API 키는 브라우저 세션 메모리에만 잠시 보관됩니다.
         - 생성된 가사의 저작권은 사용자에게 있으며,
           상업적 활용 시 사용자가 직접 검토해 주세요.
@@ -382,8 +431,12 @@ if go:
     persona = GENRE_PERSONAS[genre]["persona"]
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
+    # 오늘의 시그니처 + 곡별 액센트 (각 언어마다 다른 액센트 — seed = timestamp+lang)
+    current_sig = ds.get_current()
+
     # 언어별로 한 번씩 호출 — 각 언어의 자연스러운 가요 운율 확보
     results_by_lang: dict[str, list[dict]] = {}
+    accent_by_lang: dict[str, str] = {}
     total_jobs = len(selected_languages)
     progress = st.progress(0.0, text=f"🎵 0 / {total_jobs} 언어 작업 중…")
 
@@ -392,6 +445,9 @@ if go:
             (idx - 1) / total_jobs,
             text=f"🎵 [{idx}/{total_jobs}] {LANGUAGES[lang]['flag']} {lang} 가사 만드는 중…",
         )
+        accent = ds.pick_accent(current_sig, seed=hash((timestamp, lang)) & 0xFFFFFFFF)
+        accent_by_lang[lang] = accent
+        sig_brief = ds.signature_brief_for_prompt(current_sig, accent=accent)
         try:
             variants = generate_lyrics(
                 persona=persona,
@@ -400,6 +456,7 @@ if go:
                 theme=theme,
                 genre=genre,
                 language=lang,
+                signature_brief=sig_brief,
                 api_key=api_key,
             )
         except Exception as e:  # noqa: BLE001
@@ -420,6 +477,7 @@ if go:
 
     st.success(
         f"🎉 **{len(results_by_lang)}개 언어 × {n_variants}곡 = 총 {total_songs}곡** 완성!  "
+        f"☀️ **{current_sig.get('name','')} (Day {current_sig.get('day_count',1)})** 사운드 위에서 만들어졌어요.  "
         f"각 카드 3개 박스를 그대로 **수노(Suno) Custom 모드**에 붙여넣으면 끝이에요."
     )
 
@@ -439,14 +497,21 @@ if go:
             """
         )
 
-    # 언어별 섹션
+    # 언어별 섹션 — Suno Style 은 시그니처 + 곡별 액센트 기반
     card_no = 0
     for lang, variants in results_by_lang.items():
         if not variants:
             continue
         flag = LANGUAGES[lang]["flag"]
-        suno_style = build_suno_style(genre, lang)
+        accent = accent_by_lang.get(lang, "")
+        suno_style = ds.build_suno_style(
+            current_sig,
+            accent=accent,
+            language_english=LANGUAGES[lang]["english"],
+        )
         st.markdown(f"## {flag} {lang}  ({len(variants)}곡)")
+        if accent:
+            st.caption(f"🎵 오늘의 액센트(이 언어): **{accent}**")
 
         for v in variants:
             card_no += 1
@@ -475,6 +540,7 @@ if go:
             st.code(suno_lyrics, language="text")
 
             bundle = (
+                f"=== SIGNATURE ===\n{current_sig.get('name','')} (Day {current_sig.get('day_count',1)})\n\n"
                 f"=== LANGUAGE ===\n{lang} ({LANGUAGES[lang]['english']})\n\n"
                 f"=== TITLE ===\n{title}\n\n"
                 f"=== STYLE OF MUSIC ===\n{suno_style}\n\n"
@@ -489,6 +555,10 @@ if go:
                 use_container_width=True,
             )
             st.markdown("---")
+
+    # 곡 생성 완료 → 시리즈 day_count + 총 곡수만큼 증가
+    for _ in range(total_songs):
+        ds.increment_day(sig_data.get("current"))
 
 # ────────────────────────────────────────────────────────────────────────────
 # 푸터

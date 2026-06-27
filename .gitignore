@@ -27,3 +27,6 @@ cron.log
 
 # 음악 이어붙이기 앱의 사용자 라이브러리 (자연 소리·이미지)
 music_merger/library/
+
+# 가사 생성기 — 오늘의 시그니처 (사용자별 로컬 상태, day_count 등)
+daily_signature.json
