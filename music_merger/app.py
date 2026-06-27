@@ -408,6 +408,46 @@ def _probe_duration(path):
         return 0.0
 
 
+def format_timestamp(seconds):
+    """초 → YouTube 챕터 친화 문자열.
+    1시간 미만은 MM:SS, 1시간 이상은 H:MM:SS (혼합 OK)."""
+    s = int(seconds)
+    if s < 3600:
+        return f"{s // 60:02d}:{s % 60:02d}"
+    return f"{s // 3600}:{(s % 3600) // 60:02d}:{s % 60:02d}"
+
+
+def build_tracklist_text(music_items, target_seconds):
+    """유튜브 설명란용 트랙리스트 텍스트.
+
+    music_items: [(safe_path, original_name), ...] — 재생 순서대로.
+    target_seconds: 영상 총 길이.
+
+    유튜브 챕터 자동 인식 조건:
+      - 첫 줄이 0:00 또는 00:00 으로 시작
+      - 각 챕터 10초 이상
+      - 최소 3개 챕터
+    """
+    if not music_items:
+        return ""
+    durations = []
+    for path, _ in music_items:
+        d = max(_probe_duration(path), 1.0)
+        durations.append(d)
+
+    lines = []
+    t = 0.0
+    while t < target_seconds:
+        for (_, orig_name), dur in zip(music_items, durations):
+            if t >= target_seconds:
+                break
+            time_str = format_timestamp(t)
+            display = Path(orig_name).stem  # 확장자 제거
+            lines.append(f"{time_str} {display}")
+            t += dur
+    return "\n".join(lines)
+
+
 def build_audio(music_paths, total_seconds, workdir,
                 nature_path=None, nature_volume=0.3,
                 nature_on_sec=0, nature_off_sec=0):
@@ -597,7 +637,7 @@ with st.expander("⚙️ 막혔을 때 — 모든 업로드 한꺼번에 비우�
     if st.button("🔄 모두 비우고 처음부터", key="clear_all"):
         for k in ("music", "nature", "nature_new", "media", "stock_paths", "stock_dir",
                   "lib_image_paths", "audio_path", "video_path", "workdir", "audio_label",
-                  "search_results"):
+                  "search_results", "preview_path", "tracklist_text"):
             st.session_state.pop(k, None)
         # 라이브러리 체크박스/자르기 키도 해제 (파일은 유지, 선택만 비움)
         for k in list(st.session_state.keys()):
@@ -1325,17 +1365,18 @@ if go:
             audio_out = None
 
             if has_music:
-                # 음악 파일 저장
+                # 음악 파일 저장 — 원본 파일명도 함께 보관 (트랙리스트용)
                 progress.progress(10, text="음악 파일 저장 중...")
-                music_paths = []
+                music_items = []  # [(safe_path, original_name), ...]
                 for i, mf in enumerate(music_files):
                     safe_name = f"track_{i:03d}{Path(mf.name).suffix.lower()}"
                     p = workdir / safe_name
                     with open(p, "wb") as f:
                         f.write(mf.getbuffer())
-                    music_paths.append(p)
+                    music_items.append((p, mf.name))
                 if order_mode == "랜덤 섞기":
-                    random.shuffle(music_paths)
+                    random.shuffle(music_items)
+                music_paths = [item[0] for item in music_items]
 
                 # 자연의 소리 경로 결정
                 # - 라이브러리 선택: nature_path_for_build 에 이미 Path 가 들어있음 → 그대로 사용
@@ -1362,6 +1403,13 @@ if go:
                 )
                 st.session_state["audio_path"] = str(audio_out)
                 st.session_state["audio_label"] = duration_choice
+                # 유튜브 설명란용 트랙리스트 생성 (재생 순서 기준)
+                try:
+                    st.session_state["tracklist_text"] = build_tracklist_text(
+                        music_items, target_sec,
+                    )
+                except Exception:
+                    st.session_state["tracklist_text"] = ""
 
             # 배경 미디어(직접 업로드 + 스톡 풀) 모으기
             media_paths = []
@@ -1457,6 +1505,25 @@ if _has_audio_out or _has_video_out:
             st.caption("긴 파일은 처음 부분만 듣고 마음에 들면 다운로드하세요.")
             st.audio(audio_path, format="audio/mp3")
 
+        # 유튜브 설명란용 트랙리스트 — 코드 블록의 우상단 📋 복사 버튼 활용
+        tracklist = st.session_state.get("tracklist_text", "")
+        if tracklist:
+            st.markdown("#### 📋 유튜브 설명란용 트랙 리스트")
+            st.caption(
+                "아래 박스 우상단 **복사 아이콘** 을 눌러 그대로 복사 → "
+                "유튜브 영상 설명에 붙여넣기. "
+                "**첫 줄이 0:00** 으로 시작하고 챕터가 3개 이상이면 "
+                "유튜브가 자동으로 클릭 가능한 챕터로 만들어줘요."
+            )
+            st.code(tracklist, language=None)
+            st.download_button(
+                "📥 트랙리스트 .txt 로 받기",
+                tracklist.encode("utf-8"),
+                file_name=f"tracklist_{label}.txt",
+                mime="text/plain",
+                key="dl_tracklist",
+            )
+
     if _has_video_out:
         video_path = st.session_state["video_path"]
         video_size_mb = os.path.getsize(video_path) / (1024 * 1024)
@@ -1483,7 +1550,8 @@ if _has_audio_out or _has_video_out:
                 _sh.rmtree(wd)
             except Exception:
                 pass
-        for k in ("audio_path", "video_path", "workdir", "audio_label", "preview_path"):
+        for k in ("audio_path", "video_path", "workdir", "audio_label",
+                  "preview_path", "tracklist_text"):
             st.session_state.pop(k, None)
         st.rerun()
 
