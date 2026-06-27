@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 
 from lyrics_generator import DURATION_PRESETS, generate_lyrics
 import daily_signature as ds
+import nation_prompts as np
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -334,6 +335,70 @@ with st.sidebar:
             st.rerun()
 
     st.markdown("---")
+
+    # ── 📚 나라별 작사 도서관 ──────────────────────────────────────
+    st.markdown("### 📚 나라별 작사 도서관")
+    st.caption(
+        "각 언어 선택 시 그 나라의 작사 DNA(모티프·운율·대표 작사가)가 "
+        "자동으로 페르소나에 합쳐져요."
+    )
+    np_data = np.load_prompts()
+    np_keys = list(np_data.keys())
+    edit_lang = st.selectbox(
+        "편집할 나라 고르기",
+        options=np_keys,
+        index=0,
+        key="nation_edit_lang",
+    )
+    cur_nation = np_data.get(edit_lang, {})
+    with st.expander(f"✏️ {edit_lang} 작사 DNA 편집", expanded=False):
+        new_writer = st.text_area(
+            "작사가 페르소나(한 문단)",
+            value=cur_nation.get("writer_persona", ""),
+            height=100,
+            key=f"np_writer_{edit_lang}",
+        )
+        new_motifs = st.text_area(
+            "자주 쓰는 모티프 (쉼표 구분)",
+            value=", ".join(cur_nation.get("motifs") or []),
+            height=70,
+            key=f"np_motifs_{edit_lang}",
+        )
+        new_rhyme = st.text_area(
+            "운율/형식 규칙",
+            value=cur_nation.get("rhyme_rules", ""),
+            height=70,
+            key=f"np_rhyme_{edit_lang}",
+        )
+        new_famous = st.text_input(
+            "대표 작사가/아티스트 (쉼표 구분)",
+            value=cur_nation.get("famous_writers", ""),
+            key=f"np_famous_{edit_lang}",
+        )
+        new_avoid = st.text_area(
+            "피해야 할 것",
+            value=cur_nation.get("avoid", ""),
+            height=70,
+            key=f"np_avoid_{edit_lang}",
+        )
+        new_sample = st.text_input(
+            "한 줄 샘플 (톤 참고용)",
+            value=cur_nation.get("sample_line", ""),
+            key=f"np_sample_{edit_lang}",
+        )
+        if st.button(f"💾 {edit_lang} 저장", use_container_width=True, key=f"np_save_{edit_lang}"):
+            np.upsert_nation(edit_lang, {
+                "writer_persona": new_writer.strip(),
+                "motifs": [x.strip() for x in new_motifs.split(",") if x.strip()],
+                "rhyme_rules": new_rhyme.strip(),
+                "famous_writers": new_famous.strip(),
+                "avoid": new_avoid.strip(),
+                "sample_line": new_sample.strip(),
+            })
+            st.success(f"{edit_lang} 작사 DNA 저장됨!")
+            st.rerun()
+
+    st.markdown("---")
     st.markdown("### ⚙️ 설정")
     st.text_input(
         "Gemini API 키",
@@ -428,7 +493,7 @@ if go:
         )
         st.stop()
 
-    persona = GENRE_PERSONAS[genre]["persona"]
+    base_persona = GENRE_PERSONAS[genre]["persona"]
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # 오늘의 시그니처 + 곡별 액센트 (각 언어마다 다른 액센트 — seed = timestamp+lang)
@@ -448,9 +513,15 @@ if go:
         accent = ds.pick_accent(current_sig, seed=hash((timestamp, lang)) & 0xFFFFFFFF)
         accent_by_lang[lang] = accent
         sig_brief = ds.signature_brief_for_prompt(current_sig, accent=accent)
+        # 🌍 나라별 작사 DNA 자동 합치기 — 장르 페르소나 + 그 나라 모티프/운율/대표 작사가
+        combined_persona = np.build_combined_persona(
+            genre_persona=base_persona,
+            language=lang,
+            extra_genre_label=genre,
+        )
         try:
             variants = generate_lyrics(
-                persona=persona,
+                persona=combined_persona,
                 duration_sec=duration_sec,
                 n=int(n_variants),
                 theme=theme,
@@ -512,6 +583,12 @@ if go:
         st.markdown(f"## {flag} {lang}  ({len(variants)}곡)")
         if accent:
             st.caption(f"🎵 오늘의 액센트(이 언어): **{accent}**")
+        nation = np.get_nation(lang)
+        if nation.get("famous_writers"):
+            st.caption(
+                f"📚 작사 DNA 적용: **{nation.get('famous_writers','')[:60]}…** 톤 / "
+                f"모티프 {len(nation.get('motifs') or [])}개"
+            )
 
         for v in variants:
             card_no += 1
