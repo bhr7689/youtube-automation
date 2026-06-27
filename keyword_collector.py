@@ -502,6 +502,32 @@ def print_videos(vids: list[dict], search_term: str):
         )
 
 
+SCHEDULE_FILE = "schedule_config.json"
+
+
+def load_schedule() -> dict:
+    """schedule_config.json 읽기. 없으면 빈 dict."""
+    try:
+        with open(SCHEDULE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def is_scheduled_now(*, tz_offset_hours: int = 9) -> bool:
+    """현재 KST 시간이 schedule_config.json 에 등록되어 있나? (기본 KST=UTC+9)"""
+    cfg = load_schedule()
+    if not cfg.get("enabled", False):
+        return False
+    weekdays = cfg.get("weekdays", [])   # 0=월 .. 6=일 (Python 표준)
+    hours = cfg.get("hours", [])          # 0..23
+    if not weekdays or not hours:
+        return False
+    from datetime import datetime, timedelta, timezone
+    now_local = datetime.now(timezone.utc) + timedelta(hours=tz_offset_hours)
+    return (now_local.weekday() in weekdays) and (now_local.hour in hours)
+
+
 def main():
     parser = argparse.ArgumentParser(description="YouTube 키워드별 영상 수집")
     parser.add_argument("--dry-run", action="store_true",
@@ -514,7 +540,20 @@ def main():
                         default=int(os.environ.get("COLLECT_PER_KEYWORD", "15")))
     parser.add_argument("--days", type=int,
                         default=int(os.environ.get("COLLECT_DAYS", "90")))
+    parser.add_argument("--check-schedule", action="store_true",
+                        help="schedule_config.json 의 요일/시간과 매칭될 때만 실행 "
+                             "(GitHub Actions 매시간 cron 용)")
     args = parser.parse_args()
+
+    # 스케줄 체크 모드: 현재 시간이 스케줄에 안 맞으면 즉시 종료
+    if args.check_schedule:
+        if not is_scheduled_now():
+            from datetime import datetime, timezone, timedelta
+            now_kst = datetime.now(timezone.utc) + timedelta(hours=9)
+            print(f"⏰ 스케줄 비활성 또는 미매칭 — 현재 KST {now_kst:%A %H:%M}, "
+                  "수집 스킵.")
+            return
+        print("✅ 스케줄 매칭 — 수집 시작합니다.")
 
     yt_key = os.environ.get("YOUTUBE_API_KEY", "").strip()
     if not yt_key:
