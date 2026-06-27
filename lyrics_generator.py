@@ -48,8 +48,14 @@ def build_prompt(
     n: int = 3,
     theme: str = "",
     genre: str = "",
+    language: str = "한국어",
 ) -> str:
-    """Gemini 에 줄 가사 생성 지시문."""
+    """Gemini 에 줄 가사 생성 지시문.
+
+    language: 출력 가사의 언어. "한국어"가 기본. 다른 언어(예: "프랑스어",
+    "멕시코식 스페인어", "힌디어", "대만식 중국어(번체)" 등)를 주면 페르소나의
+    정서·구조는 유지하되 그 언어의 자연스러운 가요 운율로 작사합니다.
+    """
     persona_block = (persona or "").strip()
     if not persona_block:
         persona_block = "당신은 한국 5070 세대를 위한 트로트·발라드 작사가입니다."
@@ -61,6 +67,22 @@ def build_prompt(
         f"벌스 {structure['verses']}개, 후렴 {structure['chorus_reps']}회 반복"
         + (f", 브릿지 1개" if structure.get('bridge') else "")
     )
+
+    lang = (language or "한국어").strip()
+    if lang == "한국어":
+        language_rules = (
+            "- **한국어로 작성**. 자연스러운 한국 가요 어순.\n"
+            "- 페르소나의 어미·운율 습관을 일관되게 사용."
+        )
+    else:
+        language_rules = (
+            f"- **{lang}로 작성**. 그 언어 원어민이 자연스럽게 부를 수 있는 가요 운율·어순으로.\n"
+            f"- 페르소나의 정서·이미지·서사 구조는 유지하되, 한국어 어미를 그대로 옮기지 말고\n"
+            f"  {lang} 가요·시 전통의 자연스러운 표현으로 옮길 것.\n"
+            f"- 음절 수가 {lang} 노래 가창에 맞게 적절해야 함(너무 긴 줄 피하기).\n"
+            f"- 결과는 반드시 {lang}로만, 한국어 단어를 섞지 말 것\n"
+            f"  (제목 title 과 주제 theme 도 {lang}로 작성)."
+        )
 
     return f"""{persona_block}
 
@@ -77,8 +99,7 @@ def build_prompt(
 {genre_block}
 
 [작사 규칙]
-- 한국어로 작성. 자연스러운 한국 가요 어순.
-- 페르소나의 어미·운율 습관을 일관되게 사용.
+{language_rules}
 - 후렴은 같은 글이 그대로 반복되어야 함(가사 안에서 후렴이 반복될 때 동일 텍스트).
 - 같은 줄이 의미 없이 반복되는 자동 자막 스타일 금지.
 - 결과 가사들은 같은 페르소나지만 충분히 다른 이야기로.
@@ -163,6 +184,7 @@ def generate_lyrics(
     n: int = 3,
     theme: str = "",
     genre: str = "",
+    language: str = "한국어",
     llm_call=None,
     api_key: str | None = None,
     model: str = DEFAULT_MODEL,
@@ -177,7 +199,7 @@ def generate_lyrics(
     structure = pick_structure(duration_sec)
     prompt = build_prompt(
         persona=persona, structure=structure, duration_sec=duration_sec,
-        n=n, theme=theme, genre=genre,
+        n=n, theme=theme, genre=genre, language=language,
     )
     if llm_call is None:
         if not api_key:
