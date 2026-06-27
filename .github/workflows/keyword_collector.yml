@@ -5,7 +5,10 @@ name: 📚 키워드별 레퍼런스 영상 수집 (WF-1)
 # 'YouTube Reference Videos' DB에 영상별 한 줄씩 upsert.
 on:
   schedule:
-    - cron: '30 18 * * *'   # 한국시간 03:30 (UTC 18:30 전날)
+    # 매시간 정각 실행 — 실제 수집 여부는 schedule_config.json (사용자가 Streamlit
+    # 에서 선택한 요일/시간) 과 매칭될 때만 진행. cron 자체를 사용자가 바꿀
+    # 필요 없음 (--check-schedule 플래그가 자동 필터링).
+    - cron: '0 * * * *'
   workflow_dispatch:
     inputs:
       per_keyword:
@@ -38,4 +41,11 @@ jobs:
           COLLECT_PER_KEYWORD:            ${{ github.event.inputs.per_keyword     || '15' }}
           COLLECT_DAYS:                   ${{ github.event.inputs.days            || '90' }}
           COLLECT_PRIORITY_FILTER:        ${{ github.event.inputs.priority_filter || '' }}
-        run: python keyword_collector.py
+        # schedule 트리거(매시간)일 때는 --check-schedule 로 schedule_config.json
+        # 매칭 시에만 실제 수집. 수동 실행(workflow_dispatch)은 무조건 즉시 실행.
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            python keyword_collector.py --check-schedule
+          else
+            python keyword_collector.py
+          fi

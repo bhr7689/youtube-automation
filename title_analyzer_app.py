@@ -444,13 +444,22 @@ def fetch_hidden_gems(
                     "title": snip.get("title", ""),
                     "channel_id": snip.get("channelId"),
                     "channel_title": snip.get("channelTitle", ""),
+                    "published_at": (snip.get("publishedAt", "") or "")[:10],
+                    "thumbnail_url": (
+                        snip.get("thumbnails", {}).get("medium", {}).get("url")
+                        or snip.get("thumbnails", {}).get("default", {}).get("url")
+                        or ""
+                    ),
                     "view_count": int(stat.get("viewCount", 0) or 0),
+                    "like_count": int(stat.get("likeCount", 0) or 0),
+                    "comment_count": int(stat.get("commentCount", 0) or 0),
                     "duration_s": _parse_iso_duration_to_seconds(cd.get("duration", "")),
                 }
 
-        # 3) channels.list 로 구독자 수
+        # 3) channels.list 로 구독자 수 + 채널 영상 총 개수
         channel_ids = list({v["channel_id"] for v in videos_map.values() if v.get("channel_id")})
         sub_map: dict[str, int] = {}
+        chan_videos_map: dict[str, int] = {}
         hidden_sub_channels: set[str] = set()
         for i in range(0, len(channel_ids), 50):
             chunk = channel_ids[i : i + 50]
@@ -461,6 +470,7 @@ def fetch_hidden_gems(
                 cid = item.get("id")
                 stat = item.get("statistics", {})
                 hidden = stat.get("hiddenSubscriberCount", False)
+                chan_videos_map[cid] = int(stat.get("videoCount", 0) or 0)
                 if hidden:
                     hidden_sub_channels.add(cid)
                     continue
@@ -481,6 +491,7 @@ def fetch_hidden_gems(
             if ratio < min_ratio:
                 continue
             v["subscriber_count"] = subs
+            v["channel_video_count"] = chan_videos_map.get(cid, 0)
             v["viral_ratio"] = ratio
             results.append(v)
 
@@ -511,7 +522,7 @@ def fetch_trending_videos(
         while len(videos) < max_results:
             page_size = min(50, max_results - len(videos))
             resp = youtube.videos().list(
-                part="snippet,contentDetails",
+                part="snippet,contentDetails,statistics",
                 chart="mostPopular",
                 regionCode=region_code,
                 maxResults=page_size,
@@ -520,14 +531,27 @@ def fetch_trending_videos(
             ).execute()
             for item in resp.get("items", []):
                 vid = item.get("id")
-                title = item.get("snippet", {}).get("title")
+                snip = item.get("snippet", {})
+                stat = item.get("statistics", {})
+                title = snip.get("title")
                 secs = _parse_iso_duration_to_seconds(
                     item.get("contentDetails", {}).get("duration", "")
                 )
                 if vid and title:
-                    videos.append(
-                        {"video_id": vid, "title": title, "duration_s": secs}
-                    )
+                    videos.append({
+                        "video_id": vid, "title": title, "duration_s": secs,
+                        "channel_title": snip.get("channelTitle", ""),
+                        "channel_id": snip.get("channelId", ""),
+                        "published_at": (snip.get("publishedAt", "") or "")[:10],
+                        "thumbnail_url": (
+                            snip.get("thumbnails", {}).get("medium", {}).get("url")
+                            or snip.get("thumbnails", {}).get("default", {}).get("url")
+                            or ""
+                        ),
+                        "view_count": int(stat.get("viewCount", 0) or 0),
+                        "like_count": int(stat.get("likeCount", 0) or 0),
+                        "comment_count": int(stat.get("commentCount", 0) or 0),
+                    })
             page_token = resp.get("nextPageToken")
             if not page_token:
                 break
@@ -807,6 +831,213 @@ def render_hidden_gems(videos: list[dict]):
         )
 
 
+def render_notion_save_panel(videos: list[dict], *, search_label: str,
+                              default_main: str = "유튜브 플레이리스트",
+                              default_middle: str = "", default_sub: str = ""):
+    """결과 위에 'Notion에 저장' 패널 — 토큰·DB·카테고리 입력 + 버튼."""
+    if not videos:
+        return
+    with st.expander(f"💾 이 결과 {len(videos)}개 영상을 Notion에 저장", expanded=False):
+        env_token = os.environ.get("NOTION_TOKEN", "").strip()
+        env_db = os.environ.get("NOTION_REFERENCE_VIDEOS_DB_ID", "").strip()
+
+        notion_token = st.text_input(
+            "Notion Token", value=env_token, type="password",
+            help=".env 에 NOTION_TOKEN 적어두면 자동 채워져요.",
+        )
+        notion_db = st.text_input(
+            "Reference Videos DB ID", value=env_db,
+            help="DB 페이지 URL 의 32자 hex (예: notion.so/2026/abcd1234.../?v=… 의 abcd1234…)",
+        )
+        col_a, col_b, col_c = st.columns(3)
+        with col_a:
+            main_cat = st.text_input("대 카테고리", value=default_main, key="save_main")
+        with col_b:
+            middle_cat = st.text_input("중 카테고리", value=default_middle, key="save_middle")
+        with col_c:
+            sub_cat = st.text_input("소 카테고리", value=default_sub, key="save_sub")
+        kw_label = st.text_input(
+            "Search Keyword 라벨", value=search_label,
+            help="이 결과가 어떤 검색 조건으로 나온 것인지 라벨링하는 텍스트. Notion에서 필터·정렬용.",
+        )
+
+        if st.button("💾 Notion에 저장하기", key=f"notion_save_{search_label}", type="primary"):
+            if not notion_token or not notion_db:
+                st.error("Notion Token 과 DB ID 를 입력해주세요.")
+                return
+            try:
+                from keyword_collector import upsert_videos
+            except Exception as e:
+                st.error(f"keyword_collector import 실패: {e}")
+                return
+            kw_row = {
+                "keyword": kw_label,
+                "main": main_cat or None,
+                "middle": middle_cat or None,
+                "sub": sub_cat or None,
+            }
+            with st.spinner(f"{len(videos)}개 영상 Notion 저장 중…"):
+                try:
+                    created, skipped = upsert_videos(
+                        notion_token, notion_db, videos, kw_row, kw_label,
+                    )
+                except Exception as e:
+                    st.error(f"저장 실패: {e}")
+                    return
+            st.success(f"✅ 신규 {created}건 · 기존 업데이트 {skipped}건 저장 완료")
+            st.balloons()
+
+
+# ============================================================
+# HiView 스타일 등급 시스템 (실적도·공헌도 → 최상/상/중/하/최하)
+# ============================================================
+GRADE_LEVELS = ["최상", "상", "중", "하", "최하"]
+GRADE_COLORS = {
+    "최상": "#3b82f6",  # 파랑
+    "상":   "#10b981",  # 초록
+    "중":   "#f59e0b",  # 노랑/주황
+    "하":   "#f97316",  # 주황
+    "최하": "#ef4444",  # 빨강
+}
+PERF_THRESHOLDS = [
+    ("최상", 100.0), ("상", 30.0), ("중", 5.0), ("하", 1.0), ("최하", 0.0),
+]
+CONTRIB_THRESHOLDS = [
+    ("최상", 5.0), ("상", 2.0), ("중", 1.0), ("하", 0.5), ("최하", 0.0),
+]
+
+
+def calc_performance_grade(viral_ratio: float) -> str:
+    for g, th in PERF_THRESHOLDS:
+        if viral_ratio >= th:
+            return g
+    return "최하"
+
+
+def calc_engagement_rate(v: dict) -> float:
+    views = v.get("view_count", 0) or 0
+    if views <= 0:
+        return 0.0
+    likes = v.get("like_count", 0) or 0
+    comments = v.get("comment_count", 0) or 0
+    return (likes + comments) / views * 100
+
+
+def calc_contribution_grade(engagement: float) -> str:
+    for g, th in CONTRIB_THRESHOLDS:
+        if engagement >= th:
+            return g
+    return "최하"
+
+
+def render_videos_table(videos: list[dict], title: str = "", *, show_grade: bool = True):
+    """HiView 스타일의 표 — 등급/수치 토글 가능."""
+    if not videos:
+        return
+    try:
+        import pandas as pd
+    except Exception:
+        st.warning("pandas 가 없어서 표 모드를 못 띄워요. 카드 모드로 보세요.")
+        return
+
+    has_lang = any(v.get("search_lang_label") for v in videos)
+    rows = []
+    for v in videos:
+        dur = v.get("duration_s")
+        if dur is not None:
+            m, s = divmod(int(dur), 60)
+            dur_txt = f"{m}:{s:02d}"
+        else:
+            dur_txt = "-"
+        ratio = v.get("viral_ratio") or 0
+        engagement = calc_engagement_rate(v)
+        perf_grade = calc_performance_grade(ratio)
+        contrib_grade = calc_contribution_grade(engagement)
+
+        row = {
+            "썸네일": v.get("thumbnail_url", ""),
+            "제목": v["title"],
+            "🔗": f"https://www.youtube.com/watch?v={v.get('video_id','')}",
+            "채널": v.get("channel_title", ""),
+            "📅채널개설일": v.get("channel_created_at", "") or "",
+            "구독자": v.get("subscriber_count") or 0,
+            "📹채널영상수": v.get("channel_video_count") or 0,
+            "조회수": v.get("view_count") or 0,
+        }
+        if show_grade:
+            row["⚡실적도"] = perf_grade
+            row["💖공헌도"] = contrib_grade
+        else:
+            row["⚡실적도"] = round(ratio, 1)
+            row["💖공헌도"] = round(engagement, 2)
+        row.update({
+            "게시일": v.get("published_at", "") or "",
+            "👍좋아요": v.get("like_count") or 0,
+            "💬댓글": v.get("comment_count") or 0,
+            "길이": dur_txt,
+        })
+        if has_lang:
+            row["🌐 언어"] = v.get("search_lang_label", "")
+            row["검색어"] = v.get("search_query", "")
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+    if title:
+        st.markdown(f"### {title}")
+
+    if show_grade:
+        perf_col = st.column_config.TextColumn(
+            "⚡실적도", help="알고리즘 푸시 강도 — 조회수/구독자 배수",
+            width="small",
+        )
+        contrib_col = st.column_config.TextColumn(
+            "💖공헌도", help="시청자 참여도 — (좋아요+댓글)/조회수",
+            width="small",
+        )
+    else:
+        perf_col = st.column_config.NumberColumn("⚡실적도", format="%.1f배")
+        contrib_col = st.column_config.NumberColumn("💖공헌도", format="%.2f %%")
+
+    st.dataframe(
+        df,
+        hide_index=True,
+        use_container_width=True,
+        height=min(620, 80 + 70 * len(rows)),
+        column_config={
+            "썸네일": st.column_config.ImageColumn("썸네일", width="small"),
+            "제목":   st.column_config.TextColumn("제목", width="large"),
+            "🔗":    st.column_config.LinkColumn("🔗", display_text="열기", width="small"),
+            "조회수": st.column_config.NumberColumn("조회수", format="%d"),
+            "구독자": st.column_config.NumberColumn("구독자", format="%d"),
+            "⚡실적도": perf_col,
+            "💖공헌도": contrib_col,
+            "게시일": st.column_config.TextColumn("게시일", width="small"),
+            "👍좋아요": st.column_config.NumberColumn("👍좋아요", format="%d"),
+            "💬댓글": st.column_config.NumberColumn("💬댓글", format="%d"),
+            "길이":   st.column_config.TextColumn("길이", width="small"),
+            "채널":   st.column_config.TextColumn("채널", width="medium"),
+            "📅채널개설일": st.column_config.TextColumn("📅채널개설일", width="small"),
+            "📹채널영상수": st.column_config.NumberColumn("📹채널영상수", format="%d"),
+            "🌐 언어": st.column_config.TextColumn("🌐 언어", width="small"),
+            "검색어": st.column_config.TextColumn("검색어", width="medium"),
+        },
+    )
+
+    # 등급 범례 (HiView 스타일)
+    if show_grade:
+        legend_html = "<div style='display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;font-size:0.82rem;'>"
+        legend_html += "<span style='color:#6b7280;'>등급 범례:</span>"
+        for g in GRADE_LEVELS:
+            legend_html += (
+                f"<span style='background:{GRADE_COLORS[g]};color:white;"
+                f"padding:2px 9px;border-radius:10px;font-weight:700;'>{g}</span>"
+            )
+        legend_html += "</div>"
+        st.markdown(legend_html, unsafe_allow_html=True)
+
+    st.caption("💡 컬럼 헤더 클릭하면 정렬돼요. 🔗 '열기' 누르면 새 탭에서 영상이 뜹니다.")
+
+
 def _render_bar(label: str, pct: float):
     st.markdown(
         f"<div class='bar-bg'><span class='bar-text'>{label} · {pct:.0f}%</span>"
@@ -927,7 +1158,10 @@ def filter_by_length(videos: list[dict], length_mode: str) -> list[dict]:
     return videos
 
 
-def render_with_split(videos: list[dict], length_mode: str, *, show_gems: bool = False):
+def render_with_split(videos: list[dict], length_mode: str, *,
+                      show_gems: bool = False, view_mode: str = "table",
+                      search_label: str = "", category_default: tuple = ("", "", ""),
+                      show_grade: bool = True):
     """선택한 길이 필터로 한 번 렌더링."""
     shorts, longs, unknown = split_shorts_longs(videos)
     has_dur = any(v.get("duration_s") is not None for v in videos)
@@ -949,10 +1183,22 @@ def render_with_split(videos: list[dict], length_mode: str, *, show_gems: bool =
         return
 
     st.markdown("---")
+    if search_label:
+        m, mi, s = (category_default + ("", "", ""))[:3]
+        render_notion_save_panel(
+            filtered, search_label=search_label,
+            default_main=m or "유튜브 플레이리스트",
+            default_middle=mi, default_sub=s,
+        )
     render_seed_block(filtered)
-    if show_gems:
-        render_hidden_gems(filtered)
-    render_analysis(filtered, label)
+
+    if view_mode == "table":
+        render_videos_table(filtered, title=f"📊 {label} · {len(filtered)}개",
+                            show_grade=show_grade)
+    else:
+        if show_gems:
+            render_hidden_gems(filtered)
+        render_analysis(filtered, label)
 
 
 # ============================================================
@@ -981,7 +1227,11 @@ COUNTRY_LABEL_TO_RL = {c[0]: (c[1], c[2]) for c in COUNTRIES}
 # ============================================================
 # 다국가 비교 렌더링 (🌍 공통 / 🏳️ 국가별 고유)
 # ============================================================
-def render_multi_country(results: dict[str, list[dict]], length_mode: str):
+def render_multi_country(results: dict[str, list[dict]], length_mode: str,
+                          view_mode: str = "table",
+                          search_label: str = "",
+                          category_default: tuple = ("", "", ""),
+                          show_grade: bool = True):
     """results: {country_label: [videos]} — 국가별 시드 발굴 결과를 비교."""
     # 1) 길이 필터 적용
     filtered: dict[str, list[dict]] = {
@@ -1037,9 +1287,17 @@ def render_multi_country(results: dict[str, list[dict]], length_mode: str):
             "🌍 2개국 이상에서 공통으로 잡힌 시드가 없어요 — 카테고리 차이가 큰 결과예요."
         )
 
-    # 6) 국가별 고유 시드 + 미니 분석
+    # 6) 국가별 고유 시드 + 미니 분석 (또는 표) + 국가별 Notion 저장
     st.markdown("## 🏳️ 국가별 고유 시드 (현지화 제목용)")
     for country, vids in filtered.items():
+        if search_label:
+            m, mi, s = (category_default + ("", "", ""))[:3]
+            render_notion_save_panel(
+                vids,
+                search_label=f"{search_label} · {country}",
+                default_main=m or "유튜브 플레이리스트",
+                default_middle=mi, default_sub=s,
+            )
         seeds = country_seeds[country]
         unique = [(t, c) for t, c in seeds if len(appear_in.get(t, set())) == 1]
         with st.expander(f"{country} · 영상 {len(vids)}개 · 고유 시드 {len(unique)}개", expanded=True):
@@ -1054,16 +1312,19 @@ def render_multi_country(results: dict[str, list[dict]], length_mode: str):
                     "<span style='color:#6b7280;font-size:0.9rem;'>이 국가만의 고유 시드는 없어요 (공통 시드만 나옴)</span>",
                     unsafe_allow_html=True,
                 )
-            # 미니 인사이트
-            r = analyze_titles([v["title"] for v in vids])
-            if r:
-                st.markdown(
-                    f"<div style='font-size:0.88rem;color:#4b5563;margin-top:8px;'>"
-                    f"📏 평균 {r['len_avg']:.0f}자 · ✨이모지 {r['emoji_pct']:.0f}% · "
-                    f"🔢숫자 {r['number_pct']:.0f}% · 📦대괄호 {r['bracket_pct']:.0f}%"
-                    "</div>",
-                    unsafe_allow_html=True,
-                )
+            # 표 모드면 표, 카드 모드면 미니 인사이트
+            if view_mode == "table":
+                render_videos_table(vids, show_grade=show_grade)
+            else:
+                r = analyze_titles([v["title"] for v in vids])
+                if r:
+                    st.markdown(
+                        f"<div style='font-size:0.88rem;color:#4b5563;margin-top:8px;'>"
+                        f"📏 평균 {r['len_avg']:.0f}자 · ✨이모지 {r['emoji_pct']:.0f}% · "
+                        f"🔢숫자 {r['number_pct']:.0f}% · 📦대괄호 {r['bracket_pct']:.0f}%"
+                        "</div>",
+                        unsafe_allow_html=True,
+                    )
 
 
 # ============================================================
@@ -1075,9 +1336,124 @@ st.markdown(
     "**시드를 알 때** → 그 키워드의 '제목 공식'을 뽑아드려요."
 )
 
+with st.expander("🔔 자동 수집 스케줄 — 요일·시간 내가 직접 선택", expanded=False):
+    st.markdown(
+        "**원하는 요일·시간을 체크**해두면 그 시간마다 GitHub Actions 가 자동으로 "
+        "Notion DB에 영상을 수집해요. cron 표현식 안 건드려도 돼요."
+    )
+
+    SCHED_FILE = "schedule_config.json"
+    KOREAN_WEEKDAYS = ["월", "화", "수", "목", "금", "토", "일"]
+
+    try:
+        with open(SCHED_FILE, "r", encoding="utf-8") as _f:
+            _sched = json.load(_f)
+    except Exception:
+        _sched = {}
+
+    sched_enabled = st.toggle(
+        "🟢 자동 수집 활성화",
+        value=_sched.get("enabled", False),
+        help="끄면 GitHub Actions 매시간 cron이 돌긴 해도 실제 수집은 안 해요.",
+    )
+
+    col_w, col_h = st.columns(2)
+    with col_w:
+        st.markdown("**📅 요일** (여러 개 체크)")
+        sched_weekdays_kr = st.multiselect(
+            "요일", KOREAN_WEEKDAYS,
+            default=[KOREAN_WEEKDAYS[i] for i in _sched.get("weekdays", [0, 3])],
+            label_visibility="collapsed",
+        )
+    with col_h:
+        st.markdown("**🕐 시간** (KST, 여러 개 체크)")
+        sched_hours = st.multiselect(
+            "시간 (KST)", list(range(24)),
+            default=_sched.get("hours", [9]),
+            format_func=lambda h: f"{h:02d}:00",
+            label_visibility="collapsed",
+        )
+
+    weekdays_idx = [KOREAN_WEEKDAYS.index(w) for w in sched_weekdays_kr]
+    runs_per_week = len(weekdays_idx) * len(sched_hours) if sched_enabled else 0
+
+    if sched_enabled and weekdays_idx and sched_hours:
+        st.markdown(
+            f"<div style='background:#f0fdf4;border:1px solid #86efac;"
+            f"border-radius:10px;padding:10px 14px;'>"
+            f"✅ <b>주 {runs_per_week}회 자동 수집</b> · "
+            f"{', '.join(sched_weekdays_kr)} · "
+            f"{', '.join(f'{h:02d}:00' for h in sched_hours)} KST"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.info("자동 수집이 꺼져 있거나 요일·시간이 선택 안 됐어요.")
+
+    if st.button("💾 스케줄 저장", key="sched_save", type="primary"):
+        new_cfg = {
+            "enabled": sched_enabled,
+            "weekdays": weekdays_idx,
+            "hours": sched_hours,
+            "updated_at": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
+        }
+        try:
+            with open(SCHED_FILE, "w", encoding="utf-8") as _f:
+                json.dump(new_cfg, _f, ensure_ascii=False, indent=2)
+            st.success("✅ schedule_config.json 저장 완료")
+            # 자동 git commit/push 시도 (사용자 PC에 git credential 있으면 작동)
+            import subprocess
+            try:
+                subprocess.run(["git", "add", SCHED_FILE], check=True, capture_output=True)
+                subprocess.run(
+                    ["git", "commit", "-m",
+                     f"chore: 자동수집 스케줄 업데이트 ({runs_per_week}회/주)"],
+                    check=True, capture_output=True,
+                )
+                push = subprocess.run(["git", "push"], capture_output=True, text=True)
+                if push.returncode == 0:
+                    st.success("🚀 GitHub 에도 자동 푸시 완료 — 다음 시간부터 적용돼요!")
+                else:
+                    st.warning(
+                        "💡 로컬엔 저장됐지만 GitHub 푸시는 실패 (수동 푸시 필요).\n"
+                        f"오류: {push.stderr[:200]}"
+                    )
+            except subprocess.CalledProcessError:
+                st.info(
+                    "💡 로컬엔 저장됐어요. 다음 git push 때 GitHub에 반영돼요."
+                )
+        except Exception as e:
+            st.error(f"저장 실패: {e}")
+
+    st.caption(
+        "ℹ️ 동작 원리: GitHub Actions cron 이 매시간 한 번씩 깨어나지만 "
+        "schedule_config.json 에 등록된 요일·시간에만 실제 수집해요. "
+        "→ cron 표현식을 사용자가 안 건드려도 됨."
+    )
+
+
+with st.expander("🤖 매일 자동 수집 + Notion 저장 켜는 법 (한 번만 셋업)"):
+    st.markdown(
+        "**자동 수집 흐름** — GitHub Actions 가 매일 새벽 정해진 시간에 사용자님이 "
+        "Notion 의 'Search Keyword Master' DB에 등록한 ACTIVE 키워드들을 모두 검색해서, "
+        "결과 영상을 'YouTube Reference Videos' DB에 한 줄씩 자동 저장해줘요.\n\n"
+        "**셋업 4단계**\n"
+        "1. Notion → Settings → Connections → '+ New integration' → token 복사\n"
+        "2. Notion 에 DB 2개 만들기 (Search Keyword Master + YouTube Reference Videos). "
+        "   두 DB 모두 우상단 ··· → Connections 에 방금 만든 integration 추가\n"
+        "3. GitHub 저장소 → Settings → Secrets → 4개 등록:\n"
+        "   `YOUTUBE_API_KEY` · `NOTION_TOKEN` · `NOTION_KEYWORD_MASTER_DB_ID` · "
+        "`NOTION_REFERENCE_VIDEOS_DB_ID`\n"
+        "4. GitHub 저장소 → Actions 탭 → '📚 키워드별 레퍼런스 영상 수집 (WF-1)' "
+        "워크플로우 활성화. 매일 03:30 KST 자동 실행.\n\n"
+        "**수동 저장**: 자동 수집을 안 켜도 결과 화면의 **💾 Notion에 저장** 버튼으로 "
+        "지금 본 영상을 즉시 DB에 넣을 수 있어요. (Notion DB 만들기는 같은 셋업 필요)"
+    )
+
 mode = st.radio(
     "어떻게 분석할까요?",
     [
+        "🌐 다국어 자동 번역 + 동시 검색 (글로벌 시야 ⭐)",
         "🪄 시드 키워드 자동 발굴 (추천)",
         "🔥 요즘 알고리즘 트렌드 키워드",
         "📂 카테고리로 자동 수집",
@@ -1100,6 +1476,24 @@ length_mode = (
     else "all"
 )
 
+view_mode_label = st.radio(
+    "결과를 어떻게 보여드릴까요?",
+    ["📊 표 (정렬·비교 쉬움)", "🎴 카드 (시드 키워드 + 인사이트 상세)"],
+    horizontal=True,
+    label_visibility="visible",
+    help="표 모드는 컬럼 헤더 클릭으로 정렬할 수 있어요. 카드 모드는 시드 키워드와 분석 인사이트까지 보여줘요.",
+)
+view_mode = "table" if view_mode_label.startswith("📊") else "card"
+
+grade_or_num_label = st.radio(
+    "실적도·공헌도를 어떻게 보여드릴까요?",
+    ["🏷️ 등급 (최상/상/중/하/최하 — HiView 스타일)", "📊 수치 (배수·%)"],
+    horizontal=True,
+    label_visibility="visible",
+    help="등급은 색상으로 한눈에. 수치는 정확한 값으로 정렬 정밀.",
+)
+show_grade = grade_or_num_label.startswith("🏷️")
+
 videos: list[dict] = []
 go = False
 
@@ -1114,8 +1508,147 @@ def _get_api_key() -> str:
 
 show_gems_flag = False
 multi_country_results: dict[str, list[dict]] = {}
+search_label_for_save = ""
+category_default_for_save: tuple = ("", "", "")
 
-if mode.startswith("🪄"):
+if mode.startswith("🌐"):
+    st.markdown(
+        "**한국어 키워드 하나** 만 적으면 → 선택한 나라 언어로 **자동 번역** → "
+        "각 나라 유튜브에서 동시에 검색해서 **한 표로** 보여드려요. "
+        "어느 언어 검색에서 잡혔는지 컬럼으로 표시돼요."
+    )
+    try:
+        from multilang_search import LANGUAGES as _ML_LANGS
+        ml_labels = [l[0] for l in _ML_LANGS]
+    except Exception:
+        ml_labels = []
+        st.error("multilang_search 모듈을 못 불러왔어요.")
+
+    st.markdown("**📂 카테고리 트리로 검색어 만들기** (3칸 모두 자유 입력, 비워둬도 OK)")
+    tcol1, tcol2, tcol3 = st.columns(3)
+    with tcol1:
+        cat_main = st.text_input(
+            "대 카테고리", value="플레이리스트",
+            placeholder="예: 플레이리스트, 먹방, 룩북…",
+        )
+    with tcol2:
+        cat_middle = st.text_input(
+            "중 카테고리 / 장르", value="",
+            placeholder="예: 로파이, 샹송, 트로트… (선택)",
+        )
+    with tcol3:
+        cat_keyword = st.text_input(
+            "키워드 / 분위기", value="",
+            placeholder="예: 여름, 카페, 비, 새벽… (선택)",
+        )
+    ko_keyword = " ".join(
+        s.strip() for s in (cat_main, cat_middle, cat_keyword) if s and s.strip()
+    )
+    if ko_keyword:
+        st.markdown(
+            f"<div style='background:#eef2ff;padding:10px 14px;border-radius:10px;"
+            f"margin-top:6px;'>🔍 <b>조합된 검색어</b>: "
+            f"<code style='font-size:1.05rem;'>{ko_keyword}</code></div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.info("위 3칸 중 하나 이상 채워주세요.")
+    category_default_for_save = (cat_main, cat_middle, cat_keyword)
+    selected_ml_labels = st.multiselect(
+        "🌍 어느 나라 언어로 동시 검색할까요?",
+        options=ml_labels,
+        default=[
+            "🇰🇷 한국어", "🇺🇸 영어 (미국)", "🇯🇵 일본어",
+            "🇲🇽 스페인어 (멕시코)", "🇫🇷 프랑스어",
+        ],
+        help="번역은 Gemini가 처리해요 — 각 나라 사람들이 실제로 검색창에 칠 만한 자연스러운 표현으로.",
+    )
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        ml_per_lang = st.selectbox("언어당 영상 수", [10, 15, 20, 30], index=1)
+    with col2:
+        ml_days = st.selectbox(
+            "기간", [7, 14, 30, 60, 90, 365],
+            index=2, format_func=lambda d: f"최근 {d}일",
+        )
+    with col3:
+        ml_order = st.selectbox(
+            "정렬", ["viewCount", "relevance", "date"],
+            format_func=lambda x: {
+                "viewCount": "🔥 조회수 순", "relevance": "🎯 관련도 순", "date": "🆕 최신 순",
+            }[x],
+        )
+    ml_min_ratio = st.slider(
+        "최소 바이럴 배수 (구독자 대비 조회수)", 0, 50, 0,
+        help="0이면 필터 끔. 5 이상이면 알고리즘 푸시 신호.",
+    )
+
+    api_key = _get_api_key()
+    gemini_key_env = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not gemini_key_env:
+        st.warning("🔑 `GEMINI_API_KEY` 가 설정 안 됐어요. 아래에 임시로 넣어주세요.")
+        gemini_key_input = st.text_input("GEMINI_API_KEY", type="password")
+    else:
+        gemini_key_input = ""
+
+    go = st.button("🌐 번역 + 다국어 동시 검색")
+    if go:
+        if not ko_keyword.strip():
+            st.warning("키워드를 입력해주세요.")
+            st.stop()
+        if not selected_ml_labels:
+            st.warning("언어를 1개 이상 선택해주세요.")
+            st.stop()
+        if not api_key:
+            st.error("YouTube API 키가 필요해요.")
+            st.stop()
+
+        gemini_key = (gemini_key_input or gemini_key_env).strip()
+        if not gemini_key:
+            st.error("Gemini API 키가 필요해요 (번역용).")
+            st.stop()
+
+        from multilang_search import translate_keyword, search_multilang
+        with st.spinner(f"Gemini로 {len(selected_ml_labels)}개 언어 번역 중…"):
+            translations, terr = translate_keyword(
+                ko_keyword.strip(), selected_ml_labels, api_key=gemini_key,
+            )
+        if terr:
+            st.warning(f"번역 일부 실패: {terr}")
+        if translations:
+            st.markdown("### 🌐 번역 결과")
+            cols = st.columns(min(3, len(translations)))
+            for i, (label, term) in enumerate(translations.items()):
+                with cols[i % len(cols)]:
+                    st.markdown(
+                        f"**{label}**<br>"
+                        f"<code style='font-size:0.95rem;'>{term}</code>",
+                        unsafe_allow_html=True,
+                    )
+
+        with st.spinner(
+            f"{len(translations)}개 언어로 유튜브에서 동시 검색 중… (병렬)"
+        ):
+            videos, err = search_multilang(
+                api_key, translations,
+                per_lang=ml_per_lang, days=ml_days, order=ml_order,
+                min_ratio=float(ml_min_ratio), min_views=0,
+            )
+        if err:
+            st.error(f"검색 실패: {err}")
+            st.stop()
+        if not videos:
+            st.error("결과가 없어요. 기간/배수 조건을 풀어보세요.")
+            st.stop()
+        st.success(
+            f"✅ {len(translations)}개 언어 검색 · 영상 {len(videos)}개 (중복 제거 후)"
+        )
+        search_label_for_save = (
+            f"🌐 {ko_keyword.strip()} · {len(selected_ml_labels)}개국"
+        )
+
+elif mode.startswith("🪄"):
     st.markdown(
         "사용자 입력 없이 앱이 직접 찾아드려요. **시드를 모를 때 이걸 쓰세요.**"
     )
@@ -1219,6 +1752,10 @@ if mode.startswith("🪄"):
         st.success(
             f"✅ {sub_label} · {len(selected_countries)}개국 · 영상 {total}개 찾았어요"
         )
+        from datetime import datetime as _dt
+        search_label_for_save = (
+            f"{sub_label} · {','.join(selected_countries)} · {_dt.now().strftime('%Y-%m-%d')}"
+        )
 
 elif mode.startswith("🔥"):
     st.markdown(
@@ -1268,6 +1805,7 @@ elif mode.startswith("🔥"):
             st.stop()
         label = f"'{seed}' 트렌드" if seed.strip() else "한국 인기 급상승"
         st.success(f"✅ {label} 영상 {len(videos)}개 수집 완료")
+        search_label_for_save = label
 
 elif mode.startswith("📂"):
     st.markdown("원하는 **카테고리/키워드**의 유튜브 인기 영상 제목을 모아 분석해요.")
@@ -1314,6 +1852,7 @@ elif mode.startswith("📂"):
             st.error("결과가 없어요. 다른 키워드로 다시 시도해보세요.")
             st.stop()
         st.success(f"✅ '{category}' 영상 {len(videos)}개 수집 완료")
+        search_label_for_save = category.strip()
 
 else:
     st.markdown("유튜브 **URL** 이나 **제목**을 한 줄에 하나씩 넣어주세요.")
@@ -1342,12 +1881,24 @@ else:
                 f"⚠️ {len(failed)}개 URL은 제목을 못 가져왔어요 (비공개/삭제 영상일 수 있음)"
             )
         videos = [{"title": t, "duration_s": None, "video_id": None} for t in titles]
+        from datetime import datetime as _dt
+        search_label_for_save = f"수동 입력 · {_dt.now().strftime('%Y-%m-%d')}"
 
 if go and videos:
     if multi_country_results:
-        render_multi_country(multi_country_results, length_mode)
+        render_multi_country(
+            multi_country_results, length_mode, view_mode=view_mode,
+            search_label=search_label_for_save,
+            category_default=category_default_for_save,
+            show_grade=show_grade,
+        )
     else:
-        render_with_split(videos, length_mode, show_gems=show_gems_flag)
+        render_with_split(
+            videos, length_mode, show_gems=show_gems_flag, view_mode=view_mode,
+            search_label=search_label_for_save,
+            category_default=category_default_for_save,
+            show_grade=show_grade,
+        )
     st.markdown(
         "<div class='caption-small'>💡 더 많은 영상을 넣을수록 공식이 정확해져요</div>",
         unsafe_allow_html=True,

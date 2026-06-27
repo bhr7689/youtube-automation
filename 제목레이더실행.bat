@@ -37,11 +37,11 @@ if not exist ".env" (
     pause
 )
 
-:: Streamlit 실행 (8503 포트 — 메인 8501 / 역설계 8502 와 동시 실행 가능)
+:: Streamlit 실행 (8504 포트 — 메인 8501 / 역설계 8502 / 음악이어붙이기 8503 과 동시 실행 가능)
 echo [3/3] 제목 레이더 시작 중... (브라우저가 자동으로 열립니다)
 echo.
 echo  종료하려면 이 창을 닫거나 Ctrl+C 를 누르세요.
 echo.
-streamlit run title_analyzer_app.py --server.port 8503 --server.headless false
+streamlit run title_analyzer_app.py --server.port 8504 --server.headless false
 
 pause
