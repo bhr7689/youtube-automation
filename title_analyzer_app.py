@@ -888,8 +888,50 @@ def render_notion_save_panel(videos: list[dict], *, search_label: str,
             st.balloons()
 
 
-def render_videos_table(videos: list[dict], title: str = ""):
-    """HiView 스타일의 표 — 썸네일/제목/조회수/구독자/실적도/게시일/좋아요/댓글/길이/채널."""
+# ============================================================
+# HiView 스타일 등급 시스템 (실적도·공헌도 → 최상/상/중/하/최하)
+# ============================================================
+GRADE_LEVELS = ["최상", "상", "중", "하", "최하"]
+GRADE_COLORS = {
+    "최상": "#3b82f6",  # 파랑
+    "상":   "#10b981",  # 초록
+    "중":   "#f59e0b",  # 노랑/주황
+    "하":   "#f97316",  # 주황
+    "최하": "#ef4444",  # 빨강
+}
+PERF_THRESHOLDS = [
+    ("최상", 100.0), ("상", 30.0), ("중", 5.0), ("하", 1.0), ("최하", 0.0),
+]
+CONTRIB_THRESHOLDS = [
+    ("최상", 5.0), ("상", 2.0), ("중", 1.0), ("하", 0.5), ("최하", 0.0),
+]
+
+
+def calc_performance_grade(viral_ratio: float) -> str:
+    for g, th in PERF_THRESHOLDS:
+        if viral_ratio >= th:
+            return g
+    return "최하"
+
+
+def calc_engagement_rate(v: dict) -> float:
+    views = v.get("view_count", 0) or 0
+    if views <= 0:
+        return 0.0
+    likes = v.get("like_count", 0) or 0
+    comments = v.get("comment_count", 0) or 0
+    return (likes + comments) / views * 100
+
+
+def calc_contribution_grade(engagement: float) -> str:
+    for g, th in CONTRIB_THRESHOLDS:
+        if engagement >= th:
+            return g
+    return "최하"
+
+
+def render_videos_table(videos: list[dict], title: str = "", *, show_grade: bool = True):
+    """HiView 스타일의 표 — 등급/수치 토글 가능."""
     if not videos:
         return
     try:
@@ -907,7 +949,11 @@ def render_videos_table(videos: list[dict], title: str = ""):
             dur_txt = f"{m}:{s:02d}"
         else:
             dur_txt = "-"
-        ratio = v.get("viral_ratio")
+        ratio = v.get("viral_ratio") or 0
+        engagement = calc_engagement_rate(v)
+        perf_grade = calc_performance_grade(ratio)
+        contrib_grade = calc_contribution_grade(engagement)
+
         row = {
             "썸네일": v.get("thumbnail_url", ""),
             "제목": v["title"],
@@ -917,12 +963,19 @@ def render_videos_table(videos: list[dict], title: str = ""):
             "구독자": v.get("subscriber_count") or 0,
             "📹채널영상수": v.get("channel_video_count") or 0,
             "조회수": v.get("view_count") or 0,
-            "⚡실적도": ratio if ratio else 0,
+        }
+        if show_grade:
+            row["⚡실적도"] = perf_grade
+            row["💖공헌도"] = contrib_grade
+        else:
+            row["⚡실적도"] = round(ratio, 1)
+            row["💖공헌도"] = round(engagement, 2)
+        row.update({
             "게시일": v.get("published_at", "") or "",
             "👍좋아요": v.get("like_count") or 0,
             "💬댓글": v.get("comment_count") or 0,
             "길이": dur_txt,
-        }
+        })
         if has_lang:
             row["🌐 언어"] = v.get("search_lang_label", "")
             row["검색어"] = v.get("search_query", "")
@@ -931,6 +984,20 @@ def render_videos_table(videos: list[dict], title: str = ""):
     df = pd.DataFrame(rows)
     if title:
         st.markdown(f"### {title}")
+
+    if show_grade:
+        perf_col = st.column_config.TextColumn(
+            "⚡실적도", help="알고리즘 푸시 강도 — 조회수/구독자 배수",
+            width="small",
+        )
+        contrib_col = st.column_config.TextColumn(
+            "💖공헌도", help="시청자 참여도 — (좋아요+댓글)/조회수",
+            width="small",
+        )
+    else:
+        perf_col = st.column_config.NumberColumn("⚡실적도", format="%.1f배")
+        contrib_col = st.column_config.NumberColumn("💖공헌도", format="%.2f %%")
+
     st.dataframe(
         df,
         hide_index=True,
@@ -942,7 +1009,8 @@ def render_videos_table(videos: list[dict], title: str = ""):
             "🔗":    st.column_config.LinkColumn("🔗", display_text="열기", width="small"),
             "조회수": st.column_config.NumberColumn("조회수", format="%d"),
             "구독자": st.column_config.NumberColumn("구독자", format="%d"),
-            "⚡실적도": st.column_config.NumberColumn("⚡실적도", format="%.1f배"),
+            "⚡실적도": perf_col,
+            "💖공헌도": contrib_col,
             "게시일": st.column_config.TextColumn("게시일", width="small"),
             "👍좋아요": st.column_config.NumberColumn("👍좋아요", format="%d"),
             "💬댓글": st.column_config.NumberColumn("💬댓글", format="%d"),
@@ -954,7 +1022,20 @@ def render_videos_table(videos: list[dict], title: str = ""):
             "검색어": st.column_config.TextColumn("검색어", width="medium"),
         },
     )
-    st.caption("💡 각 컬럼 헤더 클릭하면 정렬돼요. 🔗 '열기' 누르면 새 탭에서 영상이 뜹니다.")
+
+    # 등급 범례 (HiView 스타일)
+    if show_grade:
+        legend_html = "<div style='display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;font-size:0.82rem;'>"
+        legend_html += "<span style='color:#6b7280;'>등급 범례:</span>"
+        for g in GRADE_LEVELS:
+            legend_html += (
+                f"<span style='background:{GRADE_COLORS[g]};color:white;"
+                f"padding:2px 9px;border-radius:10px;font-weight:700;'>{g}</span>"
+            )
+        legend_html += "</div>"
+        st.markdown(legend_html, unsafe_allow_html=True)
+
+    st.caption("💡 컬럼 헤더 클릭하면 정렬돼요. 🔗 '열기' 누르면 새 탭에서 영상이 뜹니다.")
 
 
 def _render_bar(label: str, pct: float):
@@ -1079,7 +1160,8 @@ def filter_by_length(videos: list[dict], length_mode: str) -> list[dict]:
 
 def render_with_split(videos: list[dict], length_mode: str, *,
                       show_gems: bool = False, view_mode: str = "table",
-                      search_label: str = "", category_default: tuple = ("", "", "")):
+                      search_label: str = "", category_default: tuple = ("", "", ""),
+                      show_grade: bool = True):
     """선택한 길이 필터로 한 번 렌더링."""
     shorts, longs, unknown = split_shorts_longs(videos)
     has_dur = any(v.get("duration_s") is not None for v in videos)
@@ -1111,7 +1193,8 @@ def render_with_split(videos: list[dict], length_mode: str, *,
     render_seed_block(filtered)
 
     if view_mode == "table":
-        render_videos_table(filtered, title=f"📊 {label} · {len(filtered)}개")
+        render_videos_table(filtered, title=f"📊 {label} · {len(filtered)}개",
+                            show_grade=show_grade)
     else:
         if show_gems:
             render_hidden_gems(filtered)
@@ -1147,7 +1230,8 @@ COUNTRY_LABEL_TO_RL = {c[0]: (c[1], c[2]) for c in COUNTRIES}
 def render_multi_country(results: dict[str, list[dict]], length_mode: str,
                           view_mode: str = "table",
                           search_label: str = "",
-                          category_default: tuple = ("", "", "")):
+                          category_default: tuple = ("", "", ""),
+                          show_grade: bool = True):
     """results: {country_label: [videos]} — 국가별 시드 발굴 결과를 비교."""
     # 1) 길이 필터 적용
     filtered: dict[str, list[dict]] = {
@@ -1230,7 +1314,7 @@ def render_multi_country(results: dict[str, list[dict]], length_mode: str,
                 )
             # 표 모드면 표, 카드 모드면 미니 인사이트
             if view_mode == "table":
-                render_videos_table(vids)
+                render_videos_table(vids, show_grade=show_grade)
             else:
                 r = analyze_titles([v["title"] for v in vids])
                 if r:
@@ -1304,6 +1388,15 @@ view_mode_label = st.radio(
     help="표 모드는 컬럼 헤더 클릭으로 정렬할 수 있어요. 카드 모드는 시드 키워드와 분석 인사이트까지 보여줘요.",
 )
 view_mode = "table" if view_mode_label.startswith("📊") else "card"
+
+grade_or_num_label = st.radio(
+    "실적도·공헌도를 어떻게 보여드릴까요?",
+    ["🏷️ 등급 (최상/상/중/하/최하 — HiView 스타일)", "📊 수치 (배수·%)"],
+    horizontal=True,
+    label_visibility="visible",
+    help="등급은 색상으로 한눈에. 수치는 정확한 값으로 정렬 정밀.",
+)
+show_grade = grade_or_num_label.startswith("🏷️")
 
 videos: list[dict] = []
 go = False
@@ -1701,12 +1794,14 @@ if go and videos:
             multi_country_results, length_mode, view_mode=view_mode,
             search_label=search_label_for_save,
             category_default=category_default_for_save,
+            show_grade=show_grade,
         )
     else:
         render_with_split(
             videos, length_mode, show_gems=show_gems_flag, view_mode=view_mode,
             search_label=search_label_for_save,
             category_default=category_default_for_save,
+            show_grade=show_grade,
         )
     st.markdown(
         "<div class='caption-small'>💡 더 많은 영상을 넣을수록 공식이 정확해져요</div>",
