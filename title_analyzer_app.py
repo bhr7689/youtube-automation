@@ -912,14 +912,16 @@ def render_videos_table(videos: list[dict], title: str = ""):
             "썸네일": v.get("thumbnail_url", ""),
             "제목": v["title"],
             "🔗": f"https://www.youtube.com/watch?v={v.get('video_id','')}",
-            "조회수": v.get("view_count") or 0,
+            "채널": v.get("channel_title", ""),
+            "📅채널개설일": v.get("channel_created_at", "") or "",
             "구독자": v.get("subscriber_count") or 0,
+            "📹채널영상수": v.get("channel_video_count") or 0,
+            "조회수": v.get("view_count") or 0,
             "⚡실적도": ratio if ratio else 0,
             "게시일": v.get("published_at", "") or "",
             "👍좋아요": v.get("like_count") or 0,
             "💬댓글": v.get("comment_count") or 0,
             "길이": dur_txt,
-            "채널": v.get("channel_title", ""),
         }
         if has_lang:
             row["🌐 언어"] = v.get("search_lang_label", "")
@@ -946,6 +948,8 @@ def render_videos_table(videos: list[dict], title: str = ""):
             "💬댓글": st.column_config.NumberColumn("💬댓글", format="%d"),
             "길이":   st.column_config.TextColumn("길이", width="small"),
             "채널":   st.column_config.TextColumn("채널", width="medium"),
+            "📅채널개설일": st.column_config.TextColumn("📅채널개설일", width="small"),
+            "📹채널영상수": st.column_config.NumberColumn("📹채널영상수", format="%d"),
             "🌐 언어": st.column_config.TextColumn("🌐 언어", width="small"),
             "검색어": st.column_config.TextColumn("검색어", width="medium"),
         },
@@ -1331,10 +1335,36 @@ if mode.startswith("🌐"):
         ml_labels = []
         st.error("multilang_search 모듈을 못 불러왔어요.")
 
-    ko_keyword = st.text_input(
-        "한국어 키워드 (또는 어느 언어든)",
-        placeholder="예: 여름 플레이리스트, 효도 트로트 메들리, 로파이 카페 음악…",
+    st.markdown("**📂 카테고리 트리로 검색어 만들기** (3칸 모두 자유 입력, 비워둬도 OK)")
+    tcol1, tcol2, tcol3 = st.columns(3)
+    with tcol1:
+        cat_main = st.text_input(
+            "대 카테고리", value="플레이리스트",
+            placeholder="예: 플레이리스트, 먹방, 룩북…",
+        )
+    with tcol2:
+        cat_middle = st.text_input(
+            "중 카테고리 / 장르", value="",
+            placeholder="예: 로파이, 샹송, 트로트… (선택)",
+        )
+    with tcol3:
+        cat_keyword = st.text_input(
+            "키워드 / 분위기", value="",
+            placeholder="예: 여름, 카페, 비, 새벽… (선택)",
+        )
+    ko_keyword = " ".join(
+        s.strip() for s in (cat_main, cat_middle, cat_keyword) if s and s.strip()
     )
+    if ko_keyword:
+        st.markdown(
+            f"<div style='background:#eef2ff;padding:10px 14px;border-radius:10px;"
+            f"margin-top:6px;'>🔍 <b>조합된 검색어</b>: "
+            f"<code style='font-size:1.05rem;'>{ko_keyword}</code></div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.info("위 3칸 중 하나 이상 채워주세요.")
+    category_default_for_save = (cat_main, cat_middle, cat_keyword)
     selected_ml_labels = st.multiselect(
         "🌍 어느 나라 언어로 동시 검색할까요?",
         options=ml_labels,

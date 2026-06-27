@@ -176,16 +176,20 @@ def _hydrate_channels(youtube, channel_ids: list[str]) -> dict[str, dict]:
     out: dict[str, dict] = {}
     for i in range(0, len(channel_ids), 50):
         resp = youtube.channels().list(
-            part="statistics", id=",".join(channel_ids[i:i + 50]), maxResults=50,
+            part="snippet,statistics",
+            id=",".join(channel_ids[i:i + 50]), maxResults=50,
         ).execute()
         for it in resp.get("items", []):
             cid = it["id"]
+            sn = it.get("snippet", {})
             stat = it.get("statistics", {})
             hidden = stat.get("hiddenSubscriberCount", False)
             out[cid] = {
                 "subscriber_count": (None if hidden else
                                       int(stat.get("subscriberCount", 0) or 0)),
                 "channel_video_count": int(stat.get("videoCount", 0) or 0),
+                "channel_created_at": (sn.get("publishedAt", "") or "")[:10],
+                "channel_total_views": int(stat.get("viewCount", 0) or 0),
             }
     return out
 
@@ -255,6 +259,8 @@ def search_multilang(
             ch = chan_meta.get(v.get("channel_id") or "", {})
             v["subscriber_count"] = ch.get("subscriber_count")
             v["channel_video_count"] = ch.get("channel_video_count")
+            v["channel_created_at"] = ch.get("channel_created_at", "")
+            v["channel_total_views"] = ch.get("channel_total_views", 0)
             subs = v.get("subscriber_count") or 0
             v["viral_ratio"] = (
                 v["view_count"] / max(subs, 100) if v.get("view_count") else 0.0
