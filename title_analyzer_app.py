@@ -1336,6 +1336,102 @@ st.markdown(
     "**시드를 알 때** → 그 키워드의 '제목 공식'을 뽑아드려요."
 )
 
+with st.expander("🔔 자동 수집 스케줄 — 요일·시간 내가 직접 선택", expanded=False):
+    st.markdown(
+        "**원하는 요일·시간을 체크**해두면 그 시간마다 GitHub Actions 가 자동으로 "
+        "Notion DB에 영상을 수집해요. cron 표현식 안 건드려도 돼요."
+    )
+
+    SCHED_FILE = "schedule_config.json"
+    KOREAN_WEEKDAYS = ["월", "화", "수", "목", "금", "토", "일"]
+
+    try:
+        with open(SCHED_FILE, "r", encoding="utf-8") as _f:
+            _sched = json.load(_f)
+    except Exception:
+        _sched = {}
+
+    sched_enabled = st.toggle(
+        "🟢 자동 수집 활성화",
+        value=_sched.get("enabled", False),
+        help="끄면 GitHub Actions 매시간 cron이 돌긴 해도 실제 수집은 안 해요.",
+    )
+
+    col_w, col_h = st.columns(2)
+    with col_w:
+        st.markdown("**📅 요일** (여러 개 체크)")
+        sched_weekdays_kr = st.multiselect(
+            "요일", KOREAN_WEEKDAYS,
+            default=[KOREAN_WEEKDAYS[i] for i in _sched.get("weekdays", [0, 3])],
+            label_visibility="collapsed",
+        )
+    with col_h:
+        st.markdown("**🕐 시간** (KST, 여러 개 체크)")
+        sched_hours = st.multiselect(
+            "시간 (KST)", list(range(24)),
+            default=_sched.get("hours", [9]),
+            format_func=lambda h: f"{h:02d}:00",
+            label_visibility="collapsed",
+        )
+
+    weekdays_idx = [KOREAN_WEEKDAYS.index(w) for w in sched_weekdays_kr]
+    runs_per_week = len(weekdays_idx) * len(sched_hours) if sched_enabled else 0
+
+    if sched_enabled and weekdays_idx and sched_hours:
+        st.markdown(
+            f"<div style='background:#f0fdf4;border:1px solid #86efac;"
+            f"border-radius:10px;padding:10px 14px;'>"
+            f"✅ <b>주 {runs_per_week}회 자동 수집</b> · "
+            f"{', '.join(sched_weekdays_kr)} · "
+            f"{', '.join(f'{h:02d}:00' for h in sched_hours)} KST"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.info("자동 수집이 꺼져 있거나 요일·시간이 선택 안 됐어요.")
+
+    if st.button("💾 스케줄 저장", key="sched_save", type="primary"):
+        new_cfg = {
+            "enabled": sched_enabled,
+            "weekdays": weekdays_idx,
+            "hours": sched_hours,
+            "updated_at": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
+        }
+        try:
+            with open(SCHED_FILE, "w", encoding="utf-8") as _f:
+                json.dump(new_cfg, _f, ensure_ascii=False, indent=2)
+            st.success("✅ schedule_config.json 저장 완료")
+            # 자동 git commit/push 시도 (사용자 PC에 git credential 있으면 작동)
+            import subprocess
+            try:
+                subprocess.run(["git", "add", SCHED_FILE], check=True, capture_output=True)
+                subprocess.run(
+                    ["git", "commit", "-m",
+                     f"chore: 자동수집 스케줄 업데이트 ({runs_per_week}회/주)"],
+                    check=True, capture_output=True,
+                )
+                push = subprocess.run(["git", "push"], capture_output=True, text=True)
+                if push.returncode == 0:
+                    st.success("🚀 GitHub 에도 자동 푸시 완료 — 다음 시간부터 적용돼요!")
+                else:
+                    st.warning(
+                        "💡 로컬엔 저장됐지만 GitHub 푸시는 실패 (수동 푸시 필요).\n"
+                        f"오류: {push.stderr[:200]}"
+                    )
+            except subprocess.CalledProcessError:
+                st.info(
+                    "💡 로컬엔 저장됐어요. 다음 git push 때 GitHub에 반영돼요."
+                )
+        except Exception as e:
+            st.error(f"저장 실패: {e}")
+
+    st.caption(
+        "ℹ️ 동작 원리: GitHub Actions cron 이 매시간 한 번씩 깨어나지만 "
+        "schedule_config.json 에 등록된 요일·시간에만 실제 수집해요. "
+        "→ cron 표현식을 사용자가 안 건드려도 됨."
+    )
+
+
 with st.expander("🤖 매일 자동 수집 + Notion 저장 켜는 법 (한 번만 셋업)"):
     st.markdown(
         "**자동 수집 흐름** — GitHub Actions 가 매일 새벽 정해진 시간에 사용자님이 "
