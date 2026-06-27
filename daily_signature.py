@@ -18,8 +18,9 @@ from pathlib import Path
 SIG_PATH = Path(__file__).resolve().parent / "daily_signature.json"
 
 
-# 첫 시드 — 사용자가 명시한 스텔라장식 프렌치 샹송 카페
+# 시드 — 4개 시즌. 사용자가 골라서 시작하거나 복제해서 새 시즌 만들 수 있음.
 SEED_SIGNATURES: dict[str, dict] = {
+    # 1) 첫 시드 — 사용자가 명시한 스텔라장식 프렌치 샹송 카페
     "parisian_chanson_cafe": {
         "name": "Parisian Chanson Café",
         "started": "2026-06-27",
@@ -37,7 +38,6 @@ SEED_SIGNATURES: dict[str, dict] = {
         "tempo_label": "very slow tempo, walking pace",
         "bpm_range": [60, 72],
         "reference_artist": "Stella Jang",
-        # 곡마다 살짝 변주할 수 있는 액센트 (no drums / no guitars 룰 유지)
         "accent_palette": [
             "delicate glockenspiel chimes",
             "soft vibraphone",
@@ -47,7 +47,6 @@ SEED_SIGNATURES: dict[str, dict] = {
             "tiny celeste sparkles",
             "soft brushed cymbal washes (very subtle, no rhythm)",
         ],
-        # 섹션별 사운드 레시피 — 가사 안 괄호 지문 작성에 참고
         "section_recipes": {
             "Intro": "soft piano alone, accordion enters gently, warm string pad embraces like sunshine",
             "Verse": "piano + airy whispering vocal, upright bass walks quietly in the background",
@@ -57,7 +56,6 @@ SEED_SIGNATURES: dict[str, dict] = {
             "Bridge": "instruments thin out, only piano and whispering vocal, intimate moment",
             "Outro": "vocal fades very slowly into warm piano and string resonance",
         },
-        # Stage Direction 어휘 풀 — 가사 섹션 머리에 [대괄호]로 박는 보컬 연기 지시
         "stage_direction_palette": [
             "Sing with a warm smile, clear sweet and airy voice, very relaxed storytelling",
             "Whispering, gentle and soft, like reading an old letter",
@@ -67,7 +65,139 @@ SEED_SIGNATURES: dict[str, dict] = {
             "Hushed, almost a sigh",
             "Fading Out",
         ],
-    }
+    },
+    # 2) 5070 트로트 시즌 — 시골 봄날 회상
+    "hometown_memory_cafe": {
+        "name": "Hometown Memory Café",
+        "started": "2026-06-27",
+        "day_count": 1,
+        "primary_language": "한국어",
+        "core_instruments": [
+            "warm nylon acoustic guitar (gentle fingerpicking)",
+            "soft accordion melody",
+            "warm upright bass",
+            "subtle string pad (40s strings)",
+        ],
+        "excluded_instruments": ["electric drums", "synthesizers", "electric guitar"],
+        "vocal": "warm female vocal in her 40s, gentle vibrato, nostalgic tone, sincere storytelling",
+        "mood": "nostalgic, tender, springtime in the countryside, gentle longing for mother",
+        "tempo_label": "mid-tempo, walking pace 88 BPM",
+        "bpm_range": [82, 94],
+        "reference_artist": "Lee Mi-ja, Joo Hyun-mi",
+        "accent_palette": [
+            "soft harmonica solo",
+            "wooden flute breath",
+            "single mandolin tremolo",
+            "warm cello legato",
+            "tiny glockenspiel chimes",
+            "soft brushed snare washes",
+        ],
+        "section_recipes": {
+            "Intro": "warm guitar fingerpicking alone, accordion enters slowly, gentle string pad sunshine",
+            "Verse": "guitar + warm female vocal, upright bass walks softly",
+            "Pre-Chorus": "strings swell gently, accordion warmly grows",
+            "Chorus": "full ensemble together warmly, accordion sings the heart, vocal full of emotion",
+            "Break": "warm harmonica solo, guitar gently accompanies, very spacious",
+            "Bridge": "vocal alone with soft guitar, intimate and tender",
+            "Outro": "vocal slowly fades, guitar remains in warm resonance",
+        },
+        "stage_direction_palette": [
+            "Sing with tender warmth, like remembering mother",
+            "Slower, nostalgic",
+            "Hushed, almost in tears",
+            "With gentle smile",
+            "Tenderly",
+            "Fading Out",
+        ],
+    },
+    # 3) 발라드 / 도시 야경
+    "midnight_city_lounge": {
+        "name": "Midnight City Lounge",
+        "started": "2026-06-27",
+        "day_count": 1,
+        "primary_language": "한국어",
+        "core_instruments": [
+            "soft electric piano (Rhodes-like, warm)",
+            "warm upright bass",
+            "lush string pad",
+            "very subtle brushed drums (slow, no strong rhythm)",
+        ],
+        "excluded_instruments": ["distorted guitar", "synth lead"],
+        "vocal": "warm male vocal in his 30s, breathy, intimate, late-night radio host tone",
+        "mood": "city night, melancholic, intimate, smoky lounge atmosphere",
+        "tempo_label": "slow tempo 72 BPM",
+        "bpm_range": [68, 78],
+        "reference_artist": "Sung Si-kyung, Toy",
+        "accent_palette": [
+            "muted trumpet whispers",
+            "soft tenor sax breath",
+            "vibraphone shimmer",
+            "warm cello swells",
+            "delicate piano arpeggio",
+            "subtle synth pad shimmer",
+        ],
+        "section_recipes": {
+            "Intro": "electric piano alone, soft pads in distance, rainy night atmosphere",
+            "Verse": "piano + intimate breathy vocal, bass walks quietly",
+            "Pre-Chorus": "strings enter gently, brushed drums whisper",
+            "Chorus": "full ensemble warmly together, vocal opens with emotion, lush strings",
+            "Break": "muted trumpet solo, piano playfully softly underneath",
+            "Bridge": "drums drop out, only piano and vocal, intimate confession",
+            "Outro": "vocal fades into warm piano and string resonance",
+        },
+        "stage_direction_palette": [
+            "Breathy, intimate, like whispering to one person",
+            "Slower, melancholic",
+            "Hushed",
+            "With quiet emotion",
+            "Smoky lounge tone",
+            "Fading Out",
+        ],
+    },
+    # 4) 7080 포크 / 따스한 토요일 아침
+    "saturday_morning_cafe": {
+        "name": "Saturday Morning Café",
+        "started": "2026-06-27",
+        "day_count": 1,
+        "primary_language": "한국어",
+        "core_instruments": [
+            "bright acoustic guitar (gentle strumming)",
+            "warm upright bass",
+            "soft harmonica accents",
+            "subtle warm pad",
+        ],
+        "excluded_instruments": ["electric drums", "synth bass", "distortion"],
+        "vocal": "warm folksy vocal, natural and unforced, like singing to a friend over coffee",
+        "mood": "warm Saturday morning, sunlight through curtain, nostalgic 70s 80s folk",
+        "tempo_label": "mid-tempo 95 BPM, easy walking pace",
+        "bpm_range": [90, 102],
+        "reference_artist": "Kim Kwang-seok, Yoo Jae-ha",
+        "accent_palette": [
+            "soft harmonica solo",
+            "single mandolin pluck",
+            "warm whistling melody",
+            "tiny vibraphone chimes",
+            "soft hand percussion (shaker)",
+            "warm flute breath",
+        ],
+        "section_recipes": {
+            "Intro": "acoustic guitar strumming alone, warm pad in distance, sunlight feel",
+            "Verse": "guitar + warm folksy vocal, bass walks easily",
+            "Pre-Chorus": "harmonica enters gently, pad warmth grows",
+            "Chorus": "full ensemble together brightly, vocal natural and warm",
+            "Break": "harmonica solo, guitar gently accompanies",
+            "Bridge": "vocal alone with soft guitar, intimate moment",
+            "Outro": "vocal fades into warm guitar resonance",
+        },
+        "stage_direction_palette": [
+            "Sing naturally, like to a friend",
+            "Warm and relaxed",
+            "Slightly playful",
+            "With gentle smile",
+            "Slower",
+            "Fading Out",
+        ],
+    },
 }
 
 
@@ -113,6 +243,72 @@ def upsert_series(series_id: str, signature: dict) -> dict:
     data["series"][series_id] = signature
     save_signatures(data)
     return data
+
+
+def _slugify(name: str) -> str:
+    """시리즈 ID 만들기 — 한글/영문 모두 안전. 공백·특수문자 → _."""
+    import re
+    s = re.sub(r"[^\w가-힣]+", "_", name.strip().lower())
+    s = re.sub(r"_+", "_", s).strip("_")
+    return s or "series"
+
+
+def create_series(name: str, *, base_series_id: str | None = None) -> str:
+    """새 시리즈 생성. base_series_id 가 있으면 그 시그니처를 복제(이름·날짜·카운트만 새로).
+    없으면 첫 시드(parisian_chanson_cafe)를 빈 베이스로 사용.
+
+    반환: 새 시리즈 ID
+    """
+    from datetime import date as _date
+    data = load_signatures()
+    if not name.strip():
+        raise ValueError("시리즈 이름을 입력해 주세요.")
+    new_id = _slugify(name)
+    # 중복 방지
+    base_id = new_id
+    n = 2
+    while new_id in data.get("series", {}):
+        new_id = f"{base_id}_{n}"
+        n += 1
+
+    # 베이스 결정
+    if base_series_id and base_series_id in data.get("series", {}):
+        base = data["series"][base_series_id]
+    else:
+        base = next(iter(SEED_SIGNATURES.values()))
+    new_sig = {k: (list(v) if isinstance(v, list) else dict(v) if isinstance(v, dict) else v)
+               for k, v in base.items()}
+    new_sig["name"] = name.strip()
+    new_sig["started"] = _date.today().isoformat()
+    new_sig["day_count"] = 1
+    data.setdefault("series", {})[new_id] = new_sig
+    data["current"] = new_id
+    save_signatures(data)
+    return new_id
+
+
+def delete_series(series_id: str) -> bool:
+    """시리즈 삭제. 마지막 1개는 보호. 현재 시리즈를 삭제하면 다른 것으로 자동 전환."""
+    data = load_signatures()
+    series = data.get("series", {})
+    if series_id not in series:
+        return False
+    if len(series) <= 1:
+        return False  # 마지막 시리즈는 보호
+    del series[series_id]
+    if data.get("current") == series_id:
+        data["current"] = next(iter(series))
+    save_signatures(data)
+    return True
+
+
+def list_series() -> list[tuple[str, str, int]]:
+    """모든 시리즈 (id, name, day_count) 리스트."""
+    data = load_signatures()
+    return [
+        (sid, sig.get("name", sid), int(sig.get("day_count", 0)))
+        for sid, sig in (data.get("series") or {}).items()
+    ]
 
 
 def increment_day(series_id: str | None = None) -> int:

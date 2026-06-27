@@ -287,8 +287,66 @@ if "gemini_key" not in st.session_state:
     st.session_state["gemini_key"] = default_key
 
 with st.sidebar:
-    # ── ☀️ 오늘의 시그니처 (사운드 정체성) ───────────────────────────
+    # ── 🎭 시리즈 전환 (여러 시그니처 보관 + 시즌 운영) ───────────────
+    st.markdown("### 🎭 시리즈")
     sig_data = ds.load_signatures()
+    series_list = ds.list_series()  # [(id, name, day_count), ...]
+    series_ids = [s[0] for s in series_list]
+    series_labels = [f"{s[1]}  ·  Day {s[2]}" for s in series_list]
+    current_id = sig_data.get("current", series_ids[0])
+    current_idx = series_ids.index(current_id) if current_id in series_ids else 0
+
+    selected_label = st.selectbox(
+        "현재 시리즈",
+        options=series_labels,
+        index=current_idx,
+        key="series_select",
+    )
+    selected_id = series_ids[series_labels.index(selected_label)]
+    if selected_id != current_id:
+        ds.set_current(selected_id)
+        st.rerun()
+
+    with st.expander("➕ 새 시리즈 / 🗑️ 삭제", expanded=False):
+        new_name = st.text_input(
+            "새 시리즈 이름",
+            placeholder="예: Autumn Train, Bollywood Monsoon",
+            key="new_series_name",
+        )
+        copy_from_current = st.checkbox(
+            "현재 시그니처 복제해서 시작",
+            value=True,
+            help="체크하면 현재 시그니처의 모든 설정을 가져와서 시작 (이름·날짜·카운트만 새로).",
+        )
+        if st.button("➕ 시리즈 만들기", use_container_width=True):
+            if not new_name.strip():
+                st.warning("시리즈 이름을 입력해 주세요.")
+            else:
+                try:
+                    new_id = ds.create_series(
+                        new_name.strip(),
+                        base_series_id=selected_id if copy_from_current else None,
+                    )
+                    st.success(f"'{new_name}' 생성 + 현재 시리즈로 전환됨!")
+                    st.rerun()
+                except Exception as e:  # noqa: BLE001
+                    st.error(f"실패: {e}")
+
+        st.markdown("---")
+        if len(series_list) > 1:
+            if st.button(f"🗑️ '{sig_data.get('current')}' 삭제", use_container_width=True):
+                if ds.delete_series(selected_id):
+                    st.success("삭제됨!")
+                    st.rerun()
+                else:
+                    st.error("삭제 실패 (마지막 시리즈는 보호됩니다).")
+        else:
+            st.caption("🛡️ 마지막 시리즈는 삭제할 수 없어요.")
+
+    st.markdown("---")
+
+    # ── ☀️ 오늘의 시그니처 (사운드 정체성) ───────────────────────────
+    sig_data = ds.load_signatures()  # 변경 반영
     sig = ds.get_current(sig_data)
     st.markdown("### ☀️ 오늘의 시그니처")
     st.markdown(

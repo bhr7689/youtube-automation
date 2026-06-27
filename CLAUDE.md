@@ -187,6 +187,17 @@ python pipeline.py --init                              # 파이프라인 폴더 
   사이드바에서 나라별 편집·저장 UI(드롭다운 + expander). 결과 카드에 적용된
   작사 DNA(대표 작사가) 표시. 새 언어 시드 추가 시 기존 사용자 편집 보존하며
   자동 보충.
+- [x] 🎭 **시리즈 전환 (시즌 운영)**(2026-06-27, lyrics-auto-generator-9pf34x):
+  여러 시그니처를 보관·전환해 시즌처럼 운영. 시드 4개 추가:
+  · Parisian Chanson Café (스텔라장식 샹송, 사용자 명시)
+  · Hometown Memory Café (5070 트로트, 시골 봄날·어머니)
+  · Midnight City Lounge (발라드, 도시 야경·Rhodes)
+  · Saturday Morning Café (7080 포크, 통기타·하모니카)
+  - `daily_signature.py` 헬퍼 추가: `list_series` / `create_series`
+    (현재 복제 옵션 + slug ID 자동 + 중복 시 _N 접미) / `delete_series`
+    (마지막 1개 보호) / `_slugify` (한글/영문 안전)
+  - lyrics_app.py 사이드바 🎭 시리즈 셀렉트박스 + 시리즈 추가/삭제 expander
+  - 새 시리즈 만들면 자동 current 전환. 삭제 시 현재 삭제하면 다른 것으로 자동 전환.
 - [x] **lyrics-auto-generator-9pf34x → default 브랜치(eqO5N) 머지 완료**
   (2026-06-27, rebase + no-ff merge). 사용자 PC `유튜브실행.bat` 로 받으면
   가사 생성기 자동 포함.
