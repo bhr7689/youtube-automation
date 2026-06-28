@@ -44,10 +44,31 @@ st.markdown("""
 
 def find_chromium():
     candidates = [
+        # Linux (cloud/서버)
         "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
         "/opt/pw-browsers/chromium/chrome-linux/chrome",
         "/usr/bin/chromium-browser", "/usr/bin/chromium", "/usr/bin/google-chrome",
+        # macOS
         "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    ]
+    # Windows: Playwright 기본 설치 경로 자동 탐색
+    local_app = os.environ.get("LOCALAPPDATA", "")
+    if local_app:
+        import glob as _glob
+        for pattern in [
+            os.path.join(local_app, "ms-playwright", "chromium-*", "chrome-win", "chrome.exe"),
+            os.path.join(local_app, "ms-playwright", "chromium*", "chrome-win", "chrome.exe"),
+        ]:
+            matches = _glob.glob(pattern)
+            if matches:
+                candidates.insert(0, matches[-1])  # 최신 버전 우선
+    # Windows: Chrome 설치 경로
+    prog = os.environ.get("PROGRAMFILES", "C:\\Program Files")
+    prog86 = os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)")
+    candidates += [
+        os.path.join(prog, "Google", "Chrome", "Application", "chrome.exe"),
+        os.path.join(prog86, "Google", "Chrome", "Application", "chrome.exe"),
     ]
     for c in candidates:
         if os.path.exists(c):
@@ -56,7 +77,8 @@ def find_chromium():
         found = shutil.which(name)
         if found:
             return found
-    return None
+    # Playwright가 알아서 찾도록 None 대신 sentinel 반환
+    return "playwright_managed"
 
 
 def run_scraper(url: str, dev_mode: bool, proxy: str) -> dict:
@@ -115,13 +137,12 @@ with st.sidebar:
     proxy_input = st.text_input("🔒 프록시 (선택)", placeholder="http://127.0.0.1:7890")
     st.markdown("---")
     chromium = find_chromium()
-    if chromium:
+    if chromium and chromium != "playwright_managed":
         st.success("✅ Chromium 감지됨")
-        st.caption(chromium)
+        st.caption(chromium[:60])
     else:
-        st.error("❌ Chromium 없음")
-        st.markdown("터미널에서 실행:")
-        st.code("playwright install chromium")
+        st.success("✅ Chromium (Playwright 관리)")
+        st.caption("playwright install chromium 완료 상태")
     st.markdown("---")
     st.caption("Playwright subprocess 방식\n앱이 충돌해도 UI 유지")
 
@@ -147,13 +168,7 @@ with c2:
 if start:
     if not url_input.strip():
         st.warning("URL을 입력해주세요.")
-    elif not find_chromium():
-        st.session_state.results = [{
-            "url": "",
-            "error": "Chromium이 설치되어 있지 않아요.",
-            "error_detail": "터미널(검은 창)에서 아래 명령어를 실행하세요:\n\nplaywight install chromium\n\n실행 후 다시 시도해주세요.",
-        }]
-        st.rerun()
+    elif False:  # Chromium 체크 제거 — playwright가 자체 관리
     else:
         urls = [u.strip() for u in url_input.strip().splitlines() if u.strip().startswith("http")]
         if not urls:

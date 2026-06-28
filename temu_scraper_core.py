@@ -14,13 +14,32 @@ from playwright.sync_api import sync_playwright
 
 def find_chromium():
     candidates = [
+        # Linux (cloud/서버)
         "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
         "/opt/pw-browsers/chromium/chrome-linux/chrome",
         "/usr/bin/chromium-browser",
         "/usr/bin/chromium",
         "/usr/bin/google-chrome",
+        # macOS
         "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
         "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    ]
+    # Windows: Playwright 기본 설치 경로 자동 탐색
+    local_app = os.environ.get("LOCALAPPDATA", "")
+    if local_app:
+        import glob as _glob
+        for pattern in [
+            os.path.join(local_app, "ms-playwright", "chromium-*", "chrome-win", "chrome.exe"),
+            os.path.join(local_app, "ms-playwright", "chromium*", "chrome-win", "chrome.exe"),
+        ]:
+            matches = _glob.glob(pattern)
+            if matches:
+                candidates.insert(0, matches[-1])
+    prog = os.environ.get("PROGRAMFILES", "C:\\Program Files")
+    prog86 = os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)")
+    candidates += [
+        os.path.join(prog, "Google", "Chrome", "Application", "chrome.exe"),
+        os.path.join(prog86, "Google", "Chrome", "Application", "chrome.exe"),
     ]
     for c in candidates:
         if os.path.exists(c):
@@ -29,7 +48,7 @@ def find_chromium():
         found = shutil.which(name)
         if found:
             return found
-    return None
+    return None  # Playwright가 자체 경로 사용
 
 
 def scrape(url, dev_mode=False, proxy=None):
