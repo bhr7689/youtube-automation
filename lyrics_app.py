@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from lyrics_generator import DURATION_PRESETS, generate_lyrics
 import daily_signature as ds
 import nation_prompts as np
+import lyrics_evaluator as le
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -457,6 +458,23 @@ with st.sidebar:
             st.rerun()
 
     st.markdown("---")
+    st.markdown("### 🏆 자동 셀프 평가")
+    auto_eval = st.toggle(
+        "켜기 (켜면 만든 가사를 AI가 채점 + 임계값 미만이면 자동 재생성)",
+        value=False,
+        key="auto_eval",
+        help="기준 4가지(운율·그 나라스러움·정서·시그니처 일치, 각 10점, 합 40). "
+             "재생성은 곡당 최대 1회. API 호출이 약 1.5~2배로 늘어납니다.",
+    )
+    eval_threshold = st.slider(
+        "통과 임계값 (40점 만점)",
+        min_value=20, max_value=36, value=le.DEFAULT_THRESHOLD, step=1,
+        key="eval_threshold",
+        disabled=not auto_eval,
+        help="이 점수 미만인 가사는 한 번 더 자동 재생성합니다.",
+    )
+
+    st.markdown("---")
     st.markdown("### ⚙️ 설정")
     st.text_input(
         "Gemini API 키",
@@ -594,6 +612,53 @@ if go:
                 f"원인: `{type(e).__name__}: {e}`"
             )
             continue
+
+        # 🏆 자동 셀프 평가 + 재생성 (옵션)
+        if auto_eval and variants:
+            try:
+                # 채점용 nation_brief (간단 버전)
+                nation = np.get_nation(lang)
+                nation_brief = (
+                    f"writer_persona: {nation.get('writer_persona','')}\n"
+                    f"motifs: {', '.join(nation.get('motifs') or [])}\n"
+                    f"rhyme_rules: {nation.get('rhyme_rules','')}\n"
+                    f"famous_writers: {nation.get('famous_writers','')}\n"
+                    f"avoid: {nation.get('avoid','')}"
+                )
+                scored = le.evaluate_variants(
+                    variants,
+                    language=lang, genre=genre,
+                    nation_brief=nation_brief,
+                    signature_brief=sig_brief,
+                    api_key=api_key,
+                )
+                # 임계값 미만 곡만 재생성 (곡당 1회)
+                low_indices = [i for i, v in enumerate(scored) if v.get("score_total", 0) < int(eval_threshold)]
+                if low_indices:
+                    try:
+                        retry = generate_lyrics(
+                            persona=combined_persona + "\n\n[추가 지시] 더 시적이고 자연스러운 운율로, 모티프를 더 살려서.",
+                            duration_sec=duration_sec,
+                            n=len(low_indices),
+                            theme=theme, genre=genre, language=lang,
+                            signature_brief=sig_brief, api_key=api_key,
+                        )
+                        retry_scored = le.evaluate_variants(
+                            retry, language=lang, genre=genre,
+                            nation_brief=nation_brief, signature_brief=sig_brief,
+                            api_key=api_key,
+                        )
+                        # 더 점수 높은 쪽 채택
+                        for li, ri in zip(low_indices, range(len(retry_scored))):
+                            if retry_scored[ri].get("score_total", 0) > scored[li].get("score_total", 0):
+                                retry_scored[ri]["retried"] = True
+                                scored[li] = retry_scored[ri]
+                    except Exception:  # noqa: BLE001
+                        pass  # 재생성 실패 시 원본 유지
+                variants = scored
+            except Exception as e:  # noqa: BLE001
+                st.warning(f"🏆 자동 평가 실패 (원본 가사는 그대로 보존): `{type(e).__name__}: {e}`")
+
         results_by_lang[lang] = variants or []
 
     progress.progress(1.0, text="✅ 완료!")
@@ -655,15 +720,35 @@ if go:
             sections = v.get("sections") or []
             suno_lyrics = to_suno_lyrics(sections, fallback_text=v.get("lyrics_text") or "")
 
+            # 🏆 점수 배지 (자동 평가 결과 있을 때만)
+            score_html = ""
+            if "scores" in v:
+                s = v["scores"]
+                total = v.get("score_total", 0)
+                color = "#16a34a" if total >= 30 else ("#ea580c" if total >= 24 else "#dc2626")
+                retried_badge = " 🔄 재시도됨" if v.get("retried") else ""
+                score_html = (
+                    f'<div style="margin-top:0.4rem; font-size:0.95rem;">'
+                    f'<span style="background:{color}; color:white; padding:2px 10px; border-radius:10px; font-weight:700;">'
+                    f'🏆 {total}/40{retried_badge}</span>'
+                    f' &nbsp;<small style="color:#78716c;">'
+                    f'운율 {s["rhyme"]} · 나라스러움 {s["nativeness"]} · 정서 {s["emotion"]} · 시그니처 {s["signature_fit"]}'
+                    f'</small></div>'
+                )
+
             st.markdown(
                 f"""
                 <div class="lyric-card">
                     <div class="lyric-title">{card_no}. {title}</div>
                     <div class="lyric-theme">{flag} {lang} · 🎯 {v_theme}</div>
+                    {score_html}
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
+
+            if "scores" in v and v["scores"].get("comment"):
+                st.caption(f"💬 평가 코멘트: {v['scores']['comment']}")
 
             st.markdown("**📛 제목 (Suno → Title)**")
             st.code(title, language="text")
