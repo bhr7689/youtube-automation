@@ -213,4 +213,22 @@ python pipeline.py --init                              # 파이프라인 폴더 
 - [x] **lyrics-auto-generator-9pf34x → default 브랜치(eqO5N) 머지 완료**
   (2026-06-27, rebase + no-ff merge). 사용자 PC `유튜브실행.bat` 로 받으면
   가사 생성기 자동 포함.
+- [x] 🎬 **채널 설명·해시태그 자동 생성기**(2026-06-28, youtube-description-generator-lssj9c):
+  유튜브 링크(채널/영상) → YouTube Data API 로 채널 정체성 + 최근 영상 설명 N개
+  수집 → 키워드/태그 빈도 분석 → Gemini 가 채널 브리프 + **의식의 흐름 4단**
+  (감정 호명 → 그림 한 컷 → 약속 → 강요 없는 초대) 으로 채널 설명 + 해시태그 +
+  채널 설정 키워드 생성. 결과 카드 3블록 모두 `st.code()` 로 복붙 가능.
+  - 신규 모듈:
+    · `channel_brief.py` — **모든 앱이 공유하는 채널 브랜드 브리프** JSON 메모리
+      (정체성/타깃/약속/감정·음악 키워드/톤/금지어/시그니처/CTA/발행 리듬).
+      시드 2개(파리지앵 샹송 카페·고향의 봄 트로트). `as_prompt_block()` 으로
+      LLM 프롬프트에 그대로 주입. 사이드바에서 브리프 추가·편집·삭제·전환.
+    · `channel_desc_generator.py` — URL 파싱(channel/video/handle/user 전부) +
+      YouTube Data API 수집 + 키워드 빈도(스톱워드 필터) + Gemini 호출 + 파싱.
+      `llm_call` 주입으로 헤드리스 테스트 가능.
+    · `channel_desc_app.py` — 모바일 세로 우선 Streamlit. 변주 1~3개 / 길이
+      짧게·중간·길게 / 분석 영상 수 5~50개 슬라이더. 전체 결과 JSON 백업.
+  - 실행: `streamlit run channel_desc_app.py` 또는 `채널설명생성기실행.bat`
+    (포트 8504). `channel_brief.json` 은 gitignore — 로컬 보존.
+  - 검증: URL 파싱 5종 + 키워드 추출 + stub generate + Streamlit HTTP 200.
 - (작업하며 갱신할 것)

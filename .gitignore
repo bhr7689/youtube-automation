@@ -33,3 +33,6 @@ daily_signature.json
 
 # 가사 생성기 — 나라별 작사 도서관 (사용자가 편집한 로컬 상태, 시드는 nation_prompts.py 안)
 nation_prompts.json
+
+# 채널 브랜드 브리프 (사용자 편집 로컬 상태, 시드는 channel_brief.py 안)
+channel_brief.json
