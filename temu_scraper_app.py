@@ -345,6 +345,12 @@ def _extract_keywords(result: dict) -> list[str]:
 
 # ── UI ──────────────────────────────────────────────────
 def main():
+    # ── session_state 초기화 (결과가 사라지지 않게) ──
+    if "results" not in st.session_state:
+        st.session_state.results = []
+    if "last_error" not in st.session_state:
+        st.session_state.last_error = ""
+
     with st.sidebar:
         st.markdown("## 🛒 테무 식품 스크래퍼")
         st.markdown("---")
@@ -361,7 +367,8 @@ def main():
             st.success("✅ Chromium 감지됨")
             st.caption(chromium_path)
         else:
-            st.error("❌ Chromium 없음\n터미널에서 실행:\n`playwright install chromium`")
+            st.error("❌ Chromium 없음")
+            st.code("playwright install chromium")
 
     st.markdown("# 🛒 테무 식품 카테고리 상품 분석기")
     st.markdown("테무 상품 링크를 넣으면 키워드·태그·가격·상세설명을 자동 추출해요.")
@@ -372,40 +379,62 @@ def main():
         placeholder="https://www.temu.com/...\nhttps://www.temu.com/...",
     )
 
-    start = st.button("🚀 스크래핑 시작", type="primary")
+    col1, col2 = st.columns([2, 8])
+    with col1:
+        start = st.button("🚀 스크래핑 시작", type="primary", use_container_width=True)
+    with col2:
+        if st.button("🗑️ 결과 지우기", use_container_width=False):
+            st.session_state.results = []
+            st.session_state.last_error = ""
+            st.rerun()
+
+    # ── 이전 오류가 있으면 항상 표시 ──
+    if st.session_state.last_error:
+        st.error(st.session_state.last_error)
 
     if start and url_input.strip():
         urls = [u.strip() for u in url_input.strip().splitlines() if u.strip().startswith("http")]
         if not urls:
-            st.error("올바른 URL을 입력해주세요 (http로 시작)")
+            st.session_state.last_error = "올바른 URL을 입력해주세요 (http로 시작)"
+            st.rerun()
             return
 
-        # Chromium 없으면 바로 안내
         if not _find_chromium():
-            st.error("""
-❌ **Chromium 브라우저가 없어서 실행할 수 없어요.**
-
-검은 터미널 창에 아래 명령어를 붙여넣고 엔터 누르세요:
-```
-playwright install chromium
-```
-설치 후 다시 시도해주세요.
-""")
+            st.session_state.last_error = (
+                "❌ Chromium 브라우저가 없어요!\n\n"
+                "검은 창(터미널)에 아래를 붙여넣고 엔터:\n\n"
+                "playwright install chromium"
+            )
+            st.rerun()
             return
 
+        st.session_state.last_error = ""
         results = []
         prog = st.progress(0, text="준비 중...")
         for i, url in enumerate(urls):
             prog.progress(i / len(urls), text=f"스크래핑 중... ({i+1}/{len(urls)})")
-            data = scrape_temu_product(url, dev_mode, proxy_input.strip() or None)
+            try:
+                data = scrape_temu_product(url, dev_mode, proxy_input.strip() or None)
+            except Exception as e:
+                data = {
+                    "url": url,
+                    "scraped_at": datetime.now().isoformat(),
+                    "error": str(e),
+                    "error_detail": traceback.format_exc(),
+                }
             results.append(data)
             if i < len(urls) - 1:
                 time.sleep(2)
         prog.progress(1.0, text="완료!")
         time.sleep(0.3)
         prog.empty()
+        st.session_state.results = results
+        st.rerun()
+        return
 
-        for idx, r in enumerate(results):
+    results = st.session_state.results
+
+    for idx, r in enumerate(results):
             st.markdown(f"---")
             st.markdown(f"### 상품 {idx+1}")
 
@@ -492,10 +521,10 @@ playwright install chromium
                 key=f"dl_{idx}",
             )
 
-    elif start:
+    if start and not url_input.strip():
         st.warning("URL을 입력해주세요.")
 
-    if not start:
+    if not results:
         st.markdown("---")
         st.markdown("## 📖 사용 가이드")
         col1, col2 = st.columns(2)
