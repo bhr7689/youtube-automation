@@ -1,0 +1,148 @@
+# 💡 아이디어: 일본 시니어 타깃 — 해외 감동·인생교훈 채널 자동화
+
+> **저장일**: 2026-06-29 / **저장자 메모**: whiteh2r@gmail.com
+> **상태**: 아이디어 단계 (구현 X). 기존 youtube-automation(K-Trot)과 **별개**의 독립 프로젝트로 구상.
+
+---
+
+## 🎯 컨셉 한 줄
+> **일본 시니어**를 타깃으로, **해외 예능·리얼리티의 감동 구간**을 자동 추출·번역·TTS·CapCut 편집까지
+> 전 과정 자동화하는 유튜브 채널 공장.
+
+- 톤: 자극 X / **보편적 인간애 + 인생의 지혜** O
+- 색감: 차갑지 않게, 따뜻한 톤
+- 배경음악: 잔잔한 피아노·클래식
+- 카피 어휘: "고생하셨습니다", "당신은 최고입니다" 등 시니어가 듣고 싶은 긍정어
+
+---
+
+## 📚 소스 채널 30선 (4카테고리)
+
+### 1) 가족의 사랑 & 화해 (Family & Reconciliation)
+1. **The Oprah Winfrey Show** — 가족 갈등 해결과 화해의 정석
+2. **Little Big Shots** — 아이들의 순수함이 주는 감동
+3. **Extreme Makeover: Home Edition** — 집을 통해 가족에게 희망
+4. **This Morning** (UK) — 영국 아침방송, 가족 사연
+5. **The Steve Harvey Show** — 부모-자녀 관계 상담·조언
+6. **Long Lost Family** — 헤어진 가족을 찾는 감동 다큐
+7. **Dr. Phil** — 가족 간 깊은 갈등 치유
+8. **Supernanny** — 육아와 가족 교육
+
+### 2) 인생 역전과 희망 (Resilience & Success)
+9. **Got Talent Global** — 절망을 딛고 일어선 출연자
+10. **The Ellen Show** — 일반인의 영웅적 이야기·선행
+11. **Shark Tank** — 도전과 성공의 과정
+12. **Undercover Boss** — CEO가 밑바닥에서 배우는 겸손
+13. **American Idol** — 꿈을 포기하지 않은 도전자
+14. **60 Minutes** — 심층 휴먼 다큐
+15. **Humans of New York** — 사람들의 인생 이야기
+16. **TED Talks** — 인생의 지혜와 교훈
+
+### 3) 작지만 큰 배려 (Kindness & Human Touch)
+17. **Just For Laughs Gags** — 언어 장벽 없는 유머·배려
+18. **The Dodo** — 동물과 사람의 헌신적 사랑 (⭐ 시니어 강추)
+19. **Random Acts of Kindness** — 무작위 친절 실험
+20. **CBS Sunday Morning** — 따뜻한 휴먼 스토리
+21. **Upworthy** — 마음 따뜻해지는 영상
+22. **Goalcast** — 인생을 바꾸는 짧은 영상
+23. **Positive News** — 세상의 좋은 소식
+
+### 4) 황혼의 로망 & 열정 (Passion & Wisdom)
+24. **Senior Planet** — 시니어들의 도전·학습
+25. **Great Big Story** — 독특한 인생을 사는 사람들
+26. **MasterClass** — 대가들의 지혜·철학
+27. **BBC News - Human Interest** — 황혼기를 멋지게 사는 사람들
+28. **National Geographic** — 지구와 인생에 대한 경이로움
+29. **Travel Channel** — 여행을 통한 인생의 재발견
+30. **Silver Surfers** — 시니어 세대 라이프스타일
+
+---
+
+## 🔧 기술 스택 (예상)
+
+### 데이터 수집
+- **YouTube Data API v3** — 채널·영상 메타데이터
+- **yt-dlp** — 원본 영상 다운로드 (저작권/페어유스 검토 필요)
+- **youtube-transcript-api** — 자막 수집
+- **Whisper (OpenAI API)** — 자막 없을 때 STT 백업
+
+### 분석·추출
+- **Gemini** — "가장 감동적인 30초~1분 구간" 자동 식별 (자막+장면 단서)
+- 컷 후보 스코어링: 키워드 매칭(가족·눈물·감사·도전) + 댓글 감정 분석
+
+### 번역·TTS
+- **DeepL API** 또는 Gemini — 영→일 번역 (시니어 친화 어휘)
+- **TTS 후보**:
+  - Google Cloud TTS (일본어 자연스러움 ★)
+  - Azure Speech (감정 톤 조절 가능)
+  - ElevenLabs (가장 자연스럽지만 비쌈)
+  - VOICEVOX (무료 일본어 TTS, 시니어 톤 가능)
+
+### 편집·합성
+- **CapCut** 자동화 옵션:
+  - **CapCut Desktop API/Plugin** — 공식 API 없음. 템플릿 JSON 직접 생성?
+  - **CapCut Web 자동화** — Playwright로 UI 조작 (가능하나 fragile)
+  - **대안 1: ffmpeg 직접** — 우리 `media_core.py` 확장 (제어력 ★)
+  - **대안 2: Remotion** — React 기반 프로그래밍 비디오 (시니어 자막 UI 예쁘게)
+  - **대안 3: Shotstack API** — 클라우드 비디오 편집 (월 구독)
+
+### 후처리
+- 따뜻한 톤 LUT 자동 적용 (ffmpeg color filter)
+- 잔잔한 BGM 자동 매칭 (라이선스 음원 라이브러리 필요)
+- 일본어 자막 자동 동기화 (기존 `media_core.generate_srt` 활용)
+
+---
+
+## ⚠️ 검토 필요 (리스크)
+
+1. **저작권** — 원본 영상의 인용 범위·페어유스. 일본 유튜브의 저작권 클레임 정책 확인 필수.
+2. **CapCut 자동화** — 공식 API가 없음. 직접 ffmpeg/Remotion이 더 안정적일 수 있음.
+3. **TTS 비용** — 일일 영상 1편 × 5분 = 한 달 5천원~5만원 범위 (서비스에 따라).
+4. **번역 품질** — 시니어가 거부감 없는 일본어 톤 (です/ます 정중체 + 따뜻한 어휘).
+
+---
+
+## 🚀 MVP 로드맵 (제안)
+
+### Phase 1: 시드 검증 (1주)
+- 30개 채널 중 **The Dodo + Humans of NY + Long Lost Family** 3개로 시작
+- YouTube API로 영상 메타데이터 수집 → 댓글·자막 기반 "감동 구간" 후보 추출 룰 정립
+
+### Phase 2: 자동 컷 (2주)
+- 자막 + 음량 + 키워드 스코어로 30초~1분 골든 구간 자동 식별
+- ffmpeg로 컷 추출 + 따뜻한 톤 색보정 + BGM 합성
+
+### Phase 3: 일본어 화 (2주)
+- 자막 일본어 번역 (시니어 친화 어휘 사전 구축)
+- TTS 내레이션 (VOICEVOX 또는 Google Cloud TTS)
+- 자막 + 내레이션 동기화
+
+### Phase 4: 채널 운영 (지속)
+- 매일 1편 자동 생성 → 사람 검수 → YouTube Studio 업로드
+- 댓글 반응 → 다음 컷 선택에 피드백 루프
+
+---
+
+## 💬 시니어 친화 카피 어휘 풀 (시드)
+- 고생하셨습니다 / お疲れさまでした
+- 당신은 최고입니다 / あなたは素晴らしいです
+- 인생은 아름다워요 / 人生は美しい
+- 가족은 보물입니다 / 家族は宝物
+- 늦지 않았어요 / 遅くはありません
+- (계속 채워나갈 것)
+
+---
+
+## ❓ 사용자에게 물어볼 것 (작업 시작 시)
+
+1. **어느 채널부터?** — 30개 중 우선순위 3개
+2. **CapCut 고집 vs ffmpeg 허용?** — 자동화 안정성 차이 큼
+3. **TTS 서비스 선택** — 무료(VOICEVOX) vs 유료(Google/Azure)
+4. **일일 영상 수** — 1편/일 vs 주 3편 등
+5. **저작권 전략** — 페어유스 범위 인용 vs 채널 본인 허가 받기
+
+---
+
+## 📁 별도 저장소 분리 시점
+- MVP Phase 1 끝나면 별도 repo `youtube-japan-senior` 등으로 분리 권장
+- 지금은 `youtube-automation/ideas/` 아래 아이디어로만 보관

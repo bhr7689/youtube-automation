@@ -231,4 +231,8 @@ python pipeline.py --init                              # 파이프라인 폴더 
   - 실행: `streamlit run channel_desc_app.py` 또는 `채널설명생성기실행.bat`
     (포트 8504). `channel_brief.json` 은 gitignore — 로컬 보존.
   - 검증: URL 파싱 5종 + 키워드 추출 + stub generate + Streamlit HTTP 200.
+- 💡 **(아이디어 보관)** 일본 시니어 타깃 — 해외 감동/인생교훈 채널 자동화
+  (영상 짜집기 + TTS + CapCut 편집). 30개 소스 채널·전략·기술스택·MVP 로드맵 전문:
+  `ideas/japan_senior_heartwarming.md`. 기존 youtube-automation(K-Trot)과 **별개**
+  의 독립 프로젝트로 구상 — MVP 진입 시 별도 repo 분리 권장.
 - (작업하며 갱신할 것)
