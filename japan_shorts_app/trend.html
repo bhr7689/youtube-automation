@@ -463,5 +463,87 @@
       </div>
     </main>
   </div>
+
+  <!-- 자막 불러오기 모달 -->
+  <div class="modal-backdrop" id="subtitleModal">
+    <div class="modal modal-subtitle">
+      <button class="modal-close" onclick="closeSubtitleModal()">×</button>
+      <div class="subtitle-modal-title">📜 자막</div>
+      <div class="subtitle-modal-video" id="subtitleVideoTitle">The Gym Product That Changes Workouts Forever 😱</div>
+
+      <div class="subtitle-source-tabs">
+        <span class="chip selected">원본 자막</span>
+        <span class="chip">🌐 한국어 (YouTube)</span>
+        <span class="chip">🌐 영어 (YouTube)</span>
+        <span class="sep">|</span>
+        <span class="chip">🎤 Whisper</span>
+        <span class="chip">🎤 Whisper (다국어)</span>
+      </div>
+      <div class="subtitle-hint-top">💡 설정에서 Claude 키 등록하면 더 정확한 번역</div>
+
+      <div class="subtitle-content" id="subtitleContent">
+        <div class="subtitle-loading-state">자막 불러오는 중...</div>
+      </div>
+
+      <div class="subtitle-hint-bottom">💡 어떤 언어 자막이든 YouTube 내장 번역으로 한국어/영어 변환 가능 · 쿼터 무료</div>
+
+      <div class="subtitle-actions" id="subtitleActions" style="display:none;">
+        <button class="btn-secondary">📋 자막 전체 복사</button>
+        <button class="btn-primary">🌸 일본어 번역봇으로 보내기</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function openSubtitleModal(title) {
+      document.getElementById('subtitleVideoTitle').textContent = title || 'The Gym Product That Changes Workouts Forever 😱';
+      document.getElementById('subtitleContent').innerHTML = '<div class="subtitle-loading-state">자막 불러오는 중...</div>';
+      document.getElementById('subtitleActions').style.display = 'none';
+      document.getElementById('subtitleModal').classList.add('open');
+    }
+    function closeSubtitleModal() {
+      document.getElementById('subtitleModal').classList.remove('open');
+    }
+    function showLoadedSubtitle() {
+      const lines = [
+        ['00:00', '자막 한 줄이 여기에 보입니다.'],
+        ['00:03', '실제 영상의 자막을 자동으로 가져와 시간 코드와 함께 보여줘요.'],
+        ['00:07', '한 줄씩 체크해서 골라낼 수 있고, 전체를 한꺼번에 일본어 번역봇으로 보낼 수도 있어요.'],
+        ['00:12', '원본 자막이 없으면 Whisper 음성 인식으로 자동 생성됩니다.'],
+        ['00:18', '여러 언어 영상도 한국어/영어 두 가지로 동시에 받아볼 수 있고요.'],
+        ['00:24', '시니어 친화 어휘로 번역하는 옵션은 다음 단계(번역봇)에서 고를 수 있어요.'],
+        ['00:30', '한 줄씩 묶음 선택해 인용·컷편집 구간 마크도 됩니다.'],
+        ['00:38', '스크롤하면 영상 끝까지 한눈에 흐름이 보입니다.'],
+        ['00:45', '감동 구간이 어디인지 댓글 반응과 같이 보고 결정할 수 있어요.'],
+        ['00:50', '이 줄이 마지막 자막입니다.']
+      ];
+      let html = '<div class="subtitle-box">';
+      for (const [t, txt] of lines) {
+        html += '<div class="subtitle-line"><span class="subtitle-time">' + t + '</span><span class="subtitle-text">' + txt + '</span></div>';
+      }
+      html += '</div>';
+      document.getElementById('subtitleContent').innerHTML = html;
+      document.getElementById('subtitleActions').style.display = 'flex';
+    }
+    // 자막 chip 클릭 → 모달 열기 (카드 링크 막기)
+    document.addEventListener('click', function (e) {
+      const t = e.target;
+      if (t.classList && t.classList.contains('action-chip') && t.textContent.indexOf('자막') !== -1) {
+        e.preventDefault();
+        e.stopPropagation();
+        const card = t.closest('.video-card');
+        const title = card ? card.querySelector('.video-title').textContent.trim() : '';
+        openSubtitleModal(title);
+        return false;
+      }
+      if (t.id === 'subtitleModal') closeSubtitleModal();
+    });
+    // URL 파라미터로 모달 상태 미리 보기
+    (function () {
+      const q = new URLSearchParams(location.search);
+      if (q.get('subtitle') === 'loading') openSubtitleModal();
+      if (q.get('subtitle') === 'loaded') { openSubtitleModal(); setTimeout(showLoadedSubtitle, 50); }
+    })();
+  </script>
 </body>
 </html>
