@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>고든램지 · 컬렉션 · RefTracker</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <span class="sidebar-badge">쇼치 강사님 시리즈</span>
+        <div class="sidebar-brand">RefTracker</div>
+        <div class="sidebar-brand-sub">레퍼런스 채널 추적</div>
+      </div>
+      <nav class="nav-section">
+        <a href="trend.html" class="nav-item">🔥 트렌드 피드</a>
+        <a href="youtube_discover.html" class="nav-item">🌐 YouTube 발굴</a>
+        <a href="search.html" class="nav-item">🔍 검색</a>
+        <a href="channels.html" class="nav-item">📺 레퍼런스 채널</a>
+        <a href="collections.html" class="nav-item active">📁 컬렉션</a>
+        <a href="bookmarks.html" class="nav-item">⭐ 북마크</a>
+        <a href="notifications.html" class="nav-item">🔔 알림</a>
+        <a href="settings.html" class="nav-item">⚙️ 설정</a>
+      </nav>
+      <div class="nav-divider"></div>
+      <nav class="nav-section">
+        <a href="index.html" class="nav-item-secondary"><span>🏠 포털 메인</span><span>›</span></a>
+        <a href="translator.html" class="nav-item-secondary"><span>🌸 일본어 번역봇</span><span>›</span></a>
+        <a href="editor.html" class="nav-item-secondary"><span>✂️ 자동 컷편집</span><span>›</span></a>
+      </nav>
+      <div class="user-card">
+        <div class="avatar-pill">남정</div>
+        <div class="user-card-info">
+          <div class="user-name">박남정</div>
+          <div class="user-email">parkzz5157@gmail.com</div>
+          <button class="logout">로그아웃</button>
+        </div>
+      </div>
+      <div class="version">v0.3.0</div>
+    </aside>
+
+    <main class="main">
+      <div class="page-header-row">
+        <div>
+          <div class="breadcrumb">
+            <a href="collections.html">📁 컬렉션</a>
+            <span class="sep">›</span>
+            <span class="current">고든램지</span>
+          </div>
+          <h1 class="page-title">📁 고든램지</h1>
+          <p class="page-sub">3개 하위 폴더 · 8 채널 (하위 합산) · 같은 주제, 나라별로 모아둠</p>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn-secondary">+ 새 하위 폴더</button>
+          <button class="btn-primary">+ 채널 추가</button>
+        </div>
+      </div>
+
+      <div class="section-label">📂 하위 폴더 (3)</div>
+      <div class="card-grid cols-3">
+        <a href="collection_leaf.html" class="sub-folder-card">
+          <div class="sub-folder-icon">🇰🇷</div>
+          <div class="sub-folder-info">
+            <div class="sub-folder-name">한국 채널</div>
+            <div class="sub-folder-meta">2 채널</div>
+          </div>
+          <span style="color:var(--c-text-light);">›</span>
+        </a>
+
+        <a href="collection_leaf.html" class="sub-folder-card">
+          <div class="sub-folder-icon">🇯🇵</div>
+          <div class="sub-folder-info">
+            <div class="sub-folder-name">일본 채널</div>
+            <div class="sub-folder-meta">3 채널</div>
+          </div>
+          <span style="color:var(--c-text-light);">›</span>
+        </a>
+
+        <a href="collection_leaf.html" class="sub-folder-card">
+          <div class="sub-folder-icon">🇺🇸</div>
+          <div class="sub-folder-info">
+            <div class="sub-folder-name">영어 원본</div>
+            <div class="sub-folder-meta">3 채널</div>
+          </div>
+          <span style="color:var(--c-text-light);">›</span>
+        </a>
+      </div>
+
+      <div class="section-label">📺 이 폴더에 직접 등록된 채널 (0)</div>
+      <div class="empty-state">
+        <div class="empty-state-title">아직 직접 등록한 채널이 없습니다</div>
+        <div class="empty-state-sub">하위 폴더로 정리하거나 "+ 채널 추가"로 이 단계에 바로 넣을 수 있어요</div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
