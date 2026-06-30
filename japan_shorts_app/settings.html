@@ -110,34 +110,73 @@
       <!-- 5. 알림 방법 -->
       <div class="settings-section">
         <div class="settings-section-title">📱 알림 받는 방법</div>
-        <div class="settings-section-desc">알림이 어디로 올지 정합니다.</div>
+        <div class="settings-section-desc">알림이 어디로 올지 정합니다. <strong>외부 채널(카톡·문자)은 연결 한 번이면 끝</strong> — 그 후로는 사장님 손전화로 바로 알림이 옵니다.</div>
+
+        <div class="settings-subhead">앱 안 / 이메일</div>
         <div class="settings-toggle-row">
           <div class="settings-toggle-info">
-            <div class="settings-toggle-label">🔔 앱 안 알림 (헤더 종 아이콘)</div>
-            <div class="settings-toggle-sub">RefTracker 화면 안에 빨간 뱃지로 표시</div>
+            <div class="settings-toggle-label">🔔 앱 안 알림</div>
+            <div class="settings-toggle-sub">RefTracker 화면 안 빨간 뱃지로 표시</div>
           </div>
           <div class="toggle on"></div>
         </div>
         <div class="settings-toggle-row">
           <div class="settings-toggle-info">
-            <div class="settings-toggle-label">📧 이메일 알림</div>
+            <div class="settings-toggle-label">📧 이메일</div>
             <div class="settings-toggle-sub">parkzz5157@gmail.com 으로 발송</div>
           </div>
           <div class="toggle on"></div>
         </div>
-        <div class="settings-toggle-row">
-          <div class="settings-toggle-info">
-            <div class="settings-toggle-label">📲 모바일 푸시 알림</div>
-            <div class="settings-toggle-sub">PWA 설치 시 사용 가능</div>
+
+        <div class="settings-subhead">🔗 외부 채널 연결 — 진짜 카톡/문자로 받기</div>
+
+        <!-- 카카오톡 (연결됨 예시) -->
+        <div class="connect-card connected">
+          <div class="connect-icon kakao">💬</div>
+          <div class="connect-info">
+            <div class="connect-name">카카오톡 알림톡 <span class="connect-status connected">✓ 연결됨</span></div>
+            <div class="connect-desc">+82-10-****-5157 · 알림톡 비즈니스 채널로 발송 · 무료</div>
           </div>
-          <div class="toggle"></div>
+          <button class="btn-disconnect">연결 해제</button>
         </div>
-        <div class="settings-toggle-row">
-          <div class="settings-toggle-info">
-            <div class="settings-toggle-label">💬 카카오톡 알림</div>
-            <div class="settings-toggle-sub">카카오 연결 필요</div>
+
+        <!-- SMS (연결 안 됨 + 폼) -->
+        <div class="connect-card">
+          <div class="connect-icon sms">📱</div>
+          <div class="connect-info">
+            <div class="connect-name">SMS 문자 알림 <span class="connect-status not-connected">● 연결 안 됨</span></div>
+            <div class="connect-desc">조회수 임계값 돌파 시 즉시 문자 · 건당 약 5원 (사장님 요금)</div>
           </div>
-          <div class="toggle"></div>
+          <button class="btn-connect">+ 연결하기</button>
+        </div>
+        <div class="connect-form">
+          <input type="tel" placeholder="010-XXXX-XXXX 휴대폰 번호 입력" />
+          <button>인증번호 받기</button>
+        </div>
+        <div class="connect-form-hint">번호 입력 → 인증번호 받기 → 받은 6자리 문자 입력 → 완료</div>
+
+        <!-- 텔레그램 -->
+        <div class="connect-card">
+          <div class="connect-icon telegram">✈️</div>
+          <div class="connect-info">
+            <div class="connect-name">텔레그램 봇 <span class="connect-status not-connected">● 연결 안 됨</span></div>
+            <div class="connect-desc">@RefTrackerBot 친구 추가 → /start 명령 → 무료, 무제한</div>
+          </div>
+          <button class="btn-connect">봇 친구 추가</button>
+        </div>
+
+        <!-- 모바일 푸시 -->
+        <div class="connect-card">
+          <div class="connect-icon pwa">📲</div>
+          <div class="connect-info">
+            <div class="connect-name">모바일 푸시 (PWA) <span class="connect-status not-connected">● 연결 안 됨</span></div>
+            <div class="connect-desc">RefTracker를 홈 화면에 추가 → 푸시 권한 허용 → 무료</div>
+          </div>
+          <button class="btn-connect">PWA 설치 가이드</button>
+        </div>
+
+        <div style="margin-top:14px;padding:12px 14px;background:rgba(139,92,246,0.06);border-radius:10px;font-size:12px;color:var(--c-text-muted);">
+          💡 <strong>발송 우선순위</strong>: 카톡 → 문자 → 텔레그램 → 푸시 → 앱 안 (앞의 채널 실패 시 다음으로 자동 폴백)
         </div>
       </div>
 
