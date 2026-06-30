@@ -535,6 +535,29 @@ input { font-family: inherit; }
   font-size: 10px;
   color: var(--c-primary-dark);
 }
+.channel-card-bottom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.channel-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.channel-status.new { background: #d1fae5; color: #047857; }
+.channel-status.growing { background: #dbeafe; color: #1d4ed8; }
+.channel-status.veteran { background: #fef3c7; color: #b45309; }
+.channel-status.viral {
+  background: linear-gradient(90deg, #fee2e2 0%, #fed7aa 100%);
+  color: #b91c1c;
+}
 
 /* empty / loading */
 .empty-state, .loading-state {
