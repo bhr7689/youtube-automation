@@ -128,7 +128,11 @@
           <span class="chip-check">🇫🇷 프랑스어</span>
           <span class="chip-check">🇵🇹 포르투갈어</span>
           <span class="chip-check">🇮🇳 힌디어</span>
+          <span class="chip-check">🇸🇦 아랍어</span>
+          <span class="chip-check">🇮🇩 인도네시아어</span>
+          <span class="chip-check">🇻🇳 베트남어</span>
         </div>
+        <div class="search-bottom-link">🌐 유튜브에서 키워드 검색</div>
       </div>
 
       <div class="filter-block">
@@ -685,5 +689,72 @@
       </div>
     </main>
   </div>
+
+  <!-- 레퍼런스 채널 추가 모달 -->
+  <div class="modal-backdrop" id="addModal">
+    <div class="modal">
+      <div class="modal-title">레퍼런스 채널 추가</div>
+      <div class="modal-channel-name" id="modalChannel">painfulset</div>
+      <div class="modal-section">
+        <div class="modal-section-title">
+          컬렉션
+          <span class="modal-section-hint">(안 체크하면 컬렉션 없이 등록)</span>
+        </div>
+        <div class="modal-empty">아직 컬렉션이 없어요. 그냥 등록하시면 돼요.</div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="closeAddModal()">취소</button>
+        <button class="btn-primary" id="modalConfirmBtn" onclick="startAdding()">
+          <span id="modalBtnText">+ 추가 (컬렉션 없이)</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function openAddModal(channelName) {
+      document.getElementById('modalChannel').textContent = channelName || '채널';
+      document.getElementById('modalBtnText').textContent = '+ 추가 (컬렉션 없이)';
+      document.getElementById('modalConfirmBtn').disabled = false;
+      document.getElementById('addModal').classList.add('open');
+    }
+    function closeAddModal() {
+      document.getElementById('addModal').classList.remove('open');
+    }
+    function startAdding() {
+      document.getElementById('modalBtnText').textContent = '등록 중...';
+      document.getElementById('modalConfirmBtn').disabled = true;
+      setTimeout(closeAddModal, 1600);
+    }
+    // + 추가 버튼 클릭 → 모달 열기 (카드 링크 막기)
+    document.addEventListener('click', function (e) {
+      if (e.target.classList && e.target.classList.contains('btn-add')) {
+        e.preventDefault();
+        e.stopPropagation();
+        const card = e.target.closest('.video-card');
+        const name = card ? card.querySelector('.channel-name').textContent.trim() : '';
+        openAddModal(name);
+        return false;
+      }
+      // ✓ 등록 칩 클릭 시 카드 링크로 가지 않게
+      if (e.target.classList && e.target.classList.contains('btn-registered')) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+      // 배경 클릭 시 모달 닫기
+      if (e.target.id === 'addModal') closeAddModal();
+    });
+    // URL 파라미터로 모달 상태 미리 보기 (스크린샷용)
+    (function () {
+      const q = new URLSearchParams(location.search);
+      if (q.get('modal') === 'open') openAddModal('painfulset');
+      if (q.get('modal') === 'loading') {
+        openAddModal('painfulset');
+        document.getElementById('modalBtnText').textContent = '등록 중...';
+        document.getElementById('modalConfirmBtn').disabled = true;
+      }
+    })();
+  </script>
 </body>
 </html>
