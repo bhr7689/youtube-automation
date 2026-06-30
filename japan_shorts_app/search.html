@@ -52,7 +52,7 @@
 
       <div class="search-box">
         <span class="icon">🔍</span>
-        <input type="text" placeholder="키워드 입력 후 Enter — 예: shark tank, science, K-pop" />
+        <input type="text" placeholder="키워드 입력 후 Enter — 예: shark tank, science, K-pop" value="gordon ramsay" />
         <button class="btn-primary" style="border-radius: 12px;">검색</button>
       </div>
 
@@ -161,12 +161,18 @@
         </div>
       </div>
 
-      <div class="result-count">100개 표시중</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <div class="result-count">100개 표시중</div>
+        <div class="legend-row">
+          <span class="legend-dot registered">✓ 이미 등록된 채널</span>
+          <span class="legend-dot new-add">+ 새로 추가할 채널</span>
+        </div>
+      </div>
 
       <div class="card-grid">
-        <!-- Card 1 -->
-        <div class="video-card">
+        <a href="video_detail.html" class="video-card new-add" style="text-decoration:none;color:inherit;">
           <div class="video-thumb">
+            <img src="https://picsum.photos/seed/v1/400/225" alt="">
             <span class="shorts-tag">SHORTS</span>
             <span class="duration-tag">0:31</span>
             <div class="thumb-bookmark">☆</div>
@@ -174,7 +180,7 @@
           <div class="video-body">
             <div class="video-title">Gordon Ramsay Was Not Ready for This…</div>
             <div class="video-channel">
-              <div class="channel-avatar"></div>
+              <div class="channel-avatar" style="background:#92400e;"></div>
               <span class="channel-name">FoundOnDash</span>
               <button class="btn-add">+ 추가</button>
             </div>
@@ -196,11 +202,11 @@
               </div>
             </div>
           </div>
-        </div>
+        </a>
 
-        <!-- Card 2 -->
-        <div class="video-card">
-          <div class="video-thumb" style="background: linear-gradient(135deg, #fef08a 0%, #ef4444 70%);">
+        <a href="video_detail.html" class="video-card new-add" style="text-decoration:none;color:inherit;">
+          <div class="video-thumb">
+            <img src="https://picsum.photos/seed/v2/400/225" alt="">
             <span class="shorts-tag">SHORTS</span>
             <span class="duration-tag">0:59</span>
             <div class="thumb-bookmark">☆</div>
@@ -208,7 +214,7 @@
           <div class="video-body">
             <div class="video-title">Gordon Gave The Owner A BRUTAL…</div>
             <div class="video-channel">
-              <div class="channel-avatar"></div>
+              <div class="channel-avatar" style="background:#dc2626;"></div>
               <span class="channel-name">Blaze</span>
               <button class="btn-add">+ 추가</button>
             </div>
@@ -230,11 +236,11 @@
               </div>
             </div>
           </div>
-        </div>
+        </a>
 
-        <!-- Card 3 -->
-        <div class="video-card">
-          <div class="video-thumb" style="background: linear-gradient(135deg, #fef3c7 0%, #f59e0b 100%);">
+        <a href="video_detail.html" class="video-card new-add" style="text-decoration:none;color:inherit;">
+          <div class="video-thumb">
+            <img src="https://picsum.photos/seed/v3/400/225" alt="">
             <span class="shorts-tag">SHORTS</span>
             <span class="duration-tag">0:59</span>
             <div class="thumb-bookmark">☆</div>
@@ -242,7 +248,7 @@
           <div class="video-body">
             <div class="video-title">Gordon Ramsay's Eggs</div>
             <div class="video-channel">
-              <div class="channel-avatar"></div>
+              <div class="channel-avatar" style="background:#f59e0b;"></div>
               <span class="channel-name">Nick DiGiov…</span>
               <button class="btn-add">+ 추가</button>
             </div>
@@ -264,11 +270,11 @@
               </div>
             </div>
           </div>
-        </div>
+        </a>
 
-        <!-- Card 4 -->
-        <div class="video-card">
-          <div class="video-thumb" style="background: linear-gradient(135deg, #fda4af 0%, #be123c 100%);">
+        <a href="video_detail.html" class="video-card new-add" style="text-decoration:none;color:inherit;">
+          <div class="video-thumb">
+            <img src="https://picsum.photos/seed/v4/400/225" alt="">
             <span class="shorts-tag">SHORTS</span>
             <span class="duration-tag">0:28</span>
             <div class="thumb-bookmark">☆</div>
@@ -276,7 +282,7 @@
           <div class="video-body">
             <div class="video-title">Gordon Ramsay's Son Hates His Scrambled…</div>
             <div class="video-channel">
-              <div class="channel-avatar"></div>
+              <div class="channel-avatar" style="background:#be123c;"></div>
               <span class="channel-name">UNFAZED W…</span>
               <button class="btn-add">+ 추가</button>
             </div>
@@ -298,11 +304,11 @@
               </div>
             </div>
           </div>
-        </div>
+        </a>
 
-        <!-- Card 5 -->
-        <div class="video-card">
-          <div class="video-thumb" style="background: linear-gradient(135deg, #fbcfe8 0%, #a855f7 100%);">
+        <a href="video_detail.html" class="video-card new-add" style="text-decoration:none;color:inherit;">
+          <div class="video-thumb">
+            <img src="https://picsum.photos/seed/v5/400/225" alt="">
             <span class="shorts-tag">SHORTS</span>
             <span class="duration-tag">0:18</span>
             <div class="thumb-bookmark">☆</div>
@@ -310,7 +316,7 @@
           <div class="video-body">
             <div class="video-title">Gordon Ramsay Fooled Everyone Here 😂</div>
             <div class="video-channel">
-              <div class="channel-avatar"></div>
+              <div class="channel-avatar" style="background:#a855f7;"></div>
               <span class="channel-name">MoneyMoves</span>
               <button class="btn-add">+ 추가</button>
             </div>
@@ -332,11 +338,11 @@
               </div>
             </div>
           </div>
-        </div>
+        </a>
 
-        <!-- Row 2 -->
-        <div class="video-card">
-          <div class="video-thumb" style="background: linear-gradient(135deg, #fde68a 0%, #b45309 100%);">
+        <a href="video_detail.html" class="video-card new-add" style="text-decoration:none;color:inherit;">
+          <div class="video-thumb">
+            <img src="https://picsum.photos/seed/v6/400/225" alt="">
             <span class="shorts-tag">SHORTS</span>
             <span class="duration-tag">0:55</span>
             <div class="thumb-bookmark">☆</div>
@@ -344,7 +350,7 @@
           <div class="video-body">
             <div class="video-title">This Is Why I Love Gordon Ramsay 😍💜…</div>
             <div class="video-channel">
-              <div class="channel-avatar"></div>
+              <div class="channel-avatar" style="background:#b45309;"></div>
               <span class="channel-name">ZESTY</span>
               <button class="btn-add">+ 추가</button>
             </div>
@@ -366,10 +372,11 @@
               </div>
             </div>
           </div>
-        </div>
+        </a>
 
-        <div class="video-card">
-          <div class="video-thumb" style="background: linear-gradient(135deg, #bae6fd 0%, #0ea5e9 100%);">
+        <a href="video_detail.html" class="video-card new-add" style="text-decoration:none;color:inherit;">
+          <div class="video-thumb">
+            <img src="https://picsum.photos/seed/v7/400/225" alt="">
             <span class="shorts-tag">SHORTS</span>
             <span class="duration-tag">0:22</span>
             <div class="thumb-bookmark">☆</div>
@@ -377,7 +384,7 @@
           <div class="video-body">
             <div class="video-title">How Much Gordon Ramsey Makes! 🥳</div>
             <div class="video-channel">
-              <div class="channel-avatar"></div>
+              <div class="channel-avatar" style="background:#0ea5e9;"></div>
               <span class="channel-name">Mark Tilbury</span>
               <button class="btn-add">+ 추가</button>
             </div>
@@ -399,10 +406,11 @@
               </div>
             </div>
           </div>
-        </div>
+        </a>
 
-        <div class="video-card">
-          <div class="video-thumb" style="background: linear-gradient(135deg, #fcd34d 0%, #dc2626 100%);">
+        <a href="video_detail.html" class="video-card new-add" style="text-decoration:none;color:inherit;">
+          <div class="video-thumb">
+            <img src="https://picsum.photos/seed/v8/400/225" alt="">
             <span class="shorts-tag">SHORTS</span>
             <span class="duration-tag">0:45</span>
             <div class="thumb-bookmark">☆</div>
@@ -410,7 +418,7 @@
           <div class="video-body">
             <div class="video-title">Young Chef Shocks Gordon Ramsay With…</div>
             <div class="video-channel">
-              <div class="channel-avatar"></div>
+              <div class="channel-avatar" style="background:#dc2626;"></div>
               <span class="channel-name">Bimbo</span>
               <button class="btn-add">+ 추가</button>
             </div>
@@ -432,10 +440,11 @@
               </div>
             </div>
           </div>
-        </div>
+        </a>
 
-        <div class="video-card">
-          <div class="video-thumb" style="background: linear-gradient(135deg, #f9a8d4 0%, #9d174d 100%);">
+        <a href="video_detail.html" class="video-card new-add" style="text-decoration:none;color:inherit;">
+          <div class="video-thumb">
+            <img src="https://picsum.photos/seed/v9/400/225" alt="">
             <span class="shorts-tag">SHORTS</span>
             <span class="duration-tag">0:53</span>
             <div class="thumb-bookmark">☆</div>
@@ -443,7 +452,7 @@
           <div class="video-body">
             <div class="video-title">Gordon Ramsay Rizzes up contestant in Hell'…</div>
             <div class="video-channel">
-              <div class="channel-avatar"></div>
+              <div class="channel-avatar" style="background:#9d174d;"></div>
               <span class="channel-name">Chefs Vault</span>
               <button class="btn-add">+ 추가</button>
             </div>
@@ -465,10 +474,11 @@
               </div>
             </div>
           </div>
-        </div>
+        </a>
 
-        <div class="video-card">
-          <div class="video-thumb" style="background: linear-gradient(135deg, #86efac 0%, #047857 100%);">
+        <a href="video_detail.html" class="video-card new-add" style="text-decoration:none;color:inherit;">
+          <div class="video-thumb">
+            <img src="https://picsum.photos/seed/v10/400/225" alt="">
             <span class="shorts-tag">SHORTS</span>
             <span class="duration-tag">0:42</span>
             <div class="thumb-bookmark">☆</div>
@@ -476,7 +486,7 @@
           <div class="video-body">
             <div class="video-title">Gordon Ramsay Joins Squid Game 🦑</div>
             <div class="video-channel">
-              <div class="channel-avatar"></div>
+              <div class="channel-avatar" style="background:#047857;"></div>
               <span class="channel-name">Team Maguire</span>
               <button class="btn-add">+ 추가</button>
             </div>
@@ -498,11 +508,11 @@
               </div>
             </div>
           </div>
-        </div>
+        </a>
 
-        <!-- Row 3: with multiplier + ✓등록 examples (from screenshot 4) -->
-        <div class="video-card">
-          <div class="video-thumb" style="background: linear-gradient(135deg, #fbcfe8 0%, #db2777 100%);">
+        <a href="video_detail.html" class="video-card registered" style="text-decoration:none;color:inherit;">
+          <div class="video-thumb">
+            <img src="https://picsum.photos/seed/v11/400/225" alt="">
             <span class="shorts-tag">SHORTS</span>
             <span class="multiplier-tag">×38.1</span>
             <span class="duration-tag">0:53</span>
@@ -511,7 +521,7 @@
           <div class="video-body">
             <div class="video-title">Smartest hair invention on Shark Tank ⁉️…</div>
             <div class="video-channel">
-              <div class="channel-avatar"></div>
+              <div class="channel-avatar" style="background:#db2777;"></div>
               <span class="channel-name">Pitch Reality</span>
               <span class="btn-registered">✓ 등록</span>
             </div>
@@ -533,10 +543,11 @@
               </div>
             </div>
           </div>
-        </div>
+        </a>
 
-        <div class="video-card">
-          <div class="video-thumb" style="background: linear-gradient(135deg, #fde68a 0%, #f97316 100%);">
+        <a href="video_detail.html" class="video-card new-add" style="text-decoration:none;color:inherit;">
+          <div class="video-thumb">
+            <img src="https://picsum.photos/seed/v12/400/225" alt="">
             <span class="shorts-tag">SHORTS</span>
             <span class="duration-tag">0:55</span>
             <div class="thumb-bookmark">☆</div>
@@ -544,7 +555,7 @@
           <div class="video-body">
             <div class="video-title">The Future of Panties | Shark Tank US</div>
             <div class="video-channel">
-              <div class="channel-avatar"></div>
+              <div class="channel-avatar" style="background:#f97316;"></div>
               <span class="channel-name">painfulset</span>
               <button class="btn-add">+ 추가</button>
             </div>
@@ -566,10 +577,11 @@
               </div>
             </div>
           </div>
-        </div>
+        </a>
 
-        <div class="video-card">
-          <div class="video-thumb" style="background: linear-gradient(135deg, #cbd5e1 0%, #475569 100%);">
+        <a href="video_detail.html" class="video-card new-add" style="text-decoration:none;color:inherit;">
+          <div class="video-thumb">
+            <img src="https://picsum.photos/seed/v13/400/225" alt="">
             <span class="shorts-tag">SHORTS</span>
             <span class="duration-tag">0:48</span>
             <div class="thumb-bookmark">☆</div>
@@ -577,7 +589,7 @@
           <div class="video-body">
             <div class="video-title">They Trashed Him Shark Tank, But This…</div>
             <div class="video-channel">
-              <div class="channel-avatar"></div>
+              <div class="channel-avatar" style="background:#475569;"></div>
               <span class="channel-name">TuxMotivation</span>
               <button class="btn-add">+ 추가</button>
             </div>
@@ -599,18 +611,20 @@
               </div>
             </div>
           </div>
-        </div>
+        </a>
 
-        <div class="video-card">
-          <div class="video-thumb" style="background: linear-gradient(135deg, #fef9c3 0%, #ca8a04 100%);">
+        <a href="video_detail.html" class="video-card registered" style="text-decoration:none;color:inherit;">
+          <div class="video-thumb">
+            <img src="https://picsum.photos/seed/v14/400/225" alt="">
             <span class="shorts-tag">SHORTS</span>
+            <span class="multiplier-tag">×12.4</span>
             <span class="duration-tag">0:46</span>
             <div class="thumb-bookmark">☆</div>
           </div>
           <div class="video-body">
             <div class="video-title">Chiller EVER Seen on…</div>
             <div class="video-channel">
-              <div class="channel-avatar"></div>
+              <div class="channel-avatar" style="background:#ca8a04;"></div>
               <span class="channel-name">Wealth Opti…</span>
               <span class="btn-registered">✓ 등록</span>
             </div>
@@ -632,18 +646,20 @@
               </div>
             </div>
           </div>
-        </div>
+        </a>
 
-        <div class="video-card">
-          <div class="video-thumb" style="background: linear-gradient(135deg, #fed7aa 0%, #ea580c 100%);">
+        <a href="video_detail.html" class="video-card registered" style="text-decoration:none;color:inherit;">
+          <div class="video-thumb">
+            <img src="https://picsum.photos/seed/v15/400/225" alt="">
             <span class="shorts-tag">SHORTS</span>
+            <span class="multiplier-tag">×8.7</span>
             <span class="duration-tag">0:51</span>
             <div class="thumb-bookmark">☆</div>
           </div>
           <div class="video-body">
             <div class="video-title">Is ADDICTIVE! 😂🔥 |…</div>
             <div class="video-channel">
-              <div class="channel-avatar"></div>
+              <div class="channel-avatar" style="background:#ea580c;"></div>
               <span class="channel-name">Wealth Opti…</span>
               <span class="btn-registered">✓ 등록</span>
             </div>
@@ -665,7 +681,7 @@
               </div>
             </div>
           </div>
-        </div>
+        </a>
       </div>
     </main>
   </div>
