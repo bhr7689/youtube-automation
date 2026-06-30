@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>레퍼런스 채널 · RefTracker</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <span class="sidebar-badge">쇼치 강사님 시리즈</span>
+        <div class="sidebar-brand">RefTracker</div>
+        <div class="sidebar-brand-sub">레퍼런스 채널 추적</div>
+      </div>
+      <nav class="nav-section">
+        <a href="trend.html" class="nav-item">🔥 트렌드 피드</a>
+        <a href="youtube_discover.html" class="nav-item">🌐 YouTube 발굴</a>
+        <a href="search.html" class="nav-item">🔍 검색</a>
+        <a href="channels.html" class="nav-item active">📺 레퍼런스 채널</a>
+        <a href="collections.html" class="nav-item">📁 컬렉션</a>
+        <a href="bookmarks.html" class="nav-item">⭐ 북마크</a>
+        <a href="notifications.html" class="nav-item">🔔 알림</a>
+        <a href="settings.html" class="nav-item">⚙️ 설정</a>
+      </nav>
+      <div class="nav-divider"></div>
+      <nav class="nav-section">
+        <a href="index.html" class="nav-item-secondary"><span>🏠 포털 메인</span><span>›</span></a>
+        <a href="translator.html" class="nav-item-secondary"><span>🌸 일본어 번역봇</span><span>›</span></a>
+        <a href="editor.html" class="nav-item-secondary"><span>✂️ 자동 컷편집</span><span>›</span></a>
+      </nav>
+      <div class="user-card">
+        <div class="avatar-pill">남정</div>
+        <div class="user-card-info">
+          <div class="user-name">박남정</div>
+          <div class="user-email">parkzz5157@gmail.com</div>
+          <button class="logout">로그아웃</button>
+        </div>
+      </div>
+      <div class="version">v0.3.0</div>
+    </aside>
+
+    <main class="main">
+      <div class="page-header-row">
+        <div>
+          <span class="badge-dot">레퍼런스 채널</span>
+          <h1 class="page-title"><span class="gradient-text">참고할 채널</span> 모음</h1>
+          <p class="page-sub">총 <strong>22개</strong> 채널 추적 중</p>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn-secondary">📋 CSV</button>
+          <button class="btn-primary">+ 채널 추가</button>
+        </div>
+      </div>
+
+      <div class="filter-block">
+        <div class="filter-block-title">필터</div>
+        <div class="filter-row">
+          <span class="filter-label">언어</span>
+          <span class="chip selected">전체</span>
+          <span class="chip">🇰🇷 한국어</span>
+          <span class="chip">🇯🇵 일본어</span>
+          <span class="chip">🇺🇸 영어</span>
+          <span class="chip">🇨🇳 중국어</span>
+          <span class="chip">🇪🇸 스페인어</span>
+          <span class="chip">🇩🇪 독일어</span>
+          <span class="chip">🌐 기타</span>
+        </div>
+        <div class="filter-row">
+          <span class="filter-label">운영</span>
+          <span class="chip selected">전체</span>
+          <span class="chip">운영중</span>
+          <span class="chip">운영 중단</span>
+        </div>
+        <div class="filter-row">
+          <span class="filter-label">주제 폭</span>
+          <span class="chip selected">전체</span>
+          <span class="chip">주제 다양</span>
+          <span class="chip">단일 핀셋</span>
+        </div>
+        <div class="filter-row">
+          <span class="filter-label">콘텐츠</span>
+          <span class="chip selected">전체</span>
+          <span class="chip">숏폼</span>
+          <span class="chip">롱폼</span>
+          <span class="chip">혼합</span>
+        </div>
+      </div>
+
+      <div class="checkbox-row">보이는 22개 전체 선택</div>
+
+      <div class="card-grid cols-4">
+        <!-- Row 1 -->
+        <div class="channel-card">
+          <div class="channel-card-top">
+            <div class="channel-card-avatar" style="background:#92400e;">🙂</div>
+            <div class="channel-card-actions">
+              <span>📋</span><span>🔗</span><span>🔄</span><span>📝</span><span>×</span>
+            </div>
+          </div>
+          <div class="channel-card-stats">
+            <div class="stat-box"><div class="stat-label">구독</div><div class="stat-value">26.9만</div></div>
+            <div class="stat-box"><div class="stat-label">영상</div><div class="stat-value">559</div></div>
+            <div class="stat-box"><div class="stat-label">평균 조회</div><div class="stat-sub">(50개)</div><div class="stat-value">10.5만</div></div>
+          </div>
+          <span class="channel-card-lang">🇺🇸 영어</span>
+        </div>
+
+        <div class="channel-card">
+          <div class="channel-card-top">
+            <div class="channel-card-avatar" style="background:#dc2626;">📺</div>
+            <div class="channel-card-actions">
+              <span>📋</span><span>🔗</span><span>🔄</span><span>📝</span><span>×</span>
+            </div>
+          </div>
+          <div class="channel-card-stats">
+            <div class="stat-box"><div class="stat-label">구독</div><div class="stat-value">37.7만</div></div>
+            <div class="stat-box"><div class="stat-label">영상</div><div class="stat-value">282</div></div>
+            <div class="stat-box"><div class="stat-label">평균 조회</div><div class="stat-sub">(50개)</div><div class="stat-value">650.0만</div></div>
+          </div>
+          <span class="channel-card-lang">🇺🇸 영어</span>
+        </div>
+
+        <div class="channel-card">
+          <div class="channel-card-top">
+            <div class="channel-card-avatar">FM</div>
+            <div class="channel-card-actions">
+              <span>📋</span><span>🔗</span><span>🔄</span><span>📝</span><span>×</span>
+            </div>
+          </div>
+          <div class="channel-card-stats">
+            <div class="stat-box"><div class="stat-label">구독</div><div class="stat-value">3.7만</div></div>
+            <div class="stat-box"><div class="stat-label">영상</div><div class="stat-value">108</div></div>
+            <div class="stat-box"><div class="stat-label">평균 조회</div><div class="stat-sub">(50개)</div><div class="stat-value">24.8만</div></div>
+          </div>
+          <span class="channel-card-lang">🇺🇸 영어</span>
+        </div>
+
+        <div class="channel-card">
+          <div class="channel-card-top">
+            <div class="channel-card-avatar">WO</div>
+            <div class="channel-card-actions">
+              <span>📋</span><span>🔗</span><span>🔄</span><span>📝</span><span>×</span>
+            </div>
+          </div>
+          <div class="channel-card-stats">
+            <div class="stat-box"><div class="stat-label">구독</div><div class="stat-value">27.8만</div></div>
+            <div class="stat-box"><div class="stat-label">영상</div><div class="stat-value">731</div></div>
+            <div class="stat-box"><div class="stat-label">평균 조회</div><div class="stat-sub">(50개)</div><div class="stat-value">21.2만</div></div>
+          </div>
+          <span class="channel-card-lang">🇺🇸 영어</span>
+        </div>
+
+        <!-- Row 2 -->
+        <div class="channel-card">
+          <div class="channel-card-top">
+            <div class="channel-card-avatar">—</div>
+            <div class="channel-card-actions">
+              <span>📋</span><span>🔗</span><span>🔄</span><span>📝</span><span>×</span>
+            </div>
+          </div>
+          <div class="channel-card-stats">
+            <div class="stat-box"><div class="stat-label">구독</div><div class="stat-value">367</div></div>
+            <div class="stat-box"><div class="stat-label">영상</div><div class="stat-value">12</div></div>
+            <div class="stat-box"><div class="stat-label">평균 조회</div><div class="stat-sub">(10개)</div><div class="stat-value">10.3만</div></div>
+          </div>
+          <span class="channel-card-lang">🇺🇸 영어</span>
+        </div>
+
+        <div class="channel-card">
+          <div class="channel-card-top">
+            <div class="channel-card-avatar">—</div>
+            <div class="channel-card-actions">
+              <span>📋</span><span>🔗</span><span>🔄</span><span>📝</span><span>×</span>
+            </div>
+          </div>
+          <div class="channel-card-stats">
+            <div class="stat-box"><div class="stat-label">구독</div><div class="stat-value">2.1K</div></div>
+            <div class="stat-box"><div class="stat-label">영상</div><div class="stat-value">220</div></div>
+            <div class="stat-box"><div class="stat-label">평균 조회</div><div class="stat-sub">(50개)</div><div class="stat-value">7.3만</div></div>
+          </div>
+          <span class="channel-card-lang">🇺🇸 영어</span>
+        </div>
+
+        <div class="channel-card">
+          <div class="channel-card-top">
+            <div class="channel-card-avatar">—</div>
+            <div class="channel-card-actions">
+              <span>📋</span><span>🔗</span><span>🔄</span><span>📝</span><span>×</span>
+            </div>
+          </div>
+          <div class="channel-card-stats">
+            <div class="stat-box"><div class="stat-label">구독</div><div class="stat-value">769</div></div>
+            <div class="stat-box"><div class="stat-label">영상</div><div class="stat-value">36</div></div>
+            <div class="stat-box"><div class="stat-label">평균 조회</div><div class="stat-sub">(30개)</div><div class="stat-value">9.8만</div></div>
+          </div>
+          <span class="channel-card-lang">🇺🇸 영어</span>
+        </div>
+
+        <div class="channel-card">
+          <div class="channel-card-top">
+            <div class="channel-card-avatar">—</div>
+            <div class="channel-card-actions">
+              <span>📋</span><span>🔗</span><span>🔄</span><span>📝</span><span>×</span>
+            </div>
+          </div>
+          <div class="channel-card-stats">
+            <div class="stat-box"><div class="stat-label">구독</div><div class="stat-value">755</div></div>
+            <div class="stat-box"><div class="stat-label">영상</div><div class="stat-value">8</div></div>
+            <div class="stat-box"><div class="stat-label">평균 조회</div><div class="stat-sub">(8개)</div><div class="stat-value">76.4만</div></div>
+          </div>
+          <span class="channel-card-lang">🇺🇸 영어</span>
+        </div>
+
+        <!-- Row 3 -->
+        <div class="channel-card">
+          <div class="channel-card-top">
+            <div class="channel-card-avatar" style="background:#0891b2;">G</div>
+            <div class="channel-card-actions">
+              <span>📋</span><span>🔗</span><span>🔄</span><span>📝</span><span>×</span>
+            </div>
+          </div>
+          <div class="channel-card-stats">
+            <div class="stat-box"><div class="stat-label">구독</div><div class="stat-value">4.8K</div></div>
+            <div class="stat-box"><div class="stat-label">영상</div><div class="stat-value">73</div></div>
+            <div class="stat-box"><div class="stat-label">평균 조회</div><div class="stat-sub">(50개)</div><div class="stat-value">33.9만</div></div>
+          </div>
+          <span class="channel-card-lang">🇺🇸 영어</span>
+        </div>
+
+        <div class="channel-card">
+          <div class="channel-card-top">
+            <div class="channel-card-avatar" style="background:#1e3a8a;">B</div>
+            <div class="channel-card-actions">
+              <span>📋</span><span>🔗</span><span>🔄</span><span>📝</span><span>×</span>
+            </div>
+          </div>
+          <div class="channel-card-stats">
+            <div class="stat-box"><div class="stat-label">구독</div><div class="stat-value">1.6K</div></div>
+            <div class="stat-box"><div class="stat-label">영상</div><div class="stat-value">21</div></div>
+            <div class="stat-box"><div class="stat-label">평균 조회</div><div class="stat-sub">(22개)</div><div class="stat-value">14.3만</div></div>
+          </div>
+          <span class="channel-card-lang">🇺🇸 영어</span>
+        </div>
+
+        <div class="channel-card">
+          <div class="channel-card-top">
+            <div class="channel-card-avatar">SK</div>
+            <div class="channel-card-actions">
+              <span>📋</span><span>🔗</span><span>🔄</span><span>📝</span><span>×</span>
+            </div>
+          </div>
+          <div class="channel-card-stats">
+            <div class="stat-box"><div class="stat-label">구독</div><div class="stat-value">2.8만</div></div>
+            <div class="stat-box"><div class="stat-label">영상</div><div class="stat-value">126</div></div>
+            <div class="stat-box"><div class="stat-label">평균 조회</div><div class="stat-sub">(50개)</div><div class="stat-value">32.6만</div></div>
+          </div>
+          <span class="channel-card-lang">🇺🇸 영어</span>
+        </div>
+
+        <div class="channel-card">
+          <div class="channel-card-top">
+            <div class="channel-card-avatar">🦈</div>
+            <div class="channel-card-actions">
+              <span>📋</span><span>🔗</span><span>🔄</span><span>📝</span><span>×</span>
+            </div>
+          </div>
+          <div class="channel-card-stats">
+            <div class="stat-box"><div class="stat-label">구독</div><div class="stat-value">3.0K</div></div>
+            <div class="stat-box"><div class="stat-label">영상</div><div class="stat-value">24</div></div>
+            <div class="stat-box"><div class="stat-label">평균 조회</div><div class="stat-sub">(28개)</div><div class="stat-value">35.5만</div></div>
+          </div>
+          <span class="channel-card-lang">🇺🇸 영어</span>
+        </div>
+
+        <!-- Row 4 -->
+        <div class="channel-card">
+          <div class="channel-card-top">
+            <div class="channel-card-avatar">AT</div>
+            <div class="channel-card-actions">
+              <span>📋</span><span>🔗</span><span>🔄</span><span>📝</span><span>×</span>
+            </div>
+          </div>
+          <div class="channel-card-stats">
+            <div class="stat-box"><div class="stat-label">구독</div><div class="stat-value">3.3K</div></div>
+            <div class="stat-box"><div class="stat-label">영상</div><div class="stat-value">10</div></div>
+            <div class="stat-box"><div class="stat-label">평균 조회</div><div class="stat-sub">(10개)</div><div class="stat-value">78.7만</div></div>
+          </div>
+          <span class="channel-card-lang">🇺🇸 영어</span>
+        </div>
+
+        <div class="channel-card">
+          <div class="channel-card-top">
+            <div class="channel-card-avatar" style="background:#facc15;color:#1a1a1a;">🍌</div>
+            <div class="channel-card-actions">
+              <span>📋</span><span>🔗</span><span>🔄</span><span>📝</span><span>×</span>
+            </div>
+          </div>
+          <div class="channel-card-stats">
+            <div class="stat-box"><div class="stat-label">구독</div><div class="stat-value">8.2만</div></div>
+            <div class="stat-box"><div class="stat-label">영상</div><div class="stat-value">368</div></div>
+            <div class="stat-box"><div class="stat-label">평균 조회</div><div class="stat-sub">(50개)</div><div class="stat-value">175.0만</div></div>
+          </div>
+          <span class="channel-card-lang">🇺🇸 영어</span>
+        </div>
+
+        <div class="channel-card">
+          <div class="channel-card-top">
+            <div class="channel-card-avatar">ID</div>
+            <div class="channel-card-actions">
+              <span>📋</span><span>🔗</span><span>🔄</span><span>📝</span><span>×</span>
+            </div>
+          </div>
+          <div class="channel-card-stats">
+            <div class="stat-box"><div class="stat-label">구독</div><div class="stat-value">1.4만</div></div>
+            <div class="stat-box"><div class="stat-label">영상</div><div class="stat-value">205</div></div>
+            <div class="stat-box"><div class="stat-label">평균 조회</div><div class="stat-sub">(50개)</div><div class="stat-value">5.4만</div></div>
+          </div>
+          <span class="channel-card-lang">🇺🇸 영어</span>
+        </div>
+
+        <div class="channel-card">
+          <div class="channel-card-top">
+            <div class="channel-card-avatar" style="background:#0e7490;">D</div>
+            <div class="channel-card-actions">
+              <span>📋</span><span>🔗</span><span>🔄</span><span>📝</span><span>×</span>
+            </div>
+          </div>
+          <div class="channel-card-stats">
+            <div class="stat-box"><div class="stat-label">구독</div><div class="stat-value">6.7K</div></div>
+            <div class="stat-box"><div class="stat-label">영상</div><div class="stat-value">152</div></div>
+            <div class="stat-box"><div class="stat-label">평균 조회</div><div class="stat-sub">(50개)</div><div class="stat-value">21.3만</div></div>
+          </div>
+          <span class="channel-card-lang">🇺🇸 영어</span>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>검색 · RefTracker</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <span class="sidebar-badge">쇼치 강사님 시리즈</span>
+        <div class="sidebar-brand">RefTracker</div>
+        <div class="sidebar-brand-sub">레퍼런스 채널 추적</div>
+      </div>
+      <nav class="nav-section">
+        <a href="trend.html" class="nav-item">🔥 트렌드 피드</a>
+        <a href="youtube_discover.html" class="nav-item">🌐 YouTube 발굴</a>
+        <a href="search.html" class="nav-item active">🔍 검색</a>
+        <a href="channels.html" class="nav-item">📺 레퍼런스 채널</a>
+        <a href="collections.html" class="nav-item">📁 컬렉션</a>
+        <a href="bookmarks.html" class="nav-item">⭐ 북마크</a>
+        <a href="notifications.html" class="nav-item">🔔 알림</a>
+        <a href="settings.html" class="nav-item">⚙️ 설정</a>
+      </nav>
+      <div class="nav-divider"></div>
+      <nav class="nav-section">
+        <a href="index.html" class="nav-item-secondary"><span>🏠 포털 메인</span><span>›</span></a>
+        <a href="translator.html" class="nav-item-secondary"><span>🌸 일본어 번역봇</span><span>›</span></a>
+        <a href="editor.html" class="nav-item-secondary"><span>✂️ 자동 컷편집</span><span>›</span></a>
+      </nav>
+      <div class="user-card">
+        <div class="avatar-pill">남정</div>
+        <div class="user-card-info">
+          <div class="user-name">박남정</div>
+          <div class="user-email">parkzz5157@gmail.com</div>
+          <button class="logout">로그아웃</button>
+        </div>
+      </div>
+      <div class="version">v0.3.0</div>
+    </aside>
+
+    <main class="main">
+      <div class="page-header-row">
+        <div>
+          <span class="badge-dot">검색</span>
+          <h1 class="page-title"><span class="gradient-text">키워드로</span> 영상·채널 발굴</h1>
+          <p class="page-sub">유튜브에서 키워드 검색 · 등록 채널 영상이면 배수도 함께 표시</p>
+        </div>
+      </div>
+
+      <div class="search-box">
+        <span class="icon">🔍</span>
+        <input type="text" placeholder="키워드 입력 후 Enter — 예: shark tank, science, K-pop" />
+        <button class="btn-primary" style="border-radius: 12px;">검색</button>
+      </div>
+
+      <div class="recent-row">
+        <span class="recent-label">🕐 최근 검색</span>
+        <span class="recent-chip">gorden ramsay 🍿 3m <span class="x">×</span></span>
+        <span class="recent-chip">hell's kitchen 🍿 3m <span class="x">×</span></span>
+        <span class="recent-chip">BGT 🍿 3m <span class="x">×</span></span>
+        <span class="recent-chip">AGT 🍿 1m <span class="x">×</span></span>
+        <span class="recent-chip">shark tank <span class="x">×</span></span>
+        <span class="recent-chip">Payne in the Putt <span class="x">×</span></span>
+        <span class="recent-chip">shopie powers 📁 <span class="x">×</span></span>
+        <span class="recent-chip">소피파워스 <span class="x">×</span></span>
+        <span class="recent-chip">Common Knowledge sh… 🍿 6m <span class="x">×</span></span>
+        <span class="recent-chip">Common Knowledge 🍿 1m <span class="x">×</span></span>
+        <span class="recent-chip">scrub daddy 📁 <span class="x">×</span></span>
+        <span class="recent-chip">Michael Jackson <span class="x">×</span></span>
+        <span class="recent-chip">a brake for skateboards … <span class="x">×</span></span>
+        <span class="recent-chip">skate Boards shark tank 🍿 <span class="x">×</span></span>
+        <span class="recent-chip">Break Boards shark tank 🍿 <span class="x">×</span></span>
+        <span class="recent-clear">전체 지우기</span>
+      </div>
+
+      <div class="tabs">
+        <div class="tab active">영상</div>
+        <div class="tab">채널</div>
+      </div>
+
+      <div class="filter-block">
+        <div class="filter-block-title">검색 옵션 <span style="color:var(--c-text-light);font-weight:400;">(변경 시 새로 가져옴)</span></div>
+        <div class="filter-row">
+          <span class="filter-label">범위</span>
+          <span class="chip selected">🌐 유튜브 전체</span>
+          <span class="chip">⭐ 내 레퍼런스 채널만</span>
+        </div>
+        <div class="filter-row">
+          <span class="filter-label">기간</span>
+          <span class="chip">1일</span>
+          <span class="chip">3일</span>
+          <span class="chip">1주</span>
+          <span class="chip">1달</span>
+          <span class="chip">3달</span>
+          <span class="chip">6달</span>
+          <span class="chip">1년</span>
+          <span class="chip selected">전체</span>
+        </div>
+        <div class="filter-row">
+          <span class="filter-label">기준</span>
+          <span class="chip selected">🔥 인기 영상</span>
+          <span class="chip">📰 최신 영상</span>
+        </div>
+        <div class="filter-row">
+          <span class="filter-label">형식</span>
+          <span class="chip selected">🍿 Shorts</span>
+          <span class="chip">🎬 롱폼</span>
+          <span class="chip">전체</span>
+        </div>
+        <div class="filter-row">
+          <span class="filter-label">개수</span>
+          <span class="chip">100개</span>
+          <span class="chip selected">200개</span>
+          <span class="chip">300개</span>
+          <span class="chip">500개</span>
+        </div>
+        <div class="filter-row">
+          <span class="filter-label">언어</span>
+          <span class="chip-check">🇰🇷 한국어</span>
+          <span class="chip-check">🇺🇸 영어</span>
+          <span class="chip-check">🇯🇵 일본어</span>
+          <span class="chip-check">🇨🇳 중국어</span>
+          <span class="chip-check">🇪🇸 스페인어</span>
+          <span class="chip-check">🇩🇪 독일어</span>
+          <span class="chip-check">🇫🇷 프랑스어</span>
+          <span class="chip-check">🇵🇹 포르투갈어</span>
+          <span class="chip-check">🇮🇳 힌디어</span>
+        </div>
+      </div>
+
+      <div class="filter-block">
+        <div class="filter-block-title">결과 내 정렬 / 필터 <span style="color:var(--c-text-light);font-weight:400;">(즉시 적용, 가져온 100개 안에서)</span></div>
+        <div class="filter-row">
+          <span class="filter-label">정렬</span>
+          <span class="chip selected">조회수</span>
+          <span class="chip">🔥 급등 배수</span>
+          <span class="chip">📰 최신</span>
+          <span class="chip">원본 순서</span>
+        </div>
+        <div class="filter-row">
+          <span class="filter-label">배수</span>
+          <span class="chip selected">전체</span>
+          <span class="chip">×1↑(평균↑)</span>
+          <span class="chip">×2↑</span>
+          <span class="chip">×3↑</span>
+          <span class="chip">×5↑</span>
+          <span class="chip">×10↑</span>
+          <span class="chip">×30↑</span>
+        </div>
+        <div class="filter-row">
+          <span class="filter-label">조회수</span>
+          <span class="chip selected">전체</span>
+          <span class="chip">10만↑</span>
+          <span class="chip">50만↑</span>
+          <span class="chip">100만↑</span>
+          <span class="chip">500만↑</span>
+          <span class="chip">1000만↑</span>
+        </div>
+      </div>
+
+      <div class="result-count">100개 표시중</div>
+
+      <div class="card-grid">
+        <!-- Card 1 -->
+        <div class="video-card">
+          <div class="video-thumb">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="duration-tag">0:31</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">Gordon Ramsay Was Not Ready for This…</div>
+            <div class="video-channel">
+              <div class="channel-avatar"></div>
+              <span class="channel-name">FoundOnDash</span>
+              <button class="btn-add">+ 추가</button>
+            </div>
+            <div class="video-stats">
+              <span>조회 1.6억</span>
+              <span>2일 전</span>
+            </div>
+            <div class="video-actions">
+              <div class="action-row">
+                <span class="action-chip">📜 자막</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">⚪ 원본</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">📰 유사</span>
+              </div>
+              <div class="action-row">
+                <span class="action-chip">💬 댓글</span>
+                <span class="action-chip">🔗 링크</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 2 -->
+        <div class="video-card">
+          <div class="video-thumb" style="background: linear-gradient(135deg, #fef08a 0%, #ef4444 70%);">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="duration-tag">0:59</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">Gordon Gave The Owner A BRUTAL…</div>
+            <div class="video-channel">
+              <div class="channel-avatar"></div>
+              <span class="channel-name">Blaze</span>
+              <button class="btn-add">+ 추가</button>
+            </div>
+            <div class="video-stats">
+              <span>조회 4372.4만</span>
+              <span>1일 전</span>
+            </div>
+            <div class="video-actions">
+              <div class="action-row">
+                <span class="action-chip">📜 자막</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">⚪ 원본</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">📰 유사</span>
+              </div>
+              <div class="action-row">
+                <span class="action-chip">💬 댓글</span>
+                <span class="action-chip">🔗 링크</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 3 -->
+        <div class="video-card">
+          <div class="video-thumb" style="background: linear-gradient(135deg, #fef3c7 0%, #f59e0b 100%);">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="duration-tag">0:59</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">Gordon Ramsay's Eggs</div>
+            <div class="video-channel">
+              <div class="channel-avatar"></div>
+              <span class="channel-name">Nick DiGiov…</span>
+              <button class="btn-add">+ 추가</button>
+            </div>
+            <div class="video-stats">
+              <span>조회 4306.7만</span>
+              <span>2일 전</span>
+            </div>
+            <div class="video-actions">
+              <div class="action-row">
+                <span class="action-chip">📜 자막</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">⚪ 원본</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">📰 유사</span>
+              </div>
+              <div class="action-row">
+                <span class="action-chip">💬 댓글</span>
+                <span class="action-chip">🔗 링크</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 4 -->
+        <div class="video-card">
+          <div class="video-thumb" style="background: linear-gradient(135deg, #fda4af 0%, #be123c 100%);">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="duration-tag">0:28</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">Gordon Ramsay's Son Hates His Scrambled…</div>
+            <div class="video-channel">
+              <div class="channel-avatar"></div>
+              <span class="channel-name">UNFAZED W…</span>
+              <button class="btn-add">+ 추가</button>
+            </div>
+            <div class="video-stats">
+              <span>조회 2632.9만</span>
+              <span>2주 전</span>
+            </div>
+            <div class="video-actions">
+              <div class="action-row">
+                <span class="action-chip">📜 자막</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">⚪ 원본</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">📰 유사</span>
+              </div>
+              <div class="action-row">
+                <span class="action-chip">💬 댓글</span>
+                <span class="action-chip">🔗 링크</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 5 -->
+        <div class="video-card">
+          <div class="video-thumb" style="background: linear-gradient(135deg, #fbcfe8 0%, #a855f7 100%);">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="duration-tag">0:18</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">Gordon Ramsay Fooled Everyone Here 😂</div>
+            <div class="video-channel">
+              <div class="channel-avatar"></div>
+              <span class="channel-name">MoneyMoves</span>
+              <button class="btn-add">+ 추가</button>
+            </div>
+            <div class="video-stats">
+              <span>조회 2131.6만</span>
+              <span>2일 전</span>
+            </div>
+            <div class="video-actions">
+              <div class="action-row">
+                <span class="action-chip">📜 자막</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">⚪ 원본</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">📰 유사</span>
+              </div>
+              <div class="action-row">
+                <span class="action-chip">💬 댓글</span>
+                <span class="action-chip">🔗 링크</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 2 -->
+        <div class="video-card">
+          <div class="video-thumb" style="background: linear-gradient(135deg, #fde68a 0%, #b45309 100%);">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="duration-tag">0:55</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">This Is Why I Love Gordon Ramsay 😍💜…</div>
+            <div class="video-channel">
+              <div class="channel-avatar"></div>
+              <span class="channel-name">ZESTY</span>
+              <button class="btn-add">+ 추가</button>
+            </div>
+            <div class="video-stats">
+              <span>조회 1420.3만</span>
+              <span>2달 전</span>
+            </div>
+            <div class="video-actions">
+              <div class="action-row">
+                <span class="action-chip">📜 자막</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">⚪ 원본</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">📰 유사</span>
+              </div>
+              <div class="action-row">
+                <span class="action-chip">💬 댓글</span>
+                <span class="action-chip">🔗 링크</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="video-card">
+          <div class="video-thumb" style="background: linear-gradient(135deg, #bae6fd 0%, #0ea5e9 100%);">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="duration-tag">0:22</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">How Much Gordon Ramsey Makes! 🥳</div>
+            <div class="video-channel">
+              <div class="channel-avatar"></div>
+              <span class="channel-name">Mark Tilbury</span>
+              <button class="btn-add">+ 추가</button>
+            </div>
+            <div class="video-stats">
+              <span>조회 1395.6만</span>
+              <span>2달 전</span>
+            </div>
+            <div class="video-actions">
+              <div class="action-row">
+                <span class="action-chip">📜 자막</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">⚪ 원본</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">📰 유사</span>
+              </div>
+              <div class="action-row">
+                <span class="action-chip">💬 댓글</span>
+                <span class="action-chip">🔗 링크</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="video-card">
+          <div class="video-thumb" style="background: linear-gradient(135deg, #fcd34d 0%, #dc2626 100%);">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="duration-tag">0:45</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">Young Chef Shocks Gordon Ramsay With…</div>
+            <div class="video-channel">
+              <div class="channel-avatar"></div>
+              <span class="channel-name">Bimbo</span>
+              <button class="btn-add">+ 추가</button>
+            </div>
+            <div class="video-stats">
+              <span>조회 1132.8만</span>
+              <span>2일 전</span>
+            </div>
+            <div class="video-actions">
+              <div class="action-row">
+                <span class="action-chip">📜 자막</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">⚪ 원본</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">📰 유사</span>
+              </div>
+              <div class="action-row">
+                <span class="action-chip">💬 댓글</span>
+                <span class="action-chip">🔗 링크</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="video-card">
+          <div class="video-thumb" style="background: linear-gradient(135deg, #f9a8d4 0%, #9d174d 100%);">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="duration-tag">0:53</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">Gordon Ramsay Rizzes up contestant in Hell'…</div>
+            <div class="video-channel">
+              <div class="channel-avatar"></div>
+              <span class="channel-name">Chefs Vault</span>
+              <button class="btn-add">+ 추가</button>
+            </div>
+            <div class="video-stats">
+              <span>조회 1108.4만</span>
+              <span>2일 전</span>
+            </div>
+            <div class="video-actions">
+              <div class="action-row">
+                <span class="action-chip">📜 자막</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">⚪ 원본</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">📰 유사</span>
+              </div>
+              <div class="action-row">
+                <span class="action-chip">💬 댓글</span>
+                <span class="action-chip">🔗 링크</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="video-card">
+          <div class="video-thumb" style="background: linear-gradient(135deg, #86efac 0%, #047857 100%);">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="duration-tag">0:42</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">Gordon Ramsay Joins Squid Game 🦑</div>
+            <div class="video-channel">
+              <div class="channel-avatar"></div>
+              <span class="channel-name">Team Maguire</span>
+              <button class="btn-add">+ 추가</button>
+            </div>
+            <div class="video-stats">
+              <span>조회 1024.2만</span>
+              <span>1주 전</span>
+            </div>
+            <div class="video-actions">
+              <div class="action-row">
+                <span class="action-chip">📜 자막</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">⚪ 원본</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">📰 유사</span>
+              </div>
+              <div class="action-row">
+                <span class="action-chip">💬 댓글</span>
+                <span class="action-chip">🔗 링크</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 3: with multiplier + ✓등록 examples (from screenshot 4) -->
+        <div class="video-card">
+          <div class="video-thumb" style="background: linear-gradient(135deg, #fbcfe8 0%, #db2777 100%);">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="multiplier-tag">×38.1</span>
+            <span class="duration-tag">0:53</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">Smartest hair invention on Shark Tank ⁉️…</div>
+            <div class="video-channel">
+              <div class="channel-avatar"></div>
+              <span class="channel-name">Pitch Reality</span>
+              <span class="btn-registered">✓ 등록</span>
+            </div>
+            <div class="video-stats">
+              <span>조회 1.4억</span>
+              <span>3달 전</span>
+            </div>
+            <div class="video-actions">
+              <div class="action-row">
+                <span class="action-chip">📜 자막</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">⚪ 원본</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">📰 유사</span>
+              </div>
+              <div class="action-row">
+                <span class="action-chip">💬 댓글</span>
+                <span class="action-chip">🔗 링크</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="video-card">
+          <div class="video-thumb" style="background: linear-gradient(135deg, #fde68a 0%, #f97316 100%);">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="duration-tag">0:55</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">The Future of Panties | Shark Tank US</div>
+            <div class="video-channel">
+              <div class="channel-avatar"></div>
+              <span class="channel-name">painfulset</span>
+              <button class="btn-add">+ 추가</button>
+            </div>
+            <div class="video-stats">
+              <span>조회 1.2억</span>
+              <span>1년 전</span>
+            </div>
+            <div class="video-actions">
+              <div class="action-row">
+                <span class="action-chip">📜 자막</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">⚪ 원본</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">📰 유사</span>
+              </div>
+              <div class="action-row">
+                <span class="action-chip">💬 댓글</span>
+                <span class="action-chip">🔗 링크</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="video-card">
+          <div class="video-thumb" style="background: linear-gradient(135deg, #cbd5e1 0%, #475569 100%);">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="duration-tag">0:48</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">They Trashed Him Shark Tank, But This…</div>
+            <div class="video-channel">
+              <div class="channel-avatar"></div>
+              <span class="channel-name">TuxMotivation</span>
+              <button class="btn-add">+ 추가</button>
+            </div>
+            <div class="video-stats">
+              <span>조회 9638.5만</span>
+              <span>1년 전</span>
+            </div>
+            <div class="video-actions">
+              <div class="action-row">
+                <span class="action-chip">📜 자막</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">⚪ 원본</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">📰 유사</span>
+              </div>
+              <div class="action-row">
+                <span class="action-chip">💬 댓글</span>
+                <span class="action-chip">🔗 링크</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="video-card">
+          <div class="video-thumb" style="background: linear-gradient(135deg, #fef9c3 0%, #ca8a04 100%);">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="duration-tag">0:46</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">Chiller EVER Seen on…</div>
+            <div class="video-channel">
+              <div class="channel-avatar"></div>
+              <span class="channel-name">Wealth Opti…</span>
+              <span class="btn-registered">✓ 등록</span>
+            </div>
+            <div class="video-stats">
+              <span>조회 8693.7만</span>
+              <span>8달 전</span>
+            </div>
+            <div class="video-actions">
+              <div class="action-row">
+                <span class="action-chip">📜 자막</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">⚪ 원본</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">📰 유사</span>
+              </div>
+              <div class="action-row">
+                <span class="action-chip">💬 댓글</span>
+                <span class="action-chip">🔗 링크</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="video-card">
+          <div class="video-thumb" style="background: linear-gradient(135deg, #fed7aa 0%, #ea580c 100%);">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="duration-tag">0:51</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">Is ADDICTIVE! 😂🔥 |…</div>
+            <div class="video-channel">
+              <div class="channel-avatar"></div>
+              <span class="channel-name">Wealth Opti…</span>
+              <span class="btn-registered">✓ 등록</span>
+            </div>
+            <div class="video-stats">
+              <span>조회 8648.6만</span>
+              <span>7달 전</span>
+            </div>
+            <div class="video-actions">
+              <div class="action-row">
+                <span class="action-chip">📜 자막</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">⚪ 원본</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">📰 유사</span>
+              </div>
+              <div class="action-row">
+                <span class="action-chip">💬 댓글</span>
+                <span class="action-chip">🔗 링크</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

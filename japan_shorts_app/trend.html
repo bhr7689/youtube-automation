@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>트렌드 피드 · RefTracker</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <span class="sidebar-badge">쇼치 강사님 시리즈</span>
+        <div class="sidebar-brand">RefTracker</div>
+        <div class="sidebar-brand-sub">레퍼런스 채널 추적</div>
+      </div>
+      <nav class="nav-section">
+        <a href="trend.html" class="nav-item active">🔥 트렌드 피드</a>
+        <a href="youtube_discover.html" class="nav-item">🌐 YouTube 발굴</a>
+        <a href="search.html" class="nav-item">🔍 검색</a>
+        <a href="channels.html" class="nav-item">📺 레퍼런스 채널</a>
+        <a href="collections.html" class="nav-item">📁 컬렉션</a>
+        <a href="bookmarks.html" class="nav-item">⭐ 북마크</a>
+        <a href="notifications.html" class="nav-item">🔔 알림</a>
+        <a href="settings.html" class="nav-item">⚙️ 설정</a>
+      </nav>
+      <div class="nav-divider"></div>
+      <nav class="nav-section">
+        <a href="index.html" class="nav-item-secondary"><span>🏠 포털 메인</span><span>›</span></a>
+        <a href="translator.html" class="nav-item-secondary"><span>🌸 일본어 번역봇</span><span>›</span></a>
+        <a href="editor.html" class="nav-item-secondary"><span>✂️ 자동 컷편집</span><span>›</span></a>
+      </nav>
+      <div class="user-card">
+        <div class="avatar-pill">남정</div>
+        <div class="user-card-info">
+          <div class="user-name">박남정</div>
+          <div class="user-email">parkzz5157@gmail.com</div>
+          <button class="logout">로그아웃</button>
+        </div>
+      </div>
+      <div class="version">v0.3.0</div>
+    </aside>
+
+    <main class="main">
+      <div class="page-header-row">
+        <div>
+          <span class="badge-dot">트렌드 피드</span>
+          <h1 class="page-title"><span class="gradient-text">급등 영상</span> 한 번에</h1>
+          <p class="page-sub">등록된 레퍼런스 채널의 평균 대비 폭발한 영상 모음</p>
+        </div>
+        <div>
+          <button class="btn-secondary">📋 CSV</button>
+        </div>
+      </div>
+
+      <div class="filter-block">
+        <div class="filter-row">
+          <span class="filter-label">기간</span>
+          <span class="chip">1일</span>
+          <span class="chip">3일</span>
+          <span class="chip selected">1주</span>
+          <span class="chip">1달</span>
+          <span class="chip">3달</span>
+          <span class="chip">6달</span>
+          <span class="chip">1년</span>
+          <span class="chip">전체</span>
+        </div>
+        <div class="filter-row">
+          <span class="filter-label">배수</span>
+          <span class="chip selected">전체</span>
+          <span class="chip">×1↑(평균↑)</span>
+          <span class="chip">×2↑</span>
+          <span class="chip">×3↑</span>
+          <span class="chip">×5↑</span>
+          <span class="chip">×10↑</span>
+          <span class="chip">×30↑</span>
+        </div>
+        <div class="filter-row">
+          <span class="filter-label">조회수</span>
+          <span class="chip selected">전체</span>
+          <span class="chip">10만↑</span>
+          <span class="chip">50만↑</span>
+          <span class="chip">100만↑</span>
+          <span class="chip">500만↑</span>
+          <span class="chip">1000만↑</span>
+        </div>
+        <div class="filter-row">
+          <span class="filter-label">형식</span>
+          <span class="chip selected">전체</span>
+          <span class="chip">숏폼</span>
+          <span class="chip">롱폼</span>
+        </div>
+        <div class="filter-row">
+          <span class="filter-label">정렬</span>
+          <span class="chip">🔥 급등 배수</span>
+          <span class="chip selected">👁️ 조회수</span>
+          <span class="chip">📰 최신순</span>
+          <span class="chip">❤️ 좋아요</span>
+          <span class="chip">💬 댓글</span>
+          <span class="chip">⚡ 시간당 조회</span>
+        </div>
+        <div class="filter-row">
+          <span class="filter-label">개수</span>
+          <span class="chip selected">200개</span>
+          <span class="chip">300개</span>
+          <span class="chip">500개</span>
+          <span class="chip">1000개</span>
+        </div>
+        <div class="filter-link">· 채널 속성 필터</div>
+      </div>
+
+      <div class="result-count">55개 영상</div>
+
+      <div class="card-grid">
+        <div class="video-card">
+          <div class="video-thumb" style="background: linear-gradient(135deg, #fde68a 0%, #d97706 100%);">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="multiplier-tag">×5.1</span>
+            <span class="duration-tag">0:39</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">The Gym Product That Changes Workouts…</div>
+            <div class="video-channel">
+              <div class="channel-avatar"></div>
+              <span class="channel-name">—</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="video-card">
+          <div class="video-thumb" style="background: linear-gradient(135deg, #fda4af 0%, #be123c 100%);">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="multiplier-tag">×15.5</span>
+            <span class="duration-tag">0:24</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">This is how trump unpredictable in thes…</div>
+            <div class="video-channel">
+              <div class="channel-avatar"></div>
+              <span class="channel-name">—</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="video-card">
+          <div class="video-thumb" style="background: linear-gradient(135deg, #fbcfe8 0%, #db2777 100%);">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="duration-tag">0:45</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">They Tricked Everyone With Fake Fried…</div>
+            <div class="video-channel">
+              <div class="channel-avatar"></div>
+              <span class="channel-name">—</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="video-card">
+          <div class="video-thumb" style="background: linear-gradient(135deg, #bae6fd 0%, #0369a1 100%);">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="multiplier-tag">×1.7</span>
+            <span class="duration-tag">0:50</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">Every Gym Rat Needs To See THIS | Shark…</div>
+            <div class="video-channel">
+              <div class="channel-avatar"></div>
+              <span class="channel-name">—</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="video-card">
+          <div class="video-thumb" style="background: linear-gradient(135deg, #fed7aa 0%, #c2410c 100%);">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="duration-tag">0:48</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">This INDIAN Entrepreneur…</div>
+            <div class="video-channel">
+              <div class="channel-avatar"></div>
+              <span class="channel-name">—</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
