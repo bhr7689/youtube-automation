@@ -21,7 +21,7 @@
         <a href="channels.html" class="nav-item">📺 레퍼런스 채널</a>
         <a href="collections.html" class="nav-item">📁 컬렉션</a>
         <a href="bookmarks.html" class="nav-item">⭐ 북마크</a>
-        <a href="notifications.html" class="nav-item">🔔 알림</a>
+        <a href="notifications.html" class="nav-item">🔔 알림 <span class="nav-badge">3</span></a>
         <a href="settings.html" class="nav-item active">⚙️ 설정</a>
       </nav>
       <div class="nav-divider"></div>
@@ -45,13 +45,119 @@
       <div class="page-header-row">
         <div>
           <span class="badge-dot">설정</span>
-          <h1 class="page-title">설정</h1>
-          <p class="page-sub">시안 추가 시 채워질 화면</p>
+          <h1 class="page-title"><span class="gradient-text">알림 기준</span> 설정</h1>
+          <p class="page-sub">레퍼런스 채널 영상이 어떤 조건일 때 알림 받을지 정해두세요. 조건 충족 시 바로바로 알림이 와요.</p>
         </div>
       </div>
-      <div class="empty-state">
-        <div class="empty-state-title">시안 대기 중</div>
-        <div class="empty-state-sub">이 화면 시안을 보내주시면 똑같이 만들어 채워둘게요</div>
+
+      <!-- 1. 조회수 임계값 -->
+      <div class="settings-section">
+        <div class="settings-section-title">🔔 조회수 임계값</div>
+        <div class="settings-section-desc">이 조회수를 <strong>넘는 순간</strong> 알림이 와요. 한 번만 알림 (이후 더 늘어도 같은 영상은 다시 안 옴).</div>
+        <div class="settings-chip-row">
+          <span class="chip">10만 ↑</span>
+          <span class="chip">20만 ↑</span>
+          <span class="chip selected">50만 ↑</span>
+          <span class="chip">100만 ↑</span>
+          <span class="chip">500만 ↑</span>
+          <span class="chip">1000만 ↑</span>
+          <span class="chip">직접 입력</span>
+        </div>
+      </div>
+
+      <!-- 2. 떡상 배수 -->
+      <div class="settings-section">
+        <div class="settings-section-title">🚀 떡상 배수 (옵션)</div>
+        <div class="settings-section-desc">조회수 + <strong>이 배수</strong>도 함께 넘어야 알림. 평균 대비 진짜 폭발한 것만 걸러줘요. (안 쓰려면 "사용 안 함")</div>
+        <div class="settings-chip-row">
+          <span class="chip">사용 안 함</span>
+          <span class="chip">×2 ↑</span>
+          <span class="chip selected">×3 ↑</span>
+          <span class="chip">×5 ↑</span>
+          <span class="chip">×10 ↑</span>
+          <span class="chip">×30 ↑</span>
+        </div>
+      </div>
+
+      <!-- 3. 시간당 조회 -->
+      <div class="settings-section">
+        <div class="settings-section-title">⚡ 시간당 조회 임계값 (옵션)</div>
+        <div class="settings-section-desc">최근 1시간에 이 만큼씩 조회수가 늘어나면 알림. 떡상의 <strong>초기 신호</strong>를 잡고 싶을 때.</div>
+        <div class="settings-chip-row">
+          <span class="chip selected">사용 안 함</span>
+          <span class="chip">1만/시 ↑</span>
+          <span class="chip">3만/시 ↑</span>
+          <span class="chip">5만/시 ↑</span>
+          <span class="chip">10만/시 ↑</span>
+        </div>
+      </div>
+
+      <!-- 4. 알림 대상 -->
+      <div class="settings-section">
+        <div class="settings-section-title">📁 알림 받을 채널 범위</div>
+        <div class="settings-section-desc">전체 레퍼런스 채널 22개에서 알림 받을지, 특정 컬렉션 폴더만 받을지.</div>
+        <div class="settings-chip-row">
+          <span class="chip selected">전체 (22 채널)</span>
+          <span class="chip">📁 고든램지</span>
+          <span class="chip">📁 샤크탱크</span>
+          <span class="chip">📁 헬스키친</span>
+          <span class="chip">📁 BGT</span>
+          <span class="chip">📁 AGT</span>
+          <span class="chip">+ 폴더 선택</span>
+        </div>
+      </div>
+
+      <!-- 5. 알림 방법 -->
+      <div class="settings-section">
+        <div class="settings-section-title">📱 알림 받는 방법</div>
+        <div class="settings-section-desc">알림이 어디로 올지 정합니다.</div>
+        <div class="settings-toggle-row">
+          <div class="settings-toggle-info">
+            <div class="settings-toggle-label">🔔 앱 안 알림 (헤더 종 아이콘)</div>
+            <div class="settings-toggle-sub">RefTracker 화면 안에 빨간 뱃지로 표시</div>
+          </div>
+          <div class="toggle on"></div>
+        </div>
+        <div class="settings-toggle-row">
+          <div class="settings-toggle-info">
+            <div class="settings-toggle-label">📧 이메일 알림</div>
+            <div class="settings-toggle-sub">parkzz5157@gmail.com 으로 발송</div>
+          </div>
+          <div class="toggle on"></div>
+        </div>
+        <div class="settings-toggle-row">
+          <div class="settings-toggle-info">
+            <div class="settings-toggle-label">📲 모바일 푸시 알림</div>
+            <div class="settings-toggle-sub">PWA 설치 시 사용 가능</div>
+          </div>
+          <div class="toggle"></div>
+        </div>
+        <div class="settings-toggle-row">
+          <div class="settings-toggle-info">
+            <div class="settings-toggle-label">💬 카카오톡 알림</div>
+            <div class="settings-toggle-sub">카카오 연결 필요</div>
+          </div>
+          <div class="toggle"></div>
+        </div>
+      </div>
+
+      <!-- 6. 조용한 시간 -->
+      <div class="settings-section">
+        <div class="settings-section-title">🌙 조용한 시간</div>
+        <div class="settings-section-desc">이 시간 동안은 알림 안 와요. 자고 있을 때 깨우지 않게.</div>
+        <div class="settings-chip-row">
+          <span class="chip">꺼짐</span>
+          <span class="chip selected">22시 ~ 7시</span>
+          <span class="chip">자정 ~ 7시</span>
+          <span class="chip">23시 ~ 8시</span>
+          <span class="chip">직접 설정</span>
+        </div>
+      </div>
+
+      <!-- 저장 -->
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px;">
+        <button class="btn-secondary">기본값으로</button>
+        <button class="btn-primary">변경 사항 저장</button>
       </div>
     </main>
   </div>
