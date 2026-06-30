@@ -473,13 +473,23 @@
 
       <div class="subtitle-source-tabs">
         <span class="chip selected">원본 자막</span>
-        <span class="chip">🌐 한국어 (YouTube)</span>
-        <span class="chip">🌐 영어 (YouTube)</span>
+        <span class="chip">🇰🇷 한국어 (Claude)</span>
+        <span class="chip">🇺🇸 영어 (Claude)</span>
         <span class="sep">|</span>
         <span class="chip">🎤 Whisper</span>
         <span class="chip">🎤 Whisper (다국어)</span>
       </div>
-      <div class="subtitle-hint-top">💡 설정에서 Claude 키 등록하면 더 정확한 번역</div>
+
+      <div class="subtitle-meta-row">
+        <span class="subtitle-meta-lang">언어: <strong>en</strong> (자동 생성)</span>
+        <span class="subtitle-meta-count">20개 세그먼트</span>
+      </div>
+
+      <div class="subtitle-search-row">
+        <input type="text" class="subtitle-search-input" placeholder="자막 내에서 검색…" />
+        <button class="btn-secondary">📋 전체 복사</button>
+        <a href="translator.html?state=initial" class="btn-primary" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center;">🌸 번역봇으로 보내기</a>
+      </div>
 
       <div class="subtitle-content" id="subtitleContent">
         <div class="subtitle-loading-state">자막 불러오는 중...</div>
@@ -487,10 +497,7 @@
 
       <div class="subtitle-hint-bottom">💡 어떤 언어 자막이든 YouTube 내장 번역으로 한국어/영어 변환 가능 · 쿼터 무료</div>
 
-      <div class="subtitle-actions" id="subtitleActions" style="display:none;">
-        <button class="btn-secondary">📋 자막 전체 복사</button>
-        <button class="btn-primary">🌸 일본어 번역봇으로 보내기</button>
-      </div>
+      <div class="subtitle-actions" id="subtitleActions" style="display:none;"></div>
     </div>
   </div>
 
