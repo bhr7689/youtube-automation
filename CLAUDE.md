@@ -235,4 +235,16 @@ python pipeline.py --init                              # 파이프라인 폴더 
   (영상 짜집기 + TTS + CapCut 편집). 30개 소스 채널·전략·기술스택·MVP 로드맵 전문:
   `ideas/japan_senior_heartwarming.md`. 기존 youtube-automation(K-Trot)과 **별개**
   의 독립 프로젝트로 구상 — MVP 진입 시 별도 repo 분리 권장.
+- 🎌 **(설계 완료)** **일본쇼츠 자동 프로그램** (2026-07-01, new-session-rhtlol):
+  사장님이 시안 15장+ 로 그린 3-도구 통합 대시보드 설계 완결.
+  전문: `ideas/japan_shorts_architecture.md` (~900줄).
+  - **3 도구**: 📺 RefTracker(발굴) · 🌸 일본어 번역봇(대본·TTS) · ✂️ 자동 컷편집
+  - **핵심 자산**: 통합대본 4섹션(의미확인/자막/영어확인/TTS용) · 파이프(`|`) 3역할
+    · 매칭 신뢰도 % · MediaPipe 얼굴추적 9:16 크롭 · 캡컷 프로젝트 직접 쓰기
+  - **파이프라인 6단계**: yt-dlp → Whisper STT → 쇼츠처리 → 한국어번역 →
+    의미매칭 → 시각매칭보강
+  - **스택 결정**: Next.js 14 + FastAPI + SQLite(MVP) + Redis/RQ + VOICEVOX
+  - **로드맵**: Phase 0~5 총 11주 (2.5개월)
+  - **저장소 전략**: `japan_shorts/` 서브폴더 시작 → 안정화 후 별도 repo
+  - 다음 단계: 사장님 GO 사인 → Phase 0 착수
 - (작업하며 갱신할 것)
