@@ -21,6 +21,79 @@ from PIL import Image
 
 PAGE_WIDTH = 720
 
+# ── 식욕 색감 테마 (색채 심리학) ──────────────────────────────────────────
+# 빨강·주황·노랑 = 식욕 자극 / 파랑 = 식욕 억제(수산물도 CTA는 따뜻한 색 유지)
+THEMES = {
+    "fresh_orange": {   # 🍊 범용 — 따뜻한 오렌지 (달콤·구움·기본)
+        "bg": "#faf6f0",
+        "primary": "#ea580c", "primary_deep": "#c2410c",
+        "chip_bg": "#fff7ed", "chip_border": "#fdba74", "chip_text": "#9a3412",
+        "tag_bg": "#ffedd5", "tag_text": "#c2410c",
+        "hook_from": "#4b2e0f", "hook_to": "#2a1607",
+        "hook_kicker": "#ffd28a", "hook_body": "#f5e7d2",
+        "cta_shadow": "rgba(234,88,12,0.35)",
+    },
+    "appetite_red": {   # 🔥 식욕 레드 — 고기·매운맛·구이 (도파민 최강)
+        "bg": "#fbf5f0",
+        "primary": "#d62300", "primary_deep": "#a81b00",
+        "chip_bg": "#fef2f2", "chip_border": "#fca5a5", "chip_text": "#991b1b",
+        "tag_bg": "#fee2e2", "tag_text": "#b91c1c",
+        "hook_from": "#450a0a", "hook_to": "#1c0505",
+        "hook_kicker": "#fecaca", "hook_body": "#fee2e2",
+        "cta_shadow": "rgba(214,35,0,0.35)",
+    },
+    "juicy_berry": {    # 🍉 과즙 베리 — 수박·딸기·과일 (빨강 과육 + 초록 신선 대비)
+        "bg": "#fdf7f7",
+        "primary": "#e63946", "primary_deep": "#c1121f",
+        "chip_bg": "#f0fdf4", "chip_border": "#86efac", "chip_text": "#166534",
+        "tag_bg": "#ffe4e6", "tag_text": "#be123c",
+        "hook_from": "#7f1d1d", "hook_to": "#3f0d12",
+        "hook_kicker": "#bbf7d0", "hook_body": "#ffe4e6",
+        "cta_shadow": "rgba(230,57,70,0.35)",
+    },
+    "ocean_fresh": {    # 🌊 바다 신선 — 수산물 (신뢰 청록 + CTA는 식욕 주황 유지)
+        "bg": "#f4f9f9",
+        "primary": "#ea580c", "primary_deep": "#0e7490",
+        "chip_bg": "#ecfeff", "chip_border": "#67e8f9", "chip_text": "#155e75",
+        "tag_bg": "#cffafe", "tag_text": "#0e7490",
+        "hook_from": "#164e63", "hook_to": "#082f38",
+        "hook_kicker": "#a5f3fc", "hook_body": "#e0f7fa",
+        "cta_shadow": "rgba(234,88,12,0.35)",
+    },
+    "golden_honey": {   # 🍯 골든 허니 — 치킨·빵·꿀·튀김·고구마 (노릇노릇 황금)
+        "bg": "#fdfaf2",
+        "primary": "#d97706", "primary_deep": "#b45309",
+        "chip_bg": "#fffbeb", "chip_border": "#fcd34d", "chip_text": "#92400e",
+        "tag_bg": "#fef3c7", "tag_text": "#b45309",
+        "hook_from": "#451a03", "hook_to": "#1f0d02",
+        "hook_kicker": "#fde68a", "hook_body": "#fef3c7",
+        "cta_shadow": "rgba(217,119,6,0.35)",
+    },
+}
+DEFAULT_THEME = "fresh_orange"
+
+
+def auto_theme(category: str = "", hint: str = "") -> str:
+    """카테고리·제품명·메모로 식욕 색감 테마 자동 선택."""
+    t = f"{category} {hint}"
+
+    def has(*words):
+        return any(w in t for w in words)
+
+    if has("수산", "해산", "생선", "갈치", "고등어", "새우", "오징어", "전복",
+           "조개", "굴", "문어", "회", "멸치"):
+        return "ocean_fresh"
+    if has("정육", "고기", "한우", "삼겹", "불고기", "갈비", "매운", "떡볶이",
+           "닭갈비", "육포", "곱창", "제육"):
+        return "appetite_red"
+    if has("과일", "수박", "딸기", "포도", "복숭아", "한라봉", "귤", "사과",
+           "멜론", "참외", "자두", "베리", "망고"):
+        return "juicy_berry"
+    if has("치킨", "튀김", "빵", "베이커리", "꿀", "도넛", "고구마", "감자",
+           "황금", "버터", "치즈"):
+        return "golden_honey"
+    return DEFAULT_THEME
+
 
 def _img_to_data_uri(img: Optional[Image.Image]) -> str:
     if img is None:
@@ -67,7 +140,7 @@ CSS = """
     font-family: 'Pretendard', -apple-system, BlinkMacSystemFont,
       'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
     color: #1f2933;
-    background: #faf6f0;
+    background: __BG__;
     -webkit-text-size-adjust: 100%;
     word-break: keep-all;
     line-height: 1.55;
@@ -96,34 +169,34 @@ CSS = """
   /* 이름 블록 */
   .name-block { padding: 36px 36px 8px; }
   .product-name {
-    font-size: 40px; font-weight: 800; color: #c2410c; letter-spacing: -1px; margin: 0 0 6px;
+    font-size: 40px; font-weight: 800; color: __PRIMARY_DEEP__; letter-spacing: -1px; margin: 0 0 6px;
   }
   .subtitle { font-size: 26px; font-weight: 500; color: #4b5563; margin: 0; }
   /* HOOK (큰 후크 배너) */
   .hook {
     margin: 28px 0 0; padding: 56px 36px;
-    background: linear-gradient(180deg, #4b2e0f 0%, #2a1607 100%);
+    background: linear-gradient(180deg, __HOOK_FROM__ 0%, __HOOK_TO__ 100%);
     color: #fffaf2; text-align: center;
   }
   .hook .kicker {
     display: inline-block; font-size: 20px; font-weight: 700; letter-spacing: 1px;
-    color: #ffd28a; padding: 4px 14px; border: 1px solid #ffd28a; border-radius: 999px;
+    color: __HOOK_KICKER__; padding: 4px 14px; border: 1px solid __HOOK_KICKER__; border-radius: 999px;
     margin-bottom: 18px;
   }
   .hook h2 {
     font-size: 48px; font-weight: 900; letter-spacing: -1.5px; margin: 0 0 16px;
     color: #fff;
   }
-  .hook p { font-size: 24px; line-height: 1.55; margin: 0; color: #f5e7d2; }
+  .hook p { font-size: 24px; line-height: 1.55; margin: 0; color: __HOOK_BODY__; }
   /* 소구점 */
   .appeals {
     display: grid; grid-template-columns: repeat(3, 1fr);
     gap: 12px; padding: 28px 24px;
   }
   .appeal {
-    background: #fff7ed; border: 2px solid #fdba74; border-radius: 16px;
+    background: __CHIP_BG__; border: 2px solid __CHIP_BORDER__; border-radius: 16px;
     padding: 18px 8px; text-align: center;
-    font-size: 22px; font-weight: 700; color: #9a3412;
+    font-size: 22px; font-weight: 700; color: __CHIP_TEXT__;
   }
   /* 일반 섹션 */
   .section { padding: 40px 36px; border-top: 1px solid #f1e9dd; }
@@ -133,8 +206,8 @@ CSS = """
   }
   .section h2 .tag {
     display: inline-block; vertical-align: middle;
-    font-size: 18px; font-weight: 700; color: #c2410c;
-    background: #ffedd5; border-radius: 999px; padding: 4px 12px; margin-right: 10px;
+    font-size: 18px; font-weight: 700; color: __TAG_TEXT__;
+    background: __TAG_BG__; border-radius: 999px; padding: 4px 12px; margin-right: 10px;
   }
   .section p { font-size: 26px; line-height: 1.6; color: #1f2933; margin: 0; }
   .section .full-img { margin-top: 22px; }
@@ -152,9 +225,9 @@ CSS = """
     display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 18px;
   }
   .size-card {
-    background: #fff7ed; border-radius: 14px; padding: 16px 8px; text-align: center;
+    background: __CHIP_BG__; border-radius: 14px; padding: 16px 8px; text-align: center;
   }
-  .size-card .label { font-size: 16px; color: #9a3412; font-weight: 600; }
+  .size-card .label { font-size: 16px; color: __CHIP_TEXT__; font-weight: 600; }
   .size-card .value { font-size: 22px; color: #1f2933; font-weight: 800; margin-top: 4px; }
 
   /* COOK 리스트 */
@@ -189,9 +262,9 @@ CSS = """
   .cta-wrap { padding: 36px; }
   .cta {
     display: block; width: 100%; text-align: center;
-    background: #ea580c; color: #fff; font-size: 32px; font-weight: 800;
+    background: __PRIMARY__; color: #fff; font-size: 32px; font-weight: 800;
     padding: 26px 16px; border-radius: 20px; text-decoration: none;
-    box-shadow: 0 8px 20px rgba(234,88,12,0.35);
+    box-shadow: 0 8px 20px __CTA_SHADOW__;
   }
 
   /* AD / FOOTER */
@@ -224,6 +297,15 @@ CSS = """
 """.replace("__PAGE_WIDTH__", str(PAGE_WIDTH))
 
 
+def _build_css(theme_key: str) -> str:
+    """테마 토큰(__PRIMARY__ 등)을 실제 색으로 치환한 CSS 반환."""
+    t = THEMES.get(theme_key) or THEMES[DEFAULT_THEME]
+    css = CSS
+    for k, v in t.items():
+        css = css.replace("__" + k.upper() + "__", v)
+    return css
+
+
 def render_page(
     copy,
     images: dict,
@@ -235,6 +317,7 @@ def render_page(
     video_cook_mime: str = "",
     extra_images: list | None = None,
     extra_videos: list | None = None,
+    theme: str = DEFAULT_THEME,
 ) -> str:
     """copy: CopyResult, images: {label: PIL.Image}, video_*: data URI.
 
@@ -403,7 +486,7 @@ def render_page(
 <link rel="preconnect" href="https://cdn.jsdelivr.net" />
 <link rel="stylesheet"
       href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" />
-<style>{CSS}</style>
+<style>{_build_css(theme)}</style>
 </head>
 <body>
 <div class="page">

@@ -20,8 +20,8 @@ from product_detail.generator import (
     generate_copy_compare,
     CopyResult,
 )
-from product_detail.image_gen import generate_detail_images
-from product_detail.templates import render_page, _video_to_data_uri
+from product_detail.image_gen import generate_detail_images, curate_images
+from product_detail.templates import render_page, _video_to_data_uri, auto_theme
 from product_detail.exporter import html_to_png
 
 
@@ -159,17 +159,28 @@ with st.container(border=True):
         accept_multiple_files=True,
     )
     if uploads:
-        st.caption(
-            "자리 배정 (기본: 올린 순서). 남는 사진은 페이지 중간 **'생생한 현장 컷'** 띠로 전부 들어가요."
+        placement_mode = st.radio(
+            "사진 배치 방법",
+            ["🤖 AI가 골라서 배치 (추천)", "✋ 내가 직접 배치"],
+            horizontal=True,
+            key="placement_mode",
+            help=(
+                "AI 배치: Gemini가 사진을 보고 자리별로 어울리는 걸 고르고, "
+                "품질 낮은 사진은 빼고, 빈 자리는 AI가 그려서 채워요."
+            ),
         )
-        _names = [f.name for f in uploads]
-        _cols = st.columns(3)
-        for _i, (_key, _label) in enumerate(SLOT_DEFS):
-            with _cols[_i % 3]:
-                _default = _names[_i] if _i < len(_names) else "(없음)"
-                _options = ["(없음)"] + _names
-                _idx = _options.index(_default) if _default in _options else 0
-                st.selectbox(_label, _options, index=_idx, key=f"slot_{_key}")
+        if placement_mode.startswith("✋"):
+            st.caption(
+                "자리 배정 (기본: 올린 순서). 남는 사진은 **'생생한 현장 컷'** 띠로 들어가요."
+            )
+            _names = [f.name for f in uploads]
+            _cols = st.columns(3)
+            for _i, (_key, _label) in enumerate(SLOT_DEFS):
+                with _cols[_i % 3]:
+                    _default = _names[_i] if _i < len(_names) else "(없음)"
+                    _options = ["(없음)"] + _names
+                    _idx = _options.index(_default) if _default in _options else 0
+                    st.selectbox(_label, _options, index=_idx, key=f"slot_{_key}")
 
 with st.container(border=True):
     st.subheader("3. 움짤 영상 🔥 (식품 필수 2개 + 추가 자유)")
@@ -199,6 +210,23 @@ with st.container(border=True):
     allow_no_video = st.checkbox(
         "움짤 없이 만들기 (테스트용 — 실전에서는 비추천)", value=False,
     )
+
+THEME_CHOICES = {
+    "🤖 AI 자동 추천": None,
+    "🔥 식욕 레드 — 고기·매운맛·구이": "appetite_red",
+    "🍊 따뜻한 오렌지 — 범용·달콤·구움": "fresh_orange",
+    "🍉 과즙 베리 — 과일·수박·디저트": "juicy_berry",
+    "🌊 바다 신선 — 수산물·해산물": "ocean_fresh",
+    "🍯 골든 허니 — 치킨·빵·꿀·튀김": "golden_honey",
+}
+
+with st.container(border=True):
+    st.subheader("4. 색감 테마 🎨 (식욕 심리)")
+    st.caption(
+        "빨강·주황·노랑은 식욕을 깨우고, 파랑은 식욕을 죽여요. "
+        "제품에 맞는 색 조합을 AI가 고르거나 직접 선택하세요."
+    )
+    st.selectbox("테마", list(THEME_CHOICES.keys()), index=0, key="theme_choice")
 
 with st.expander("⚙️ AI 모델 설정", expanded=True):
     provider = st.radio(
@@ -341,29 +369,67 @@ if cands:
             except Exception:
                 return None
 
-        # ① 업로드 사진 → 슬롯 배정표대로 배치
-        file_by_name = {}
+        # ① 업로드 사진 로드
+        pil_by_name: dict = {}
         for f in (uploads or []):
-            file_by_name.setdefault(f.name, f)
-        images: dict = {}
-        used_names: set = set()
-        for slot_key, _label in SLOT_DEFS:
-            sel = st.session_state.get(f"slot_{slot_key}", "(없음)")
-            if sel and sel != "(없음)" and sel in file_by_name:
-                im = _open(file_by_name[sel])
-                if im is not None:
-                    images[slot_key] = im
-                    used_names.add(sel)
-
-        # ② 슬롯에 안 쓰인 나머지 사진 → '생생한 현장 컷' 띠
-        extra_images = []
-        for f in (uploads or []):
-            if f.name not in used_names:
+            if f.name not in pil_by_name:
                 im = _open(f)
                 if im is not None:
-                    extra_images.append(im)
+                    pil_by_name[f.name] = im
 
-        # ③ 빈 슬롯만 AI 이미지로 보충 (옵션)
+        images: dict = {}
+        used_names: set = set()
+        skipped: list = []
+        mode = st.session_state.get("placement_mode", "🤖")
+        manual_mode = isinstance(mode, str) and mode.startswith("✋")
+
+        # ② 배치 — AI 큐레이션(기본) / 수동 배정표 / 순서 폴백
+        curation = None
+        if not manual_mode and pil_by_name and meta.get("gemini_key"):
+            with st.spinner("🤖 AI가 사진을 보고 어울리는 자리를 고르는 중…"):
+                curation = curate_images(
+                    list(pil_by_name.items()), api_key=meta["gemini_key"],
+                )
+
+        if manual_mode:
+            for slot_key, _label in SLOT_DEFS:
+                sel = st.session_state.get(f"slot_{slot_key}", "(없음)")
+                if sel and sel != "(없음)" and sel in pil_by_name:
+                    images[slot_key] = pil_by_name[sel]
+                    used_names.add(sel)
+        elif curation:
+            for slot_key, _label in SLOT_DEFS:
+                name = (curation.get("assign") or {}).get(slot_key)
+                if name and name in pil_by_name:
+                    images[slot_key] = pil_by_name[name]
+                    used_names.add(name)
+            skipped = list(curation.get("skip") or [])
+            parts = [
+                f"{label.split(' ')[0]}→{(curation.get('assign') or {}).get(k)}"
+                for k, label in SLOT_DEFS
+                if (curation.get("assign") or {}).get(k)
+            ]
+            info = "🤖 AI 배치: " + " · ".join(parts) if parts else "🤖 AI 배치 결과 없음"
+            if skipped:
+                info += f" | 제외 {len(skipped)}장 (품질·중복)"
+            if curation.get("reason"):
+                info += f" — {curation['reason']}"
+            st.info(info)
+        else:
+            # AI 모드인데 키 없음/실패 → 올린 순서대로
+            names_in_order = list(pil_by_name.keys())
+            for i, (slot_key, _label) in enumerate(SLOT_DEFS):
+                if i < len(names_in_order):
+                    images[slot_key] = pil_by_name[names_in_order[i]]
+                    used_names.add(names_in_order[i])
+
+        # ③ 남은 사진(제외분 빼고) → '생생한 현장 컷' 띠
+        extra_images = [
+            im for name, im in pil_by_name.items()
+            if name not in used_names and name not in skipped
+        ]
+
+        # ④ 빈 슬롯만 AI 이미지로 보충 (옵션)
         if meta.get("enable_image_gen") and meta.get("gemini_key"):
             empty_slots = [k for k, _ in SLOT_DEFS if k not in images]
             base_for_gen = images.get("hero") or (
@@ -401,6 +467,13 @@ if cands:
         extra_vids = [_vid(f) for f in (extra_videos_up or [])]
         extra_vids = [(u, m) for u, m in extra_vids if u]
 
+        # ⑤ 색감 테마 — AI 자동(카테고리·키워드 기반) 또는 사용자 선택
+        _theme_label = st.session_state.get("theme_choice", "🤖 AI 자동 추천")
+        theme_key = THEME_CHOICES.get(_theme_label)
+        if theme_key is None:
+            theme_key = auto_theme(category, f"{raw_name} {note}")
+        st.session_state["last_theme"] = theme_key
+
         html = render_page(
             copy_obj,
             images,
@@ -411,6 +484,7 @@ if cands:
             video_cook_mime=v2_mime,
             extra_images=extra_images,
             extra_videos=extra_vids,
+            theme=theme_key,
         )
         st.session_state["last_html"] = html
         st.session_state["last_copy"] = copy_obj.to_dict()
@@ -424,7 +498,15 @@ if st.session_state.get("last_html"):
     ts = st.session_state.get("last_ts", "")
     st.markdown("---")
     st.subheader("3. 미리보기")
-    st.caption("실제 모바일 화면입니다. 마음에 안 들면 카피를 다시 만들 수 있어요.")
+    _tn = {
+        "appetite_red": "🔥 식욕 레드", "fresh_orange": "🍊 따뜻한 오렌지",
+        "juicy_berry": "🍉 과즙 베리", "ocean_fresh": "🌊 바다 신선",
+        "golden_honey": "🍯 골든 허니",
+    }.get(st.session_state.get("last_theme", ""), "")
+    st.caption(
+        f"실제 모바일 화면입니다. 적용 색감: **{_tn}** · "
+        "마음에 안 들면 테마를 바꿔서 다시 만들 수 있어요."
+    )
     st.components.v1.html(html, height=1800, scrolling=True)
 
     st.markdown("---")
