@@ -141,13 +141,35 @@ with st.container(border=True):
         height=90,
     )
 
+# 페이지 이미지 자리 6곳 — 업로드 사진을 순서대로 자동 배정
+SLOT_DEFS = [
+    ("hero", "① 메인(히어로)"),
+    ("close_up", "② 맛 클로즈업"),
+    ("size_compare", "③ 크기/실측"),
+    ("farm", "④ 산지/생산자"),
+    ("package", "⑤ 포장/박스"),
+    ("cook_example", "⑥ 조리/활용"),
+]
+
 with st.container(border=True):
-    st.subheader("2. 제품 사진")
+    st.subheader("2. 제품 사진 (여러 장 올리세요)")
     uploads = st.file_uploader(
-        "사진 1장 이상 (JPG/PNG/WEBP) — AI가 디테일 컷도 만들어요",
+        "사진 여러 장 (JPG/PNG/WEBP) — 올린 순서대로 페이지 자리에 자동 배치돼요",
         type=["jpg", "jpeg", "png", "webp"],
         accept_multiple_files=True,
     )
+    if uploads:
+        st.caption(
+            "자리 배정 (기본: 올린 순서). 남는 사진은 페이지 중간 **'생생한 현장 컷'** 띠로 전부 들어가요."
+        )
+        _names = [f.name for f in uploads]
+        _cols = st.columns(3)
+        for _i, (_key, _label) in enumerate(SLOT_DEFS):
+            with _cols[_i % 3]:
+                _default = _names[_i] if _i < len(_names) else "(없음)"
+                _options = ["(없음)"] + _names
+                _idx = _options.index(_default) if _default in _options else 0
+                st.selectbox(_label, _options, index=_idx, key=f"slot_{_key}")
 
 with st.container(border=True):
     st.subheader("3. 움짤 영상 (선택, 2개까지)")
@@ -186,8 +208,8 @@ with st.expander("⚙️ AI 모델 설정", expanded=True):
         help="GPT 카피에 사용 (gpt-4o-mini)",
     )
     enable_image_gen = st.checkbox(
-        "AI 이미지 생성 사용 (Gemini)", value=True,
-        help="끄면 업로드 사진만 사용해요.",
+        "빈 자리를 AI 이미지로 채우기 (Gemini)", value=True,
+        help="사진을 배정하고 남은 빈 자리만 AI가 그려요. 올린 사진이 항상 우선이에요.",
     )
 
 go = st.button("✨ 카피 생성하기", type="primary")
@@ -313,25 +335,57 @@ if cands:
     if st.button("🎨 이 카피로 상세페이지 만들기", type="primary"):
         copy_obj: CopyResult = cands[chosen_key]
         meta = st.session_state.get("meta", {})
-        base_img = st.session_state.get("base_img")
+
+        def _open(f):
+            try:
+                return Image.open(f).convert("RGB")
+            except Exception:
+                return None
+
+        # ① 업로드 사진 → 슬롯 배정표대로 배치
+        file_by_name = {}
+        for f in (uploads or []):
+            file_by_name.setdefault(f.name, f)
         images: dict = {}
-        if base_img is not None:
-            if meta.get("enable_image_gen") and meta.get("gemini_key"):
-                with st.spinner("AI가 디테일 이미지 6장을 그리는 중…"):
+        used_names: set = set()
+        for slot_key, _label in SLOT_DEFS:
+            sel = st.session_state.get(f"slot_{slot_key}", "(없음)")
+            if sel and sel != "(없음)" and sel in file_by_name:
+                im = _open(file_by_name[sel])
+                if im is not None:
+                    images[slot_key] = im
+                    used_names.add(sel)
+
+        # ② 슬롯에 안 쓰인 나머지 사진 → '생생한 현장 컷' 띠
+        extra_images = []
+        for f in (uploads or []):
+            if f.name not in used_names:
+                im = _open(f)
+                if im is not None:
+                    extra_images.append(im)
+
+        # ③ 빈 슬롯만 AI 이미지로 보충 (옵션)
+        if meta.get("enable_image_gen") and meta.get("gemini_key"):
+            empty_slots = [k for k, _ in SLOT_DEFS if k not in images]
+            base_for_gen = images.get("hero") or (
+                extra_images[0] if extra_images else next(iter(images.values()), None)
+            )
+            gen_prompts = {
+                k: (copy_obj.image_prompts or {}).get(k, "")
+                for k in empty_slots
+                if (copy_obj.image_prompts or {}).get(k)
+            }
+            if gen_prompts and base_for_gen is not None:
+                with st.spinner(f"빈 자리 {len(gen_prompts)}곳을 AI 이미지로 채우는 중…"):
                     gens = generate_detail_images(
-                        base_img,
-                        prompts=copy_obj.image_prompts or {},
+                        base_for_gen,
+                        prompts=gen_prompts,
                         api_key=meta["gemini_key"],
-                        max_count=6,
+                        max_count=len(gen_prompts),
                     )
                 for g in gens:
-                    images[g.label] = g.image
-                ai_n = sum(1 for g in gens if g.is_generated)
-                if ai_n == 0:
-                    st.info("이미지 생성 결과가 없어 업로드 사진을 사용했어요.")
-            else:
-                for label in ("hero", "close_up", "size_compare", "farm", "package", "cook_example"):
-                    images[label] = base_img
+                    if g.is_generated:
+                        images[g.label] = g.image
 
         v1, v1n = st.session_state.get("video1", (b"", ""))
         v2, v2n = st.session_state.get("video2", (b"", ""))
@@ -343,6 +397,7 @@ if cands:
             video_taste_mime="image/gif" if v1n.lower().endswith(".gif") else "",
             video_cook=_video_to_data_uri(v2, v2n) if v2 else "",
             video_cook_mime="image/gif" if v2n.lower().endswith(".gif") else "",
+            extra_images=extra_images,
         )
         st.session_state["last_html"] = html
         st.session_state["last_copy"] = copy_obj.to_dict()

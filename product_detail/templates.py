@@ -233,8 +233,13 @@ def render_page(
     video_taste_mime: str = "",
     video_cook: str = "",
     video_cook_mime: str = "",
+    extra_images: list | None = None,
 ) -> str:
-    """copy: CopyResult, images: {label: PIL.Image}, video_*: data URI."""
+    """copy: CopyResult, images: {label: PIL.Image}, video_*: data URI.
+
+    extra_images: 슬롯에 배정되지 않은 추가 사진들 —
+    '생생한 현장 컷' 띠로 조리 섹션 뒤에 전부 배치된다.
+    """
     hero_img = images.get("hero")
     close_img = images.get("close_up")
     size_img = images.get("size_compare")
@@ -331,6 +336,20 @@ def render_page(
       </section>
         """
 
+    extra_block = ""
+    extra_uris = [_img_to_data_uri(im) for im in (extra_images or []) if im is not None]
+    extra_uris = [u for u in extra_uris if u]
+    if extra_uris:
+        imgs_html = "".join(
+            f'<div class="full-img"><img src="{u}" alt="extra" /></div>' for u in extra_uris
+        )
+        extra_block = f"""
+      <section class="section">
+        <h2><span class="tag">맛있겠다</span>생생한 현장 컷</h2>
+        {imgs_html}
+      </section>
+        """
+
     reviews_block = ""
     if review_cards:
         reviews_block = f"""
@@ -402,6 +421,8 @@ def render_page(
     <ul class="cook-list">{cook_items}</ul>
     {cook_media}
   </section>
+
+  {extra_block}
 
   <section class="section">
     <h2>{_esc(copy.spec_section.get('title','제품 정보'))}</h2>
