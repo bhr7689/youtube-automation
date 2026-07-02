@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 import store
@@ -164,3 +165,11 @@ def get_recent():
 def delete_recent():
     store.clear_searches()
     return {"ok": True}
+
+
+# ── 정적 UI (japan_shorts_app) — 같은 포트에서 서빙 ─────
+_UI_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "japan_shorts_app"
+)
+if os.path.isdir(_UI_DIR):
+    app.mount("/", StaticFiles(directory=_UI_DIR, html=True), name="ui")

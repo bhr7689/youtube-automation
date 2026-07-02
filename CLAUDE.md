@@ -247,4 +247,19 @@ python pipeline.py --init                              # 파이프라인 폴더 
   - **로드맵**: Phase 0~5 총 11주 (2.5개월)
   - **저장소 전략**: `japan_shorts/` 서브폴더 시작 → 안정화 후 별도 repo
   - 다음 단계: 사장님 GO 사인 → Phase 0 착수
+- [x] 🎌 **일본쇼츠 Phase 1 — RefTracker 실작동**(2026-07-02, new-session-rhtlol):
+  정적 시안(`japan_shorts_app/`)에 FastAPI 백엔드(`jpshorts/backend/`)를 붙여
+  **4개 화면 실작동**: 🔍 검색 / 🌐 YouTube 발굴(3축 칩 조합) / ⭐ 북마크 / 📺 레퍼런스 채널.
+  - 실행: **`일본쇼츠실행.bat`** → uvicorn 포트 8787 이 UI+API 통합 서빙 (서버 1개).
+  - 백엔드: `taxonomies.json`(장르17·상황10·감정8, 한/영/일 어휘) + `taxonomy.py`
+    (칩 조합→검색어 5템플릿) + `youtube_client.py`(키 없으면 **데모 폴백**,
+    배수=조회수/채널평균, 채널나이 개월) + `store.py`(SQLite: 북마크/채널/최근검색/캐시24h).
+  - 프론트: `assets/api.js` 공용(카드 렌더러·북마크/채널 토글·정렬필터·토스트·데모배너).
+    카드 액션 5개 작동(자막=downsub/원본/유사=재검색/댓글/링크복사). 🌱 채널나이 필터.
+  - 검증: Playwright 전 화면 통과 — 검색 24카드·북마크 크로스 화면·채널 등록·
+    3축 조합(트로트×슬픔) 5검색어→75카드·JS 오류 0. 스크린샷 `japan_shorts_app/screenshots/`.
+  - ⚠️ `.env` 에 YOUTUBE_API_KEY 넣으면 실검색, 없으면 데모 데이터 (UI에 배너 표시).
+  - **다음(Phase 2 후보)**: trend.html(레시피 자동 재실행 피드) · collections.html(컬렉션+내보내기)
+    · translator.html(Gemini 번역+VOICEVOX 문장별 TTS→manifest 패키지) · editor.html(컷 플래너
+    →CapCut draft). 설계 전문: `ideas/japan_shorts_architecture.md` + `ideas/japan_senior_heartwarming.md`.
 - (작업하며 갱신할 것)
