@@ -241,8 +241,11 @@ naration_job_{id}/
 #### 포맷 결정
 - 오디오: **WAV 48kHz 16bit mono** (편집용 무손실) + UI 미리듣기용 mp3
 - 자막: SRT (문장 duration + pause 누적) — CapCut 텍스트 트랙 변환도 manifest 기반
-- 음성: 채널 시그니처당 **1개 목소리 고정** (정체성) — TTS 서비스는 미결
-  (VOICEVOX 무료·로컬·WAV 직출 vs Google/Azure 유료·자연스러움)
+- 음성: 채널 시그니처당 **1개 목소리 고정** (정체성)
+- **TTS ✅ 확정(2026-07-02): VOICEVOX** — 무료·로컬 실행·일본어 특화·WAV 직출.
+  로컬 HTTP 서버(기본 포트 50021)로 구동 → FastAPI 가 문장별 합성 요청.
+  화자(speaker) 목록에서 시니어 친화 톤 선정은 실제 청음 후 결정(사용자 귀 검수).
+  속도·억양·pause 파라미터 조절 가능 → 시니어용 "약간 느리게" 프리셋 기본값.
 
 #### 전달 경로
 - 도구가 같은 앱 안에 있으면: **job_id 로 내부 전달** (다운로드 불필요) — 컷편집 화면에서
@@ -251,7 +254,10 @@ naration_job_{id}/
   inbox 감시 패턴 재사용)
 - ✂️ 컷편집은 manifest.json 만 읽으면 됨 — 문장·시간·오디오·자막이 전부 담겨 있음
 
-### 🖥️ 기술 스택 비교 (미결 — Claude 추천 포함, 2026-07-02)
+### 🖥️ 기술 스택 ✅ 확정(2026-07-02): B — Next.js + FastAPI
+- 실행 형태: 사용자 PC에서 bat 1개로 프론트+백엔드 동시 기동 (유튜브실행.bat 방식)
+- FastAPI(파이썬)가 기존 자산(YouTube API·Gemini·transcript_probe·media_core) 재사용
+- 아래는 결정 당시 비교표 (기록 보존용)
 | | A. Streamlit | B. Next.js + FastAPI (추천) |
 |---|---|---|
 | 시안 재현도 | 6~7할 (카드·칩 흉내 가능, 투박) | 10할 (목업 그대로) |
@@ -274,10 +280,12 @@ naration_job_{id}/
 ## ❓ 사용자에게 물어볼 것 (작업 시작 시)
 
 1. **어느 채널부터?** — 30개 중 우선순위 3개
-2. **CapCut 고집 vs ffmpeg 허용?** — 자동화 안정성 차이 큼
-3. **TTS 서비스 선택** — 무료(VOICEVOX) vs 유료(Google/Azure)
+2. ~~CapCut vs ffmpeg~~ → ✅ 확정: CapCut draft 자동 생성 + 손맛 마무리 (ffmpeg 백업)
+3. ~~TTS 서비스~~ → ✅ 확정: VOICEVOX (무료·로컬·일본어 특화)
 4. **일일 영상 수** — 1편/일 vs 주 3편 등
 5. **저작권 전략** — 페어유스 범위 인용 vs 채널 본인 허가 받기
+6. (구현 시) 사용자 PC의 CapCut 버전 확인 — draft 포맷 호환성
+7. (구현 시) VOICEVOX 화자 청음 선정 — 시니어 친화 목소리
 
 ---
 
