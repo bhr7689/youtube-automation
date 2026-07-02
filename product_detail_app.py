@@ -172,24 +172,33 @@ with st.container(border=True):
                 st.selectbox(_label, _options, index=_idx, key=f"slot_{_key}")
 
 with st.container(border=True):
-    st.subheader("3. 움짤 영상 (선택, 2개까지)")
+    st.subheader("3. 움짤 영상 🔥 (식품 필수 2개 + 추가 자유)")
     st.caption(
-        "MP4 / WebM / GIF · 5~10초 짧은 영상이 좋아요. "
-        "1번 영상은 **'먹고 싶다' 자리(맛 섹션)**, 2번 영상은 **'조리' 자리**에 자동 배치돼요."
+        "먹는 모습·육즙 터지는 순간·김 모락모락 — **움짤이 식욕 도파민의 핵심**이에요. "
+        "MP4 / WebM / GIF · 5~10초 추천. 기본 2개는 필수!"
     )
     col_v1, col_v2 = st.columns(2)
     with col_v1:
         video1 = st.file_uploader(
-            "1️⃣ 맛 섹션 영상 (한 입 베어무는·꿀 흐르는·자르는 순간 등)",
+            "①(필수) 맛 움짤 — 한 입 베어무는·육즙 터지는·꿀 흐르는 순간",
             type=["mp4", "webm", "gif", "mov"],
             key="video1",
         )
     with col_v2:
         video2 = st.file_uploader(
-            "2️⃣ 조리 섹션 영상 (조리 완성·김 모락·스푼으로 푸는 순간 등)",
+            "②(필수) 조리 움짤 — 김 모락·지글지글 굽는·스푼으로 푸는 순간",
             type=["mp4", "webm", "gif", "mov"],
             key="video2",
         )
+    extra_videos_up = st.file_uploader(
+        "③(선택) 추가 움짤 — 원하는 만큼! 페이지 곳곳(후크 직후·산지 뒤·후기 직전)에 자동 분산 배치",
+        type=["mp4", "webm", "gif", "mov"],
+        accept_multiple_files=True,
+        key="extra_videos",
+    )
+    allow_no_video = st.checkbox(
+        "움짤 없이 만들기 (테스트용 — 실전에서는 비추천)", value=False,
+    )
 
 with st.expander("⚙️ AI 모델 설정", expanded=True):
     provider = st.radio(
@@ -216,15 +225,6 @@ go = st.button("✨ 카피 생성하기", type="primary")
 
 
 # ───────────────────────────────────────────────────────────────────────────
-def _load_first_image(files) -> Image.Image | None:
-    if not files:
-        return None
-    try:
-        return Image.open(files[0]).convert("RGB")
-    except Exception:
-        return None
-
-
 def _resolve_keys():
     gk = (gemini_key.strip() if gemini_key else "") or os.getenv("GEMINI_API_KEY", "")
     ok = (openai_key.strip() if openai_key else "") or os.getenv("OPENAI_API_KEY", "")
@@ -271,15 +271,7 @@ if go:
         }
         st.session_state["auto_choice"] = None
 
-    # 입력 사진/영상 메타 보존(이미지/영상은 데이터로 보관)
-    base_img = _load_first_image(uploads)
-    st.session_state["base_img"] = base_img
-    v1 = video1.read() if video1 else b""
-    v1n = video1.name if video1 else ""
-    v2 = video2.read() if video2 else b""
-    v2n = video2.name if video2 else ""
-    st.session_state["video1"] = (v1, v1n)
-    st.session_state["video2"] = (v2, v2n)
+    # 입력 메타 보존 (사진/움짤은 업로더 위젯이 유지하므로 빌드 시 직접 읽음)
     st.session_state["meta"] = {
         "category": category, "raw_name": raw_name, "note": note,
         "enable_image_gen": enable_image_gen,
@@ -333,6 +325,13 @@ if cands:
         )
 
     if st.button("🎨 이 카피로 상세페이지 만들기", type="primary"):
+        if not (video1 and video2) and not allow_no_video:
+            st.error(
+                "🔥 식품 페이지엔 움짤 2개가 기본이에요! "
+                "①맛 움짤 + ②조리 움짤을 올려주세요. "
+                "(테스트만 해보려면 '움짤 없이 만들기'를 체크)"
+            )
+            st.stop()
         copy_obj: CopyResult = cands[chosen_key]
         meta = st.session_state.get("meta", {})
 
@@ -387,17 +386,31 @@ if cands:
                     if g.is_generated:
                         images[g.label] = g.image
 
-        v1, v1n = st.session_state.get("video1", (b"", ""))
-        v2, v2n = st.session_state.get("video2", (b"", ""))
+        def _vid(f):
+            """업로더 파일 → (data URI, mime 힌트). getvalue()라 재실행에도 안전."""
+            if f is None:
+                return "", ""
+            data = f.getvalue()
+            if not data:
+                return "", ""
+            mime = "image/gif" if f.name.lower().endswith(".gif") else ""
+            return _video_to_data_uri(data, f.name), mime
+
+        v1_uri, v1_mime = _vid(video1)
+        v2_uri, v2_mime = _vid(video2)
+        extra_vids = [_vid(f) for f in (extra_videos_up or [])]
+        extra_vids = [(u, m) for u, m in extra_vids if u]
+
         html = render_page(
             copy_obj,
             images,
             include_ad_slot=True,
-            video_taste=_video_to_data_uri(v1, v1n) if v1 else "",
-            video_taste_mime="image/gif" if v1n.lower().endswith(".gif") else "",
-            video_cook=_video_to_data_uri(v2, v2n) if v2 else "",
-            video_cook_mime="image/gif" if v2n.lower().endswith(".gif") else "",
+            video_taste=v1_uri,
+            video_taste_mime=v1_mime,
+            video_cook=v2_uri,
+            video_cook_mime=v2_mime,
             extra_images=extra_images,
+            extra_videos=extra_vids,
         )
         st.session_state["last_html"] = html
         st.session_state["last_copy"] = copy_obj.to_dict()

@@ -234,11 +234,15 @@ def render_page(
     video_cook: str = "",
     video_cook_mime: str = "",
     extra_images: list | None = None,
+    extra_videos: list | None = None,
 ) -> str:
     """copy: CopyResult, images: {label: PIL.Image}, video_*: data URI.
 
     extra_images: 슬롯에 배정되지 않은 추가 사진들 —
     '생생한 현장 컷' 띠로 조리 섹션 뒤에 전부 배치된다.
+    extra_videos: [(data_uri, mime_hint), ...] 추가 움짤들 —
+    후크 직후 / 산지 섹션 뒤 / 후기 직전 3개 지점에 순환 분산 배치되어
+    스크롤 내내 식욕 자극이 끊기지 않게 한다.
     """
     hero_img = images.get("hero")
     close_img = images.get("close_up")
@@ -336,6 +340,26 @@ def render_page(
       </section>
         """
 
+    # 추가 움짤 → 3개 지점(후크 직후/산지 뒤/후기 직전)에 순환 분산
+    def _drool_section(blocks: list, title: str) -> str:
+        if not blocks:
+            return ""
+        return (
+            '<section class="section">'
+            f'<h2><span class="tag">맛있겠다</span>{_esc(title)}</h2>'
+            + "".join(blocks) + "</section>"
+        )
+
+    _vid_bands: list[list] = [[], [], []]
+    for _i, _v in enumerate(extra_videos or []):
+        _uri, _mime = (_v if isinstance(_v, (tuple, list)) else (_v, ""))
+        blk = _video_block(_uri, _mime)
+        if blk:
+            _vid_bands[_i % 3].append(blk)
+    band_after_hook = _drool_section(_vid_bands[0], "보기만 해도 침이 고여요")
+    band_after_fresh = _drool_section(_vid_bands[1], "이 순간, 참을 수 있나요")
+    band_before_reviews = _drool_section(_vid_bands[2], "한 번 더, 침샘 주의")
+
     extra_block = ""
     extra_uris = [_img_to_data_uri(im) for im in (extra_images or []) if im is not None]
     extra_uris = [u for u in extra_uris if u]
@@ -401,6 +425,8 @@ def render_page(
 
   <section class="appeals">{appeals_html}</section>
 
+  {band_after_hook}
+
   <section class="section">
     <h2><span class="tag">먹고 싶다</span>{_esc(copy.taste_section.get('title',''))}</h2>
     <p>{_esc(copy.taste_section.get('body',''))}</p>
@@ -413,6 +439,8 @@ def render_page(
     <h2><span class="tag">사고 싶다</span>{_esc(copy.fresh_section.get('title',''))}</h2>
     <p>{_esc(copy.fresh_section.get('body',''))}</p>
   </section>
+
+  {band_after_fresh}
 
   {farm_block}
 
@@ -430,6 +458,8 @@ def render_page(
   </section>
 
   {package_block}
+
+  {band_before_reviews}
 
   {reviews_block}
 
