@@ -20,7 +20,11 @@ from product_detail.generator import (
     generate_copy_compare,
     CopyResult,
 )
-from product_detail.image_gen import generate_detail_images, curate_images
+from product_detail.image_gen import (
+    generate_detail_images,
+    curate_images,
+    extract_reviews_from_images,
+)
 from product_detail.templates import render_page, _video_to_data_uri, auto_theme
 from product_detail.exporter import html_to_png
 
@@ -139,6 +143,34 @@ with st.container(border=True):
         "메모 (원산지·중량·특징 자유롭게)",
         placeholder="예: 해남산, 1박스 3kg(약 10~14개), 진공포장",
         height=90,
+    )
+
+    st.markdown("**💬 고객 댓글로 훅 만들기 (선택)**")
+    st.caption(
+        "내 제품·유사 제품에 달린 실제 댓글을 주면, AI가 반복 칭찬·구매 전 망설임·"
+        "생생한 표현을 캐내서 '정말 그렇구나' 훅으로 만들어요."
+    )
+    reviews_text_input = st.text_area(
+        "댓글 붙여넣기",
+        placeholder=(
+            "예)\n"
+            "- 물러서 올까 봐 걱정했는데 단단하게 왔어요\n"
+            "- 두드려봐도 모르겠던데 이건 실패가 없네요\n"
+            "- 애가 밥보다 수박을 먼저 찾아요"
+        ),
+        height=110,
+        key="reviews_text_input",
+    )
+    review_shots = st.file_uploader(
+        "댓글 스크린샷 (선택, 여러 장) — AI가 읽어서 자동 추출",
+        type=["jpg", "jpeg", "png", "webp"],
+        accept_multiple_files=True,
+        key="review_shots",
+    )
+    use_reviews_in_section = st.checkbox(
+        "이 댓글을 후기 섹션에도 사용 (⚠️ 내 제품의 실제 리뷰일 때만 권장)",
+        value=False,
+        key="use_reviews_in_section",
     )
 
 # 페이지 이미지 자리 6곳 — 업로드 사진을 순서대로 자동 배정
@@ -266,11 +298,33 @@ if go:
 
     gk, ok = _resolve_keys()
 
+    # 💬 댓글 수집 — 텍스트 + 스크린샷 OCR 병합
+    reviews_text = (reviews_text_input or "").strip()
+    if review_shots and gk:
+        _shot_imgs = []
+        for _f in review_shots:
+            try:
+                _shot_imgs.append(Image.open(_f).convert("RGB"))
+            except Exception:
+                pass
+        if _shot_imgs:
+            with st.spinner("💬 댓글 스크린샷을 읽는 중…"):
+                _extracted = extract_reviews_from_images(_shot_imgs, api_key=gk)
+            if _extracted:
+                reviews_text = (
+                    reviews_text + "\n" + "\n".join("- " + r for r in _extracted)
+                ).strip()
+                st.caption(f"💬 스크린샷에서 댓글 {len(_extracted)}개 추출 완료")
+            else:
+                st.caption("💬 스크린샷에서 댓글을 읽지 못했어요 — 붙여넣기 텍스트만 사용")
+    use_rev = bool(use_reviews_in_section) and bool(reviews_text)
+
     if provider == "Gemini만":
         with st.spinner("Gemini 카피 생성 중…"):
             copy_g = generate_copy(
                 raw_name=raw_name, category=category, note=note,
                 api_key=gk or None, provider="gemini",
+                reviews_text=reviews_text, use_reviews_in_section=use_rev,
             )
         st.session_state["candidates"] = {"gemini": copy_g, "openai": None}
         st.session_state["auto_choice"] = "gemini"
@@ -279,6 +333,7 @@ if go:
             copy_o = generate_copy(
                 raw_name=raw_name, category=category, note=note,
                 api_key=ok or None, provider="openai",
+                reviews_text=reviews_text, use_reviews_in_section=use_rev,
             )
         st.session_state["candidates"] = {"gemini": None, "openai": copy_o}
         st.session_state["auto_choice"] = "openai"
@@ -287,6 +342,7 @@ if go:
             cands = generate_copy_compare(
                 raw_name=raw_name, category=category, note=note,
                 gemini_key=gk or None, openai_key=ok or None,
+                reviews_text=reviews_text, use_reviews_in_section=use_rev,
             )
         # 키 없는 쪽은 fallback CopyResult 라도 표시
         st.session_state["candidates"] = {
@@ -304,6 +360,7 @@ if go:
         "category": category, "raw_name": raw_name, "note": note,
         "enable_image_gen": enable_image_gen,
         "gemini_key": gk, "openai_key": ok,
+        "reviews_text": reviews_text,
     }
 
 

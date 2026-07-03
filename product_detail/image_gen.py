@@ -144,6 +144,45 @@ def curate_images(
         return None
 
 
+def extract_reviews_from_images(
+    images: list,          # [PIL.Image, ...] 댓글/리뷰 스크린샷
+    api_key: Optional[str] = None,
+    model: str = "gemini-2.0-flash",
+) -> list[str]:
+    """댓글 스크린샷에서 텍스트를 추출한다 (Gemini 비전 OCR).
+
+    반환: 댓글 문자열 리스트. 키 없음/실패 시 빈 리스트.
+    """
+    import json as _json
+
+    key = api_key or os.getenv("GEMINI_API_KEY")
+    if not key or genai_v2 is None or not images:
+        return []
+
+    prompt = (
+        "이 스크린샷들에는 고객 댓글/리뷰가 있다. 모든 댓글 텍스트를 추출하라.\n"
+        "- 닉네임·날짜·좋아요 수는 빼고 본문만\n"
+        "- 댓글 하나 = 배열 원소 하나\n"
+        '- 출력은 JSON 배열만: ["댓글1", "댓글2", ...]'
+    )
+    try:
+        client = genai_v2.Client(api_key=key)
+        contents: list = list(images[:8]) + [prompt]
+        cfg = None
+        if genai_types is not None:
+            cfg = genai_types.GenerateContentConfig(
+                response_mime_type="application/json",
+            )
+        resp = client.models.generate_content(model=model, contents=contents, config=cfg)
+        text = (getattr(resp, "text", "") or "").strip()
+        if text.startswith("```"):
+            text = text.strip("`").lstrip("json").strip()
+        data = _json.loads(text)
+        return [str(x).strip() for x in data if str(x).strip()] if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
 def generate_detail_images(
     base_image: Image.Image,
     prompts: dict,

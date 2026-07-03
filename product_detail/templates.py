@@ -32,6 +32,7 @@ THEMES = {
         "hook_from": "#4b2e0f", "hook_to": "#2a1607",
         "hook_kicker": "#ffd28a", "hook_body": "#f5e7d2",
         "cta_shadow": "rgba(234,88,12,0.35)",
+        "badge_bg": "#ffc24d", "badge_text": "#2f1c05",
     },
     "appetite_red": {   # 🔥 식욕 레드 — 고기·매운맛·구이 (도파민 최강)
         "bg": "#fbf5f0",
@@ -41,6 +42,7 @@ THEMES = {
         "hook_from": "#450a0a", "hook_to": "#1c0505",
         "hook_kicker": "#fecaca", "hook_body": "#fee2e2",
         "cta_shadow": "rgba(214,35,0,0.35)",
+        "badge_bg": "#ff7a5c", "badge_text": "#2b0a02",
     },
     "juicy_berry": {    # 🍉 과즙 베리 — 수박·딸기·과일 (빨강 과육 + 초록 신선 대비)
         "bg": "#fdf7f7",
@@ -50,6 +52,7 @@ THEMES = {
         "hook_from": "#7f1d1d", "hook_to": "#3f0d12",
         "hook_kicker": "#bbf7d0", "hook_body": "#ffe4e6",
         "cta_shadow": "rgba(230,57,70,0.35)",
+        "badge_bg": "#ff8a94", "badge_text": "#3d0a10",
     },
     "ocean_fresh": {    # 🌊 바다 신선 — 수산물 (신뢰 청록 + CTA는 식욕 주황 유지)
         "bg": "#f4f9f9",
@@ -59,6 +62,7 @@ THEMES = {
         "hook_from": "#164e63", "hook_to": "#082f38",
         "hook_kicker": "#a5f3fc", "hook_body": "#e0f7fa",
         "cta_shadow": "rgba(234,88,12,0.35)",
+        "badge_bg": "#7fe3f0", "badge_text": "#062a33",
     },
     "golden_honey": {   # 🍯 골든 허니 — 치킨·빵·꿀·튀김·고구마 (노릇노릇 황금)
         "bg": "#fdfaf2",
@@ -68,6 +72,7 @@ THEMES = {
         "hook_from": "#451a03", "hook_to": "#1f0d02",
         "hook_kicker": "#fde68a", "hook_body": "#fef3c7",
         "cta_shadow": "rgba(217,119,6,0.35)",
+        "badge_bg": "#ffd34d", "badge_text": "#2e1c02",
     },
 }
 DEFAULT_THEME = "fresh_orange"
@@ -166,13 +171,16 @@ CSS = """
     font-size: 52px; font-weight: 900; letter-spacing: -1.2px; margin: 0 0 10px;
     text-shadow: 0 2px 12px rgba(0,0,0,0.45);
   }
-  .hero-sub { font-size: 24px; font-weight: 500; opacity: 0.92; margin: 0; letter-spacing: -0.3px; }
+  .hero-sub {
+    font-size: 24px; font-weight: 600; opacity: 0.95; margin: 0; letter-spacing: -0.3px;
+    text-shadow: 0 1px 8px rgba(0,0,0,0.5);
+  }
   /* 이름 블록 */
   .name-block { padding: 40px 40px 10px; }
   .product-name {
-    font-size: 38px; font-weight: 800; color: __PRIMARY_DEEP__; letter-spacing: -1px; margin: 0 0 8px;
+    font-size: 38px; font-weight: 900; color: __PRIMARY_DEEP__; letter-spacing: -1px; margin: 0 0 8px;
   }
-  .subtitle { font-size: 23px; font-weight: 400; color: #6b7280; margin: 0; letter-spacing: -0.3px; }
+  .subtitle { font-size: 23px; font-weight: 500; color: #4b5563; margin: 0; letter-spacing: -0.3px; }
   /* HOOK (큰 후크 배너) */
   .hook {
     margin: 28px 0 0; padding: 68px 40px;
@@ -197,9 +205,9 @@ CSS = """
     gap: 10px; padding: 30px 40px;
   }
   .appeal {
-    background: #ffffff; border: 1.5px solid __CHIP_BORDER__; border-radius: 14px;
-    padding: 18px 8px; text-align: center;
-    font-size: 21px; font-weight: 700; color: __CHIP_TEXT__;
+    background: __BADGE_BG__; border-radius: 14px;
+    padding: 20px 8px; text-align: center;
+    font-size: 21px; font-weight: 800; color: __BADGE_TEXT__;
     letter-spacing: -0.3px;
   }
   /* 일반 섹션 */
@@ -210,11 +218,11 @@ CSS = """
   }
   .section h2 .tag {
     display: inline-block; vertical-align: 4px;
-    font-size: 15px; font-weight: 700; color: __TAG_TEXT__;
+    font-size: 15px; font-weight: 800; color: __TAG_TEXT__;
     background: __TAG_BG__; border-radius: 999px; padding: 4px 12px; margin-right: 10px;
     letter-spacing: 0;
   }
-  .section p { font-size: 24px; line-height: 1.75; color: #3d4753; margin: 0; }
+  .section p { font-size: 24px; line-height: 1.75; color: #333d47; margin: 0; }
   .section .full-img { margin-top: 22px; }
   .section .full-img img,
   .section .full-img video { display: block; width: 100%; height: auto; border-radius: 18px; }
@@ -224,17 +232,17 @@ CSS = """
   .spec-table th, .spec-table td {
     padding: 19px 4px; font-size: 22px; border-bottom: 1px solid #f2ede4; text-align: left;
   }
-  .spec-table th { width: 34%; color: #8b95a1; font-weight: 500; }
-  .spec-table td { color: #191f28; font-weight: 600; }
+  .spec-table th { width: 34%; color: #6b7280; font-weight: 500; }
+  .spec-table td { color: #191f28; font-weight: 700; }
   .spec-table tr:last-child th, .spec-table tr:last-child td { border-bottom: none; }
   .size-cards {
     display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 18px;
   }
   .size-card {
-    background: __CHIP_BG__; border-radius: 14px; padding: 16px 8px; text-align: center;
+    background: __BADGE_BG__; border-radius: 14px; padding: 18px 8px; text-align: center;
   }
-  .size-card .label { font-size: 16px; color: __CHIP_TEXT__; font-weight: 600; }
-  .size-card .value { font-size: 22px; color: #1f2933; font-weight: 800; margin-top: 4px; }
+  .size-card .label { font-size: 16px; color: __BADGE_TEXT__; font-weight: 700; opacity: 0.75; }
+  .size-card .value { font-size: 22px; color: __BADGE_TEXT__; font-weight: 900; margin-top: 5px; }
 
   /* COOK 리스트 — 이모지 대신 번호, 정갈하게 */
   .cook-list { list-style: none; padding: 0; margin: 6px 0 0; counter-reset: cook; }
@@ -254,7 +262,7 @@ CSS = """
   .review { background: #faf9f7; border-radius: 14px; padding: 22px 24px; }
   .review .stars { color: #f59e0b; font-size: 19px; letter-spacing: 3px; }
   .review .who { font-size: 16px; color: #8b95a1; margin-top: 6px; }
-  .review .text { font-size: 21px; color: #3d4753; margin-top: 10px; line-height: 1.65; }
+  .review .text { font-size: 21px; color: #333d47; margin-top: 10px; line-height: 1.65; }
 
   /* TRUST */
   .trust-points { list-style: none; padding: 0; margin: 6px 0 0; }
@@ -271,8 +279,8 @@ CSS = """
   .cta-wrap { padding: 36px; }
   .cta {
     display: block; width: 100%; text-align: center;
-    background: __PRIMARY__; color: #fff; font-size: 32px; font-weight: 800;
-    padding: 26px 16px; border-radius: 20px; text-decoration: none;
+    background: __PRIMARY__; color: #fff; font-size: 32px; font-weight: 900;
+    padding: 26px 16px; border-radius: 20px; text-decoration: none; letter-spacing: -0.5px;
     box-shadow: 0 8px 20px __CTA_SHADOW__;
   }
 

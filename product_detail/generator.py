@@ -50,13 +50,29 @@ COPY_SYSTEM = """너는 한국의 식품 상세페이지 카피라이터다.
 - 모든 주장 뒤에는 근거 하나를 붙인다(산지·시간·숫자·방법).
   근거를 못 대는 형용사는 쓰지 않는다. "달아요" (X) → "12브릭스, 딴 지 48시간" (O)
 - 한 문장 = 한 생각. 읽다가 숨차면 실패작이다.
+
+[실제 고객 댓글이 주어진 경우 — 댓글이 훅의 최고 원료다]
+- 댓글에서 캘 것 3가지:
+  ① 반복되는 칭찬 — 여러 명이 같은 말을 하면 그게 진짜 강점. 고객의 표현을 그대로 재사용.
+  ② 구매 전 망설임·불안 — "살까 말까", "괜찮을까" 류의 걱정을 훅에서 정면으로 답한다.
+     예) 댓글에 "물러서 올까 봐 걱정했어요"가 많다면
+        → 훅: "무를까 봐 망설이셨죠. 그래서 저희는 ○○합니다."
+  ③ 생생한 한 줄 — 카피라이터가 못 쓰는 날것의 표현은 따옴표째 살린다.
+- 댓글이 주어지면 hook_section 은 위 ①②③ 재료를 일반 공식보다 우선한다.
+- 댓글 속 표현을 appeals·taste_section 에도 자연스럽게 녹인다.
+"""
+
+REVIEWS_SECTION_RULE = """
+[후기 섹션 특별 지시]
+- reviews_section.items 는 반드시 주어진 실제 고객 댓글에서 추린다.
+  지어내지 말 것. 댓글을 짧게 다듬고(한 줄), 이름은 "김○○" 식으로 익명화.
 """
 
 COPY_USER_TEMPLATE = """제품 정보:
 - 카테고리: {category}
 - 사용자가 적은 이름/키워드: {raw_name}
 - 메모(원산지·중량·특징 등 자유): {note}
-
+{reviews_block}
 다음 JSON 스키마로 작성하라. 각 필드의 톤은 주석을 따른다.
 모든 텍스트는 한국어. image_prompts 만 영문 (Gemini 이미지 생성용).
 
@@ -301,17 +317,38 @@ def _merge_into(base: CopyResult, data: dict, provider: str) -> CopyResult:
     return base
 
 
-def _gen_gemini(raw_name, category, note, key, model) -> Optional[CopyResult]:
+def _build_prompt_parts(raw_name, category, note, reviews_text, use_reviews_in_section):
+    """(system_prompt, user_prompt) 생성 — 댓글이 있으면 훅 재료로 주입."""
+    reviews_block = ""
+    system_prompt = COPY_SYSTEM
+    if (reviews_text or "").strip():
+        reviews_block = (
+            "\n[실제 고객 댓글 — 훅의 원료로 사용하라]\n"
+            + reviews_text.strip()[:4000] + "\n"
+        )
+        if use_reviews_in_section:
+            system_prompt = COPY_SYSTEM + REVIEWS_SECTION_RULE
+    user_prompt = COPY_USER_TEMPLATE.format(
+        category=category or "식품",
+        raw_name=raw_name or "",
+        note=note or "",
+        reviews_block=reviews_block,
+    )
+    return system_prompt, user_prompt
+
+
+def _gen_gemini(raw_name, category, note, key, model,
+                reviews_text="", use_reviews_in_section=False) -> Optional[CopyResult]:
     if not key or genai is None:
         return None
     try:
         genai.configure(api_key=key)
-        prompt = COPY_USER_TEMPLATE.format(
-            category=category or "식품", raw_name=raw_name or "", note=note or "",
+        system_prompt, prompt = _build_prompt_parts(
+            raw_name, category, note, reviews_text, use_reviews_in_section,
         )
         gm = genai.GenerativeModel(
             model_name=model,
-            system_instruction=COPY_SYSTEM,
+            system_instruction=system_prompt,
             generation_config={"response_mime_type": "application/json"},
         )
         resp = gm.generate_content(prompt)
@@ -322,19 +359,20 @@ def _gen_gemini(raw_name, category, note, key, model) -> Optional[CopyResult]:
         return None
 
 
-def _gen_openai(raw_name, category, note, key, model) -> Optional[CopyResult]:
+def _gen_openai(raw_name, category, note, key, model,
+                reviews_text="", use_reviews_in_section=False) -> Optional[CopyResult]:
     if not key or _OpenAI is None:
         return None
     try:
         client = _OpenAI(api_key=key)
-        prompt = COPY_USER_TEMPLATE.format(
-            category=category or "식품", raw_name=raw_name or "", note=note or "",
+        system_prompt, prompt = _build_prompt_parts(
+            raw_name, category, note, reviews_text, use_reviews_in_section,
         )
         resp = client.chat.completions.create(
             model=model,
             response_format={"type": "json_object"},
             messages=[
-                {"role": "system", "content": COPY_SYSTEM},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt},
             ],
         )
@@ -352,17 +390,23 @@ def generate_copy(
     api_key: Optional[str] = None,
     model: str = "gemini-2.0-flash",
     provider: str = "gemini",
+    reviews_text: str = "",
+    use_reviews_in_section: bool = False,
 ) -> CopyResult:
     """단일 LLM으로 카피 생성. provider='gemini'|'openai'.
 
+    reviews_text: 실제 고객 댓글(있으면 훅 재료로 사용).
+    use_reviews_in_section: True면 후기 섹션도 실제 댓글에서 추림.
     실패/키 없음 → 안전 폴백.
     """
     if provider == "openai":
         key = api_key or os.getenv("OPENAI_API_KEY")
-        out = _gen_openai(raw_name, category, note, key, model or "gpt-4o-mini")
+        out = _gen_openai(raw_name, category, note, key, model or "gpt-4o-mini",
+                          reviews_text, use_reviews_in_section)
     else:
         key = api_key or os.getenv("GEMINI_API_KEY")
-        out = _gen_gemini(raw_name, category, note, key, model or "gemini-2.0-flash")
+        out = _gen_gemini(raw_name, category, note, key, model or "gemini-2.0-flash",
+                          reviews_text, use_reviews_in_section)
     return out or _fallback_copy(raw_name, category, note)
 
 
@@ -374,6 +418,8 @@ def generate_copy_compare(
     openai_key: Optional[str] = None,
     gemini_model: str = "gemini-2.0-flash",
     openai_model: str = "gpt-4o-mini",
+    reviews_text: str = "",
+    use_reviews_in_section: bool = False,
 ) -> dict:
     """두 모델로 동시 생성. 비교 후 사용자 선택용.
 
@@ -384,9 +430,11 @@ def generate_copy_compare(
         "gemini": _gen_gemini(
             raw_name, category, note,
             gemini_key or os.getenv("GEMINI_API_KEY"), gemini_model,
+            reviews_text, use_reviews_in_section,
         ),
         "openai": _gen_openai(
             raw_name, category, note,
             openai_key or os.getenv("OPENAI_API_KEY"), openai_model,
+            reviews_text, use_reviews_in_section,
         ),
     }
