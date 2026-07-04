@@ -262,4 +262,22 @@ python pipeline.py --init                              # 파이프라인 폴더 
   - **다음(Phase 2 후보)**: trend.html(레시피 자동 재실행 피드) · collections.html(컬렉션+내보내기)
     · translator.html(Gemini 번역+VOICEVOX 문장별 TTS→manifest 패키지) · editor.html(컷 플래너
     →CapCut draft). 설계 전문: `ideas/japan_shorts_architecture.md` + `ideas/japan_senior_heartwarming.md`.
+- [x] 🕵️ **원본 소스 찾기 — 5플랫폼 역추적**(2026-07-04, new-session-rhtlol):
+  사용자가 Codex(로컬 PC PowerShell)에서 쓰던 source-finder 를 Python 으로 이식+확장.
+  조사 범위: YouTube·Instagram·TikTok·**샤오홍슈·더우인** 기본 포함.
+  - `jpshorts/backend/source_finder.py`: meta(yt-dlp→oEmbed 폴백)→다운로드(480p)→
+    프레임24+contact_sheet.jpg+**워터마크 스트립**(하단 28% 2배 확대)→@핸들 추출
+    (정규식+pytesseract OCR 옵션)→5플랫폼 후보(프로필 probe+검색 루트+DDG 자동검색)
+    →판정+report.md/json. **전 단계 실패 허용** — 막혀도 한계 명시하고 완주.
+  - 판정 체계(Codex 방식 답습): "가장 이른 공개 후보" vs "원본 촬영 후보" 분리,
+    근거 우선순위 워터마크 @핸들 > 메타 날짜 > 자막 일치. 업로더 자신 핸들과 외부 핸들 구분.
+  - 수동 단서(hints: 제목/@핸들) 지원 — 프록시로 메타 수집 막혀도 후보 생성 가능.
+  - API: POST/GET `/api/source-finder` (백그라운드 스레드 잡+1.5s 폴링+산출물 서빙+기록).
+  - UI: `source_finder.html` (URL 입력→6단계 진행 표시→판정 패널+이미지+확인 루트 버튼
+    +report.md+과거 기록). 전 페이지 사이드바 🕵️ 메뉴 + 카드 액션 "🕵️ 원본찾기".
+  - 검증: 로컬 워터마크 시뮬레이션(@kimdy804 drawtext 영상)으로 전 단계 통과 —
+    Codex 실사례와 동일 판정(@kimdy804 유력·TikTok/Instagram 1순위) 재현. Playwright UI 통과.
+  - ⚠️ 웹 컨테이너는 프록시가 유튜브 차단 → 메타·다운로드 실패(정상 동작으로 한계 기록).
+    **사용자 PC(일본쇼츠실행.bat)에서 풀가동** (yt-dlp/ffmpeg 로컬 설치 확인됨).
+  - ⚠️ 이 컨테이너는 2회 리셋됨 — **커밋·푸시를 검증보다 먼저** 하는 원칙 재확인.
 - (작업하며 갱신할 것)
