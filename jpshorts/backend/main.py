@@ -167,6 +167,51 @@ def delete_recent():
     return {"ok": True}
 
 
+# ── 🔎 원본 소스 찾기 (source_finder) ───────────────────
+
+from fastapi import HTTPException
+from fastapi.responses import FileResponse
+
+import source_finder as sf
+
+
+class SourceFinderReq(BaseModel):
+    url: str
+    hints: dict = Field(default_factory=dict)   # 수동 단서: {"title": "...", "handle": "@..."}
+
+
+@app.post("/api/source-finder")
+def sf_start(req: SourceFinderReq):
+    url = req.url.strip()
+    if not url.startswith("http"):
+        raise HTTPException(400, "URL 형식이 아니에요")
+    job = sf.start_job(url, req.hints)
+    return {"job_id": job["job_id"]}
+
+
+@app.get("/api/source-finder")
+def sf_list():
+    return {"jobs": sf.list_jobs()}
+
+
+@app.get("/api/source-finder/{job_id}")
+def sf_status(job_id: str):
+    job = sf.load_job(job_id)
+    if not job:
+        raise HTTPException(404, "작업을 찾을 수 없어요")
+    return job
+
+
+@app.get("/api/source-finder/{job_id}/file/{name}")
+def sf_file(job_id: str, name: str):
+    if any(c in job_id + name for c in ("/", "\\", "..")):
+        raise HTTPException(400, "잘못된 경로")
+    path = os.path.join(sf.job_dir(job_id), name)
+    if not os.path.isfile(path):
+        raise HTTPException(404, "파일 없음")
+    return FileResponse(path)
+
+
 # ── 정적 UI (japan_shorts_app) — 같은 포트에서 서빙 ─────
 _UI_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "japan_shorts_app"
