@@ -11,6 +11,9 @@ import datetime as dt
 import hashlib
 import os
 import random
+import re
+import statistics
+from collections import Counter, defaultdict
 
 import isodate
 
@@ -355,6 +358,239 @@ def _demo_trend(video_type: str, n: int) -> list[dict]:
         })
     cards.sort(key=lambda c: -(c["multiplier"] or 0))
     return cards
+
+
+# ── 🌍 글로벌 급등 채널 (전 세계 24h · 언어 무관) ────────
+
+# 대표 지역(언어) 세트 — 전 세계 급등을 넓게 포착
+GLOBAL_REGIONS = ["US", "KR", "JP", "GB", "IN", "BR", "MX", "DE", "FR", "ID", "ES", "TW"]
+REGION_FLAG = {
+    "US": "🇺🇸", "KR": "🇰🇷", "JP": "🇯🇵", "GB": "🇬🇧", "IN": "🇮🇳", "BR": "🇧🇷",
+    "MX": "🇲🇽", "DE": "🇩🇪", "FR": "🇫🇷", "ID": "🇮🇩", "ES": "🇪🇸", "TW": "🇹🇼",
+}
+_surge_cache: dict[str, tuple[float, dict]] = {}
+_SURGE_TTL = 10800.0   # 3시간 (쿼터 절약 — 급등 채널은 몇 시간 단위로 갱신되어도 충분)
+
+
+def global_surge(fmt: str = "shorts", hours: int = 24, top_n: int = 100,
+                 regions: list[str] | None = None) -> dict:
+    """전 세계 여러 지역에서 최근 `hours`시간 내 업로드된 영상을 조회수순으로 모아,
+    채널별 급등 점수(24h 내 최고 VPH)로 랭킹. 숏폼/롱폼 분리.
+
+    쿼터: 지역수 × search 1회(100units). 결과는 3h 캐시(_surge_cache).
+    """
+    import time as _t
+    regions = regions or GLOBAL_REGIONS
+    key = f"{fmt}:{hours}:{top_n}:{','.join(regions)}"
+    now = _t.time()
+    hit = _surge_cache.get(key)
+    if hit and now - hit[0] < _SURGE_TTL:
+        return hit[1]
+
+    if not has_key():
+        data = _demo_surge(fmt, top_n)
+        _surge_cache[key] = (now, data)
+        return data
+
+    yt = _yt()
+    after = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=hours)) \
+        .strftime("%Y-%m-%dT%H:%M:%SZ")
+    vid_region: dict[str, str] = {}
+    for region in regions:
+        params = dict(part="id", type="video", order="viewCount",
+                      publishedAfter=after, regionCode=region, maxResults=50)
+        params["videoDuration"] = "short" if fmt == "shorts" else "medium"
+        try:
+            resp = yt.search().list(**params).execute()
+        except Exception:
+            continue
+        for it in resp.get("items", []):
+            vid = it.get("id", {}).get("videoId")
+            if vid:
+                vid_region.setdefault(vid, region)
+
+    ids = list(vid_region.keys())
+    if not ids:
+        data = {"channels": [], "demo": False, "fmt": fmt}
+        _surge_cache[key] = (now, data)
+        return data
+
+    videos = []
+    for i in range(0, len(ids), 50):
+        resp = yt.videos().list(
+            part="snippet,statistics,contentDetails",
+            id=",".join(ids[i : i + 50])).execute()
+        videos += resp.get("items", [])
+    chans = _fetch_channels([v["snippet"]["channelId"] for v in videos])
+
+    # 채널별 최고 급등 영상 집계
+    by_channel: dict[str, dict] = {}
+    for v in videos:
+        sn, st = v["snippet"], v.get("statistics", {})
+        try:
+            dur = int(isodate.parse_duration(v["contentDetails"]["duration"]).total_seconds())
+        except Exception:
+            dur = 0
+        is_short = dur <= SHORT_MAX_SEC
+        if fmt == "shorts" and not is_short:
+            continue
+        if fmt == "long" and is_short:
+            continue
+        views = int(st.get("viewCount", 0))
+        vph = _vph(views, sn["publishedAt"])
+        cid = sn["channelId"]
+        ch = chans.get(cid, {})
+        entry = by_channel.get(cid)
+        cand = {
+            "channel_id": cid,
+            "channel_title": sn["channelTitle"],
+            "subscribers": int(ch.get("subs", 0) or 0),
+            "channel_age_months": ch.get("age_months", 999),
+            "region": vid_region.get(v["id"], ""),
+            "flag": REGION_FLAG.get(vid_region.get(v["id"], ""), "🌐"),
+            "surge_vph": vph,
+            "top_video": {
+                "video_id": v["id"], "title": sn["title"], "views": views,
+                "vph": vph, "is_short": is_short,
+                "keywords": sn.get("tags", []) or [],
+                "multiplier": round(views / (ch.get("avg_views") or 1), 1) if ch.get("avg_views") else None,
+            },
+        }
+        if not entry or vph > entry["surge_vph"]:
+            by_channel[cid] = cand
+
+    ranked = sorted(by_channel.values(), key=lambda c: -c["surge_vph"])[:top_n]
+    for i, c in enumerate(ranked, 1):
+        c["rank"] = i
+    data = {"channels": ranked, "demo": False, "fmt": fmt,
+            "regions": regions, "hours": hours}
+    _surge_cache[key] = (now, data)
+    return data
+
+
+# 글로벌 데모용 채널 풀 (언어별)
+_DEMO_SURGE_POOL = [
+    ("US", "Reality Bites", "Shark Tank Contestant Freezes Investors"),
+    ("KR", "감동스토리", "40년 만의 재회, 스튜디오가 눈물바다"),
+    ("JP", "涙のドキュメント", "母の手紙を読んだ息子の涙"),
+    ("GB", "BGT Moments", "Golden Buzzer for 80-Year-Old Singer"),
+    ("IN", "Dil Se Stories", "Auto Driver's Kindness Goes Viral"),
+    ("BR", "Emoção Brasil", "Reencontro emocionante após 30 anos"),
+    ("MX", "Historias que Inspiran", "El abuelo que nunca se rindió"),
+    ("DE", "Herzmomente", "Fremder rettet den Tag einer Familie"),
+    ("FR", "Larmes de Joie", "Retrouvailles bouleversantes en direct"),
+    ("ID", "Kisah Haru", "Anak yatim membuat juri menangis"),
+    ("ES", "Momentos Únicos", "La sorpresa que nadie esperaba"),
+    ("TW", "感動時刻", "80歲奶奶的歌聲讓評審落淚"),
+]
+
+
+def _demo_surge(fmt: str, top_n: int) -> dict:
+    rnd = random.Random(hash(("surge", fmt)) & 0xFFFFFFFF)
+    channels = []
+    for i in range(min(top_n, 100 if fmt == "shorts" else 50)):
+        region, base_name, vtitle = _DEMO_SURGE_POOL[i % len(_DEMO_SURGE_POOL)]
+        suffix = ["Official", "TV", "Shorts", "Clips", "HD", "Daily", "World", "+"][i % 8]
+        name = f"{base_name} {suffix}" if i >= len(_DEMO_SURGE_POOL) else base_name
+        subs = rnd.randint(50_000, 20_000_000)
+        views = rnd.randint(500_000, 40_000_000)
+        vph = round(views / rnd.uniform(3, 24), 1)   # 24h 내 → 낮은 경과시간
+        channels.append({
+            "rank": i + 1,
+            "channel_id": f"demo_gs_{fmt}_{i}",
+            "channel_title": name,
+            "subscribers": subs,
+            "channel_age_months": rnd.randint(1, 90),
+            "region": region,
+            "flag": REGION_FLAG.get(region, "🌐"),
+            "surge_vph": vph,
+            "top_video": {
+                "video_id": f"demo_v_{fmt}_{i}", "title": vtitle,
+                "views": views, "vph": vph,
+                "is_short": fmt == "shorts",
+                "keywords": _demo_keywords(rnd, rnd.randint(5, 12)),
+                "multiplier": round(rnd.uniform(1.5, 40), 1),
+            },
+        })
+    channels.sort(key=lambda c: -c["surge_vph"])
+    for i, c in enumerate(channels, 1):
+        c["rank"] = i
+    return {"channels": channels, "demo": True, "fmt": fmt}
+
+
+# ── 📊 급등 규칙 분석 (키워드·제목 패턴 레퍼런스) ────────
+
+# 다국어 불용어(제목 토큰 노이즈 제거) — 최소 세트
+_STOP = {
+    "the", "a", "an", "of", "to", "in", "on", "for", "and", "or", "is", "was",
+    "this", "that", "with", "his", "her", "you", "your", "i", "it", "at", "by",
+    "de", "la", "el", "en", "que", "un", "una", "y", "の", "は", "が", "を", "に",
+    "と", "も", "이", "그", "저", "수", "것", "들", "고", "은", "는", "을", "를",
+    "vs", "ft", "feat", "official", "video", "shorts", "short",
+}
+
+
+def surge_analysis(fmt: str = "shorts") -> dict:
+    """글로벌 급등 채널들의 '검색 키워드'와 '제목 규칙'을 집계해 레퍼런스로 제공.
+
+    - top_keywords: 급등 영상들이 공통으로 쓴 태그(키워드) 빈도 상위
+    - top_title_words: 제목에 자주 등장하는 단어(불용어 제거, 다국어)
+    - patterns: 숫자/이모지/괄호/물음표 사용률, 평균 제목 길이
+    - by_region: 지역별 상위 키워드
+    """
+    data = global_surge(fmt=fmt)
+    chans = data.get("channels", [])
+    titles, all_kw = [], []
+    reg_kw: dict[str, list[str]] = defaultdict(list)
+    for c in chans:
+        v = c.get("top_video", {})
+        t = v.get("title", "")
+        if t:
+            titles.append(t)
+        kws = [k.strip() for k in (v.get("keywords") or []) if k.strip()]
+        all_kw += kws
+        reg_kw[c.get("region", "")] += kws
+
+    kw_freq = Counter(k.lower() for k in all_kw)
+    tokens: list[str] = []
+    for t in titles:
+        tokens += [w.lower() for w in re.findall(r"[\w']+", t, re.UNICODE) if len(w) >= 2]
+    tok_freq = Counter(w for w in tokens if w not in _STOP and not w.isdigit())
+
+    n = len(titles) or 1
+    lengths = [len(t) for t in titles]
+    emoji_re = re.compile("[\U0001F000-\U0001FAFF☀-➿]")
+    bracket_re = re.compile(r"[\[\](){}【】「」『』]")
+    patterns = {
+        "count": len(titles),
+        "avg_title_len": round(statistics.mean(lengths), 1) if lengths else 0,
+        "pct_number": round(100 * sum(bool(re.search(r"\d", t)) for t in titles) / n),
+        "pct_emoji": round(100 * sum(bool(emoji_re.search(t)) for t in titles) / n),
+        "pct_bracket": round(100 * sum(bool(bracket_re.search(t)) for t in titles) / n),
+        "pct_question": round(100 * sum(("?" in t or "？" in t) for t in titles) / n),
+        "pct_exclaim": round(100 * sum(("!" in t or "！" in t) for t in titles) / n),
+    }
+
+    by_region = []
+    for region, kws in reg_kw.items():
+        if not region:
+            continue
+        top = Counter(k.lower() for k in kws).most_common(6)
+        by_region.append({
+            "region": region, "flag": REGION_FLAG.get(region, "🌐"),
+            "keywords": [k for k, _ in top],
+        })
+    by_region.sort(key=lambda r: -len(r["keywords"]))
+
+    return {
+        "fmt": fmt, "demo": data.get("demo", False),
+        "channel_count": len(chans),
+        "top_keywords": [{"kw": k, "count": v} for k, v in kw_freq.most_common(30)],
+        "top_title_words": [{"word": w, "count": v} for w, v in tok_freq.most_common(30)],
+        "patterns": patterns,
+        "by_region": by_region[:12],
+        "sample_titles": titles[:12],
+    }
 
 
 # ── 데모 폴백 (검색용) ─────────────────────────────────

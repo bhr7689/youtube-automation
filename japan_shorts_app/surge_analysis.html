@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>급등 규칙 분석 · RefTracker</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/api.js"></script>
+  <style>
+    .sa-tabs{display:flex;gap:8px;margin-bottom:16px;}
+    .sa-tab{padding:8px 18px;border-radius:999px;border:1px solid #e5d9f5;background:#fff;color:#64748b;font-weight:600;cursor:pointer;font-size:14px;}
+    .sa-tab.active{background:#f3e8ff;border-color:#c084fc;color:#7e22ce;}
+    .sa-section{background:#fff;border:1px solid #f0ecf7;border-radius:16px;padding:18px 20px;margin-bottom:16px;box-shadow:0 2px 10px rgba(120,60,180,.05);}
+    .sa-h{font-size:15px;font-weight:800;margin-bottom:4px;color:#1a1a2e;}
+    .sa-sub{font-size:12px;color:#8a80a5;margin-bottom:14px;}
+    .stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;}
+    .stat-tile{background:#faf7ff;border:1px solid #efe6fb;border-radius:12px;padding:12px;text-align:center;}
+    .stat-val{font-size:24px;font-weight:800;color:#7e22ce;}
+    .stat-lbl{font-size:11px;color:#8a80a5;margin-top:2px;}
+    .kw-cloud{display:flex;flex-wrap:wrap;gap:8px;}
+    .kw-tag{background:#f3e8ff;color:#6b21a8;border-radius:999px;padding:5px 12px;font-weight:600;cursor:pointer;}
+    .kw-tag:hover{background:#e9d5ff;}
+    .kw-tag .c{color:#a855f7;font-weight:800;margin-left:4px;font-size:11px;}
+    .word-tag{background:#eef6ff;color:#1d4ed8;border-radius:8px;padding:4px 10px;font-size:13px;}
+    .word-tag .c{color:#60a5fa;font-size:11px;margin-left:3px;}
+    .reg-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed #f0ecf7;}
+    .reg-row:last-child{border-bottom:none;}
+    .reg-flag{font-size:20px;width:30px;flex-shrink:0;}
+    .reg-kw{display:flex;flex-wrap:wrap;gap:5px;}
+    .reg-kw span{background:#f5f3ff;color:#6b21a8;border-radius:6px;padding:2px 8px;font-size:12px;}
+    .sample-title{font-size:13px;color:#374151;padding:6px 0;border-bottom:1px dashed #f3f0f8;}
+    .sample-title:last-child{border-bottom:none;}
+    .insight{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:12px;padding:12px 14px;font-size:13px;line-height:1.7;margin-top:12px;}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <span class="sidebar-badge">쇼치 강사님 시리즈</span>
+        <div class="sidebar-brand">RefTracker</div>
+        <div class="sidebar-brand-sub">레퍼런스 채널 추적</div>
+      </div>
+      <nav class="nav-section">
+        <a href="trend.html" class="nav-item">🔥 트렌드 피드</a>
+        <a href="global_surge.html" class="nav-item">🌍 글로벌 급등</a>
+        <a href="youtube_discover.html" class="nav-item">🌐 YouTube 발굴</a>
+        <a href="search.html" class="nav-item">🔍 검색</a>
+        <a href="source_finder.html" class="nav-item">🕵️ 원본 소스 찾기</a>
+        <a href="surge_analysis.html" class="nav-item active">📊 급등 규칙 분석</a>
+        <a href="channels.html" class="nav-item">📺 레퍼런스 채널</a>
+        <a href="collections.html" class="nav-item">📁 컬렉션</a>
+        <a href="bookmarks.html" class="nav-item">⭐ 북마크</a>
+        <a href="notifications.html" class="nav-item">🔔 알림 <span class="nav-badge">3</span></a>
+        <a href="settings.html" class="nav-item">⚙️ 설정</a>
+      </nav>
+      <div class="nav-divider"></div>
+      <nav class="nav-section">
+        <a href="index.html" class="nav-item-secondary"><span>🏠 포털 메인</span><span>›</span></a>
+        <a href="translator.html" class="nav-item-secondary"><span>🌸 일본어 번역봇</span><span>›</span></a>
+        <a href="editor.html" class="nav-item-secondary"><span>✂️ 자동 컷편집</span><span>›</span></a>
+      </nav>
+      <div class="user-card">
+        <div class="avatar-pill">남정</div>
+        <div class="user-card-info">
+          <div class="user-name">박남정</div>
+          <div class="user-email">parkzz5157@gmail.com</div>
+          <button class="logout">로그아웃</button>
+        </div>
+      </div>
+      <div class="version">v0.4.0</div>
+    </aside>
+
+    <main class="main">
+      <div class="page-header-row">
+        <div>
+          <span class="badge-dot">급등 규칙 분석</span>
+          <h1 class="page-title"><span class="gradient-text">급등 채널</span>의 규칙 분석</h1>
+          <p class="page-sub">전 세계 24h 급등 채널들이 쓴 검색 키워드·제목 규칙을 집계 — 내 영상 레퍼런스용</p>
+        </div>
+        <div><button class="btn-secondary" id="csvBtn">📋 키워드 CSV</button></div>
+      </div>
+
+      <div class="sa-tabs">
+        <button class="sa-tab active" data-fmt="shorts">📱 숏폼 급등 분석</button>
+        <button class="sa-tab" data-fmt="long">🎬 롱폼 급등 분석</button>
+      </div>
+
+      <div id="body"><div class="result-count">분석 중…</div></div>
+    </main>
+  </div>
+
+  <script>
+    let FMT = new URLSearchParams(location.search).get("fmt") || "shorts";
+    let DATA = null;
+
+    function tile(val, lbl) {
+      return `<div class="stat-tile"><div class="stat-val">${val}</div><div class="stat-lbl">${lbl}</div></div>`;
+    }
+
+    function render(a) {
+      DATA = a;
+      const p = a.patterns;
+      const maxKw = (a.top_keywords[0] || {}).count || 1;
+      const kwCloud = a.top_keywords.map(k => {
+        const scale = 12 + Math.round(8 * k.count / maxKw);
+        return `<span class="kw-tag" style="font-size:${scale}px;" onclick="navigator.clipboard.writeText('${esc(k.kw).replace(/'/g,'')}').then(()=>toast('복사: ${esc(k.kw).replace(/'/g,'')}'))">${esc(k.kw)}<span class="c">${k.count}</span></span>`;
+      }).join("");
+      const words = a.top_title_words.map(w => `<span class="word-tag">${esc(w.word)}<span class="c">${w.count}</span></span>`).join("");
+      const regions = a.by_region.map(r =>
+        `<div class="reg-row"><span class="reg-flag">${r.flag}</span><div class="reg-kw">${r.keywords.map(k => `<span>${esc(k)}</span>`).join("")}</div></div>`
+      ).join("");
+      const samples = a.sample_titles.map(t => `<div class="sample-title">• ${esc(t)}</div>`).join("");
+
+      document.getElementById("body").innerHTML = `
+        ${a.demo ? '' : ''}
+        <div class="sa-section">
+          <div class="sa-h">📐 제목 규칙 (급등 ${p.count}개 영상 집계)</div>
+          <div class="sa-sub">급등한 영상들의 제목이 공통으로 가진 특징 — 내 제목 만들 때 참고</div>
+          <div class="stat-row">
+            ${tile(p.avg_title_len + "자", "평균 제목 길이")}
+            ${tile(p.pct_number + "%", "숫자 포함")}
+            ${tile(p.pct_emoji + "%", "이모지 사용")}
+            ${tile(p.pct_bracket + "%", "괄호 [ ] 사용")}
+            ${tile(p.pct_question + "%", "물음표")}
+            ${tile(p.pct_exclaim + "%", "느낌표")}
+          </div>
+          <div class="insight">💡 <b>레퍼런스 요약</b> — 급등 제목의 ${p.pct_number}%가 숫자를,
+            ${p.pct_emoji}%가 이모지를 씁니다. 평균 ${p.avg_title_len}자로 ${p.avg_title_len < 35 ? "짧고 임팩트 있게" : "설명형으로"} 짓는 경향이에요.</div>
+        </div>
+
+        <div class="sa-section">
+          <div class="sa-h">🔑 급등 영상이 쓴 검색 키워드 TOP ${a.top_keywords.length}</div>
+          <div class="sa-sub">태그(snippet.tags) 빈도순 · 클릭하면 복사 — 내 영상 태그에 참고</div>
+          <div class="kw-cloud">${kwCloud || '<span style="color:#b9aed0;">공개된 태그가 적어요</span>'}</div>
+        </div>
+
+        <div class="sa-section">
+          <div class="sa-h">📝 제목에 자주 등장한 단어 TOP ${a.top_title_words.length}</div>
+          <div class="sa-sub">불용어 제거 · 다국어 · 급등 제목의 핵심 어휘</div>
+          <div class="kw-cloud">${words}</div>
+        </div>
+
+        <div class="sa-section">
+          <div class="sa-h">🌍 지역(언어)별 상위 키워드</div>
+          <div class="sa-sub">나라마다 다른 급등 키워드 — 내 타깃 언어권 참고</div>
+          ${regions || '<span style="color:#b9aed0;">지역 데이터 없음</span>'}
+        </div>
+
+        <div class="sa-section">
+          <div class="sa-h">🎬 급등 영상 제목 샘플</div>
+          <div class="sa-sub">실제 급등한 영상들의 제목 (톤·구조 참고)</div>
+          ${samples}
+        </div>
+      `;
+    }
+
+    async function load() {
+      document.getElementById("body").innerHTML = '<div class="result-count">분석 중…</div>';
+      const a = await api(`/api/surge-analysis?fmt=${FMT}`);
+      showDemoBanner(a.demo);
+      render(a);
+    }
+
+    document.querySelectorAll(".sa-tab").forEach(t => {
+      if (t.dataset.fmt === FMT) { document.querySelectorAll(".sa-tab").forEach(x => x.classList.remove("active")); t.classList.add("active"); }
+      t.onclick = () => {
+        document.querySelectorAll(".sa-tab").forEach(x => x.classList.remove("active"));
+        t.classList.add("active"); FMT = t.dataset.fmt; load();
+      };
+    });
+
+    document.getElementById("csvBtn").onclick = () => {
+      if (!DATA) return;
+      const rows = [["키워드", "빈도"], ...DATA.top_keywords.map(k => [k.kw, k.count])];
+      const csv = rows.map(r => r.map(x => `"${String(x).replace(/"/g, '""')}"`).join(",")).join("\n");
+      const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+      const a2 = document.createElement("a"); a2.href = URL.createObjectURL(blob);
+      a2.download = `급등키워드_${FMT}_${new Date().toISOString().slice(0, 10)}.csv`; a2.click();
+      toast("📋 키워드 CSV");
+    };
+
+    load();
+  </script>
+</body>
+</html>

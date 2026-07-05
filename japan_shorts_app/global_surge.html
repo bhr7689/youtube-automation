@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>글로벌 급등 채널 · RefTracker</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/api.js"></script>
+  <style>
+    .gs-tabs{display:flex;gap:8px;margin-bottom:14px;}
+    .gs-tab{padding:8px 18px;border-radius:999px;border:1px solid #e5d9f5;background:#fff;
+      color:#64748b;font-weight:600;cursor:pointer;font-size:14px;}
+    .gs-tab.active{background:#f3e8ff;border-color:#c084fc;color:#7e22ce;}
+    .gs-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px;}
+    .gs-list{display:flex;flex-direction:column;gap:8px;}
+    .gs-row{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #f0ecf7;
+      border-radius:14px;padding:11px 14px;box-shadow:0 2px 8px rgba(120,60,180,.05);}
+    .gs-rank{width:34px;text-align:center;font-weight:800;font-size:16px;color:#a855f7;flex-shrink:0;}
+    .gs-rank.top{color:#e11d68;}
+    .gs-avatar{width:40px;height:40px;border-radius:50%;flex-shrink:0;display:grid;place-items:center;font-size:18px;}
+    .gs-main{flex:1;min-width:0;}
+    .gs-name{font-weight:700;font-size:15px;display:flex;align-items:center;gap:6px;}
+    .gs-name .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .gs-sub{font-size:12px;color:#8a80a5;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .gs-metric{text-align:right;flex-shrink:0;}
+    .gs-vph{font-weight:800;color:#e11d68;font-size:15px;}
+    .gs-vph-l{font-size:10px;color:#b9aed0;}
+    .gs-kw{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;}
+    .gs-kw span{font-size:10px;background:#f3e8ff;color:#6b21a8;padding:1px 6px;border-radius:5px;}
+    .gs-add{flex-shrink:0;}
+    @media(max-width:720px){.gs-metric{display:none;}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <span class="sidebar-badge">쇼치 강사님 시리즈</span>
+        <div class="sidebar-brand">RefTracker</div>
+        <div class="sidebar-brand-sub">레퍼런스 채널 추적</div>
+      </div>
+      <nav class="nav-section">
+        <a href="trend.html" class="nav-item">🔥 트렌드 피드</a>
+        <a href="global_surge.html" class="nav-item active">🌍 글로벌 급등</a>
+        <a href="youtube_discover.html" class="nav-item">🌐 YouTube 발굴</a>
+        <a href="search.html" class="nav-item">🔍 검색</a>
+        <a href="source_finder.html" class="nav-item">🕵️ 원본 소스 찾기</a>
+        <a href="surge_analysis.html" class="nav-item">📊 급등 규칙 분석</a>
+        <a href="channels.html" class="nav-item">📺 레퍼런스 채널</a>
+        <a href="collections.html" class="nav-item">📁 컬렉션</a>
+        <a href="bookmarks.html" class="nav-item">⭐ 북마크</a>
+        <a href="notifications.html" class="nav-item">🔔 알림 <span class="nav-badge">3</span></a>
+        <a href="settings.html" class="nav-item">⚙️ 설정</a>
+      </nav>
+      <div class="nav-divider"></div>
+      <nav class="nav-section">
+        <a href="index.html" class="nav-item-secondary"><span>🏠 포털 메인</span><span>›</span></a>
+        <a href="translator.html" class="nav-item-secondary"><span>🌸 일본어 번역봇</span><span>›</span></a>
+        <a href="editor.html" class="nav-item-secondary"><span>✂️ 자동 컷편집</span><span>›</span></a>
+      </nav>
+      <div class="user-card">
+        <div class="avatar-pill">남정</div>
+        <div class="user-card-info">
+          <div class="user-name">박남정</div>
+          <div class="user-email">parkzz5157@gmail.com</div>
+          <button class="logout">로그아웃</button>
+        </div>
+      </div>
+      <div class="version">v0.4.0</div>
+    </aside>
+
+    <main class="main">
+      <div class="page-header-row">
+        <div>
+          <span class="badge-dot">글로벌 급등</span>
+          <h1 class="page-title"><span class="gradient-text">전 세계 24시간</span> 급등 채널</h1>
+          <p class="page-sub">모든 언어권에서 최근 24시간 폭발한 채널 · 숏폼 TOP 100 · 롱폼 TOP 50 · 급등도 = 시간당 조회(VPH)</p>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn-secondary" id="analyzeBtn">📊 규칙 분석</button>
+          <button class="btn-secondary" id="csvBtn">📋 CSV</button>
+        </div>
+      </div>
+
+      <div class="gs-tabs">
+        <button class="gs-tab active" data-fmt="shorts">📱 숏폼 TOP 100</button>
+        <button class="gs-tab" data-fmt="long">🎬 롱폼 TOP 50</button>
+      </div>
+
+      <div class="gs-toolbar">
+        <div class="result-count" id="cnt">불러오는 중…</div>
+        <div style="font-size:12px;color:#a99fc0;">🌐 US·KR·JP·GB·IN·BR·MX·DE·FR·ID·ES·TW · 3시간 캐시</div>
+      </div>
+
+      <div class="gs-list" id="list"></div>
+    </main>
+  </div>
+
+  <script>
+    let FMT = "shorts";
+    let ROWS = [];
+
+    function row(c) {
+      const v = c.top_video || {};
+      const kw = (v.keywords || []).slice(0, 4).map(k => `<span>${esc(k)}</span>`).join("");
+      const rankCls = c.rank <= 3 ? "gs-rank top" : "gs-rank";
+      return `
+      <div class="gs-row" data-cid="${esc(c.channel_id)}" data-name="${esc(c.channel_title)}">
+        <div class="${rankCls}">${c.rank}</div>
+        <div class="gs-avatar" style="background:${avatarColor(c.channel_title)};">${c.flag || "🌐"}</div>
+        <div class="gs-main">
+          <div class="gs-name"><span class="nm">${esc(c.channel_title)}</span></div>
+          <div class="gs-sub">👤 구독 ${fmtCompact(c.subscribers)} · 대표영상: ${esc(v.title || "")} (${fmtViews(v.views || 0)})</div>
+          ${kw ? `<div class="gs-kw">${kw}</div>` : ""}
+        </div>
+        <div class="gs-metric">
+          <div class="gs-vph">⚡ ${fmtCompact(c.surge_vph)}</div>
+          <div class="gs-vph-l">시간당 조회</div>
+        </div>
+        <div class="gs-add">
+          <button class="btn-add" onclick="addRefChannel(this)">+ 레퍼런스</button>
+        </div>
+      </div>`;
+    }
+
+    async function load() {
+      document.getElementById("cnt").textContent = "불러오는 중…";
+      document.getElementById("list").innerHTML = "";
+      const d = await api(`/api/global-surge?fmt=${FMT}`);
+      showDemoBanner(d.demo);
+      ROWS = d.channels || [];
+      document.getElementById("cnt").innerHTML = `<span style="font-weight:700;color:#1a1a2e;">${ROWS.length}</span>개 채널 (${FMT === "shorts" ? "숏폼" : "롱폼"})`;
+      document.getElementById("list").innerHTML = ROWS.map(row).join("");
+    }
+
+    async function addRefChannel(btn) {
+      const r = btn.closest(".gs-row");
+      const cid = r.dataset.cid, name = r.dataset.name;
+      try {
+        await api("/api/channels", { method: "POST", body: JSON.stringify({ channel_id: cid, title: name, payload: {} }) });
+        btn.outerHTML = '<span style="color:#059669;font-size:12px;font-weight:700;">✓ 등록</span>';
+        toast(`✓ '${name}' 레퍼런스 등록`);
+      } catch (e) { toast("오류: " + e.message); }
+    }
+
+    document.querySelectorAll(".gs-tab").forEach(t => t.onclick = () => {
+      document.querySelectorAll(".gs-tab").forEach(x => x.classList.remove("active"));
+      t.classList.add("active");
+      FMT = t.dataset.fmt;
+      load();
+    });
+
+    document.getElementById("analyzeBtn").onclick = () => location.href = `surge_analysis.html?fmt=${FMT}`;
+
+    document.getElementById("csvBtn").onclick = () => {
+      if (!ROWS.length) { toast("내보낼 채널이 없어요"); return; }
+      const head = ["순위", "채널", "국가", "구독자", "시간당조회VPH", "대표영상", "조회수", "키워드"];
+      const rows = ROWS.map(c => [
+        c.rank, c.channel_title, c.region, c.subscribers, c.surge_vph,
+        (c.top_video || {}).title || "", (c.top_video || {}).views || "",
+        ((c.top_video || {}).keywords || []).join(" | "),
+      ]);
+      const csv = [head, ...rows].map(r => r.map(x => `"${String(x).replace(/"/g, '""')}"`).join(",")).join("\n");
+      const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `글로벌급등_${FMT}_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      toast("📋 CSV 내려받기");
+    };
+
+    load();
+  </script>
+</body>
+</html>

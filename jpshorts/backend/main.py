@@ -178,6 +178,21 @@ def delete_channel(channel_id: str):
     return {"ok": True}
 
 
+# ── 🌍 글로벌 급등 채널 (전 세계 24h) ──────────────────
+
+@app.get("/api/global-surge")
+def global_surge(fmt: str = "shorts", hours: int = 24, top_n: int = 0):
+    if not top_n:
+        top_n = 100 if fmt == "shorts" else 50
+    data = yc.global_surge(fmt=fmt, hours=hours, top_n=top_n)
+    return data
+
+
+@app.get("/api/surge-analysis")
+def surge_analysis(fmt: str = "shorts"):
+    return yc.surge_analysis(fmt=fmt)
+
+
 # ── 📁 컬렉션 (채널 폴더) ───────────────────────────────
 
 class CollectionReq(BaseModel):

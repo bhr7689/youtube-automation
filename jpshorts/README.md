@@ -44,6 +44,8 @@ jpshorts/backend/
 | `POST /api/discover/search` | 검색어 여러 개 → 병합·중복제거·배수 정렬 |
 | `GET /api/search` | 키워드 검색 (기간·형식·개수·언어) |
 | `GET /api/trend` | 🔥 트렌드 피드 — 등록 채널 최근 업로드 → 배수 급등 정렬 |
+| `GET /api/global-surge` | 🌍 전 세계 24h 급등 채널 (숏폼100·롱폼50, VPH 랭킹, 3h 캐시) |
+| `GET /api/surge-analysis` | 📊 급등 채널 키워드·제목 규칙 집계 |
 | `GET/POST/PATCH/DELETE /api/collections` | 📁 컬렉션(채널 폴더) CRUD |
 | `POST/DELETE /api/collections/{id}/channels` | 폴더에 채널 담기/빼기 |
 | `GET/POST/DELETE /api/bookmarks` | ⭐ 북마크 (크로스 화면 공유) |
@@ -56,6 +58,11 @@ jpshorts/backend/
 - ✅ `youtube_discover.html` — 3축 칩 조합 → 검색어 생성 → 발굴 (신생 채널 필터)
 - ✅ `trend.html` — 🔥 트렌드 피드: 등록 레퍼런스 채널 최근 업로드 → 평균 대비 배수 급등 정렬
   (기간/배수/조회수/형식/정렬[배수·조회·최신·좋아요·댓글·시간당]/개수 필터 + CSV)
+- ✅ `global_surge.html` — 🌍 전 세계 24h 급등 채널: 숏폼 TOP 100 · 롱폼 TOP 50 (VPH 랭킹,
+  국가 플래그, 대표영상·키워드, + 레퍼런스 등록, CSV)
+- ✅ `surge_analysis.html` — 📊 급등 규칙 분석: 급등 채널의 검색 키워드 빈도·제목 규칙
+  (숫자/이모지/괄호/물음표 사용률·평균 길이)·지역별 키워드 → 내 영상 레퍼런스
+- ✅ 카드 공통: 실제 키워드(태그)·구독자·VPH 노출 (api.js 전 화면 반영)
 - ✅ `bookmarks.html` — 크로스 화면 북마크 모아보기
 - ✅ `channels.html` — 레퍼런스 채널 관리 + CSV 내보내기
 - ✅ `collections.html` + `collection_detail.html` — 📁 채널 폴더(플랫 v1): 폴더 생성/이름변경/삭제,
