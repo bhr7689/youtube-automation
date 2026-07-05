@@ -34,7 +34,8 @@ def _split_duration(total_ms: int, mn: int, mx: int, rnd: random.Random) -> list
 
 def plan_cuts(manifest: dict, source_duration_sec: float = 600.0,
               seg_min_s: float = 3.0, seg_max_s: float = 5.0,
-              seed: str | None = None) -> dict:
+              seed: str | None = None, loop: bool = True,
+              sfx: bool = True) -> dict:
     rnd = random.Random(seed or manifest.get("job_id", "seed"))
     src_ms = max(int(source_duration_sec * 1000), 6000)
     mn, mx = int(seg_min_s * 1000), int(seg_max_s * 1000)
@@ -84,6 +85,33 @@ def plan_cuts(manifest: dict, source_duration_sec: float = 600.0,
             })
             out_cursor += seg_len
 
+    # 🔁 루프 컷: 마지막 세그먼트를 첫 세그먼트와 같은 원본 구간(다른 변형)으로
+    #   → 영상 끝이 처음 장면으로 돌아가 재시청(루프율)을 만든다.
+    if loop and len(segments) >= 3:
+        first, last = segments[0], segments[-1]
+        last["src_start_ms"] = first["src_start_ms"]
+        last["src_end_ms"] = first["src_start_ms"] + (last["src_end_ms"] - last["src_start_ms"])
+        last["zoom"] = round(min(first["zoom"] + 0.1, 1.3), 2)   # 같은 장면·다른 변형
+        last["mirror"] = not first["mirror"]
+        last["loop_back"] = True
+
+    # 🔊 SFX 플랜: 문장 경계 whoosh + 클라이맥스(60% 지점) sting + 끝 직전 riser.
+    #   실제 효과음 파일은 로열티프리로 사용자 준비 — 여기선 위치·종류만 지정.
+    sfx_events = []
+    if sfx and segments:
+        prev_sentence = None
+        for seg in segments:
+            if prev_sentence is not None and seg["sentence_id"] != prev_sentence:
+                sfx_events.append({"at_ms": seg["out_start_ms"], "type": "whoosh",
+                                   "note": "문장 전환 — 컷 체감·패턴 인터럽트"})
+            prev_sentence = seg["sentence_id"]
+        climax = int(out_cursor * 0.6)
+        sfx_events.append({"at_ms": climax, "type": "sting",
+                           "note": "클라이맥스 — 감정 강조"})
+        sfx_events.append({"at_ms": max(out_cursor - 2500, 0), "type": "riser",
+                           "note": "마무리 직전 고조(루프 진입 준비)"})
+        sfx_events.sort(key=lambda e: e["at_ms"])
+
     plan = {
         "plan_id": "cp_" + time.strftime("%Y%m%d_%H%M%S"),
         "job_id": manifest.get("job_id"),
@@ -97,6 +125,8 @@ def plan_cuts(manifest: dict, source_duration_sec: float = 600.0,
             "no_continuous_5s": True,
             "audio": "원본 최소화 + TTS 내레이션 + BGM + 일본어 자막 burn-in",
         },
+        "loop": loop,
+        "sfx": sfx_events,
         "segments": segments,
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
@@ -156,6 +186,11 @@ def to_capcut_draft(plan: dict, source_name: str = "source.mp4") -> dict:
                  "note": "번역봇 narration job 의 문장별 wav(또는 full.wav)", "volume": 1.0},
                 {"type": "audio", "source": "bgm.mp3", "volume": 0.18,
                  "note": "잔잔한 피아노 BGM (선택)"},
+            ] + [
+                {"type": "audio", "source": f"sfx/{e['type']}.wav", "volume": 0.5,
+                 "target_timerange": {"start": e["at_ms"] * us, "duration": 800 * us},
+                 "note": e["note"]}
+                for e in plan.get("sfx", [])
             ]},
             {"type": "text", "segments": text_clips},
         ],

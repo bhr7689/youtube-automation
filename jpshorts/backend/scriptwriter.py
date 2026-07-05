@@ -71,7 +71,7 @@ def _fmt_ts(sec: float) -> str:
 
 def write_script(source_transcript: list[dict], viral_script: str = "",
                  comments: list[str] | None = None, angle: str = "lesson",
-                 language: str = "ko") -> dict:
+                 language: str = "ko", loop: bool = True) -> dict:
     """시선 비틀기 대본 생성 + 게이트(훅·유사도) 통과 확인.
 
     source_transcript: 원본 롱폼 자막 [{t,dur,text}] — 사실 그라운딩 + 앵커 원천.
@@ -82,7 +82,7 @@ def write_script(source_transcript: list[dict], viral_script: str = "",
     comments = comments or []
 
     script = _generate(source_transcript, viral_script, comments,
-                       angle_desc, rules_block, language)
+                       angle_desc, rules_block, language, loop)
     sim = similarity(script, viral_script) if viral_script else 0.0
     retried = False
     if viral_script and sim > SIM_THRESHOLD:
@@ -90,7 +90,7 @@ def write_script(source_transcript: list[dict], viral_script: str = "",
         retried = True
         script = _generate(source_transcript, viral_script, comments,
                            angle_desc + " (앞의 시도와 전개 순서를 완전히 바꿔서)",
-                           rules_block, language)
+                           rules_block, language, loop)
         sim = similarity(script, viral_script)
 
     sentences = parse_anchored(script)
@@ -112,7 +112,7 @@ def write_script(source_transcript: list[dict], viral_script: str = "",
 
 
 def _generate(transcript, viral_script, comments, angle_desc, rules_block,
-              language) -> str:
+              language, loop: bool = True) -> str:
     src_lines = "\n".join(f"{_fmt_ts(s['t'])} {s['text']}" for s in transcript[:150])
     top_comments = "\n".join(f"- {c}" for c in comments[:10])
     lang_name = {"ko": "한국어", "ja": "일본어", "en": "영어"}.get(language, "한국어")
@@ -129,7 +129,10 @@ def _generate(transcript, viral_script, comments, angle_desc, rules_block,
         "3. 터진 대본과 문장·전개가 겹치지 않게.\n"
         "4. 각 문장 앞에 그 문장이 가리키는 원본 장면의 타임스탬프를 [MM:SS] 로 붙여라.\n"
         "   (원본 자막의 시간에서 고를 것. 모든 문장에 반드시.)\n"
-        "5. 7~12문장, 마지막은 따뜻한 마무리.\n\n[대본]"
+        "5. 7~12문장, 마지막은 따뜻한 마무리.\n"
+        + ("6. 🔁 루프 구조: 마지막 문장이 첫 문장(훅)으로 자연스럽게 이어지게 — "
+           "영상이 다시 시작돼도 어색하지 않아야 재시청이 돈다.\n" if loop else "")
+        + "\n[대본]"
     )
     out = translator._gemini(prompt, temperature=0.8)
     return out if out else _demo_script(transcript, angle_desc)

@@ -254,6 +254,46 @@ def script_to_narration(req: AnchoredTTSReq):
     return manifest
 
 
+# ── 🏷️ 제목·키워드 엔진 ─────────────────────────────────
+
+import title_engine as te
+
+
+class TitleReq(BaseModel):
+    topic: str = ""
+    script_first_line: str = ""
+    genre: str = ""
+    language: str = "ko"
+    n: int = 5
+
+
+@app.post("/api/title/generate")
+def title_generate(req: TitleReq):
+    if not (req.topic or req.script_first_line):
+        raise HTTPException(400, "주제 또는 대본 첫 문장이 필요해요")
+    return te.generate_titles(req.topic or req.script_first_line,
+                              req.script_first_line, req.genre, req.language, req.n)
+
+
+@app.get("/api/title/keywords")
+def title_keywords(genre: str = ""):
+    return te.gather_keywords(genre)
+
+
+class TitleLogReq(BaseModel):
+    video_id: str = ""
+    title: str
+    keywords: list[str] = Field(default_factory=list)
+    views: int = 0
+    note: str = ""
+
+
+@app.post("/api/title/log")
+def title_log(req: TitleLogReq):
+    te.log_title(req.video_id, req.title, req.keywords, req.views, req.note)
+    return {"ok": True}
+
+
 # ── ✂️ 자동 컷편집 (도구 ③) ─────────────────────────────
 
 import cutplanner as cp

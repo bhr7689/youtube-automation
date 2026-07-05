@@ -144,6 +144,7 @@ def collect(genre: str = "heartwarming", target: int = 100,
                 skipped += 1
                 continue
             feats = extract_features(tr, c.get("duration_sec", 0))
+            feats["tags"] = c.get("keywords", [])   # 업로더 태그 = L1 분류 신호 원천
             store.corpus_add({
                 "video_id": vid, "genre": genre, "title": c["title"],
                 "channel_title": c["channel_title"], "views": c["views"],
@@ -253,12 +254,15 @@ def _seed_demo_corpus(genre: str) -> int:
             dur = round(1.5 + len(ln) * 0.05, 2)
             tr.append({"t": round(t, 2), "dur": dur, "text": ln})
             t += dur
+        f = extract_features(tr, int(t))
+        f["tags"] = ["heartwarming", "reunion", "family", "life lesson",
+                     "감동", "shark tank"][: 3 + i % 3]
         store.corpus_add({
             "video_id": vid, "genre": genre, "title": first[:40],
             "channel_title": "Demo Channel", "views": int(mult * 1_000_000),
             "multiplier": mult, "duration_sec": int(t), "lang": "",
             "transcript": tr, "comments": ["got chills at 0:03", "3초에 소름", "泣いた"],
-            "features": extract_features(tr, int(t)),
+            "features": f,
         })
         added += 1
     return added
