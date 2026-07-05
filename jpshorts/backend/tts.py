@@ -123,6 +123,8 @@ def build_job(sentences: list[dict], voice: int = 3, speed: float = 1.2,
         manifest_sentences.append({
             "id": i, "src": s.get("src", ""), "jp": jp,
             "audio": f"audio/{name}", "duration_ms": dur, "pause_after_ms": pause_ms,
+            # 원본 장면 앵커(ms) — scriptwriter 가 붙임. 컷편집이 이 시간을 자름.
+            "src_anchor_ms": s.get("src_anchor_ms"),
         })
 
     manifest = {

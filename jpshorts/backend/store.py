@@ -50,6 +50,20 @@ CREATE TABLE IF NOT EXISTS collection_members (
   added_at      REAL NOT NULL,
   PRIMARY KEY (collection_id, channel_id)
 );
+CREATE TABLE IF NOT EXISTS script_corpus (
+  video_id    TEXT PRIMARY KEY,
+  genre       TEXT NOT NULL DEFAULT '',
+  title       TEXT NOT NULL DEFAULT '',
+  channel_title TEXT NOT NULL DEFAULT '',
+  views       INTEGER NOT NULL DEFAULT 0,
+  multiplier  REAL,
+  duration_sec INTEGER NOT NULL DEFAULT 0,
+  lang        TEXT NOT NULL DEFAULT '',
+  transcript  TEXT NOT NULL DEFAULT '[]',
+  comments    TEXT NOT NULL DEFAULT '[]',
+  features    TEXT NOT NULL DEFAULT '{}',
+  collected_at REAL NOT NULL
+);
 """
 
 
@@ -260,3 +274,54 @@ def cache_put_channels(items: dict[str, dict]) -> None:
                 "ON CONFLICT(channel_id) DO UPDATE SET payload=excluded.payload, fetched_at=excluded.fetched_at",
                 (cid, json.dumps(payload, ensure_ascii=False), now),
             )
+
+
+# ── 📚 대본 코퍼스 (터진 숏폼 대본 수집 → 훅 규칙 학습) ─
+
+def corpus_add(item: dict) -> None:
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO script_corpus(video_id, genre, title, channel_title, views, "
+            "multiplier, duration_sec, lang, transcript, comments, features, collected_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(video_id) DO UPDATE SET views=excluded.views, "
+            "multiplier=excluded.multiplier, transcript=excluded.transcript, "
+            "comments=excluded.comments, features=excluded.features",
+            (item["video_id"], item.get("genre", ""), item.get("title", ""),
+             item.get("channel_title", ""), item.get("views", 0), item.get("multiplier"),
+             item.get("duration_sec", 0), item.get("lang", ""),
+             json.dumps(item.get("transcript", []), ensure_ascii=False),
+             json.dumps(item.get("comments", []), ensure_ascii=False),
+             json.dumps(item.get("features", {}), ensure_ascii=False), time.time()),
+        )
+
+
+def corpus_list(genre: str = "", limit: int = 1000) -> list[dict]:
+    with _conn() as c:
+        if genre:
+            rows = c.execute(
+                "SELECT * FROM script_corpus WHERE genre=? ORDER BY multiplier DESC LIMIT ?",
+                (genre, limit)).fetchall()
+        else:
+            rows = c.execute(
+                "SELECT * FROM script_corpus ORDER BY multiplier DESC LIMIT ?",
+                (limit,)).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        for k in ("transcript", "comments", "features"):
+            try:
+                d[k] = json.loads(d[k])
+            except Exception:
+                d[k] = [] if k != "features" else {}
+        out.append(d)
+    return out
+
+
+def corpus_count(genre: str = "") -> int:
+    with _conn() as c:
+        if genre:
+            r = c.execute("SELECT COUNT(*) n FROM script_corpus WHERE genre=?", (genre,)).fetchone()
+        else:
+            r = c.execute("SELECT COUNT(*) n FROM script_corpus").fetchone()
+    return r["n"]

@@ -47,19 +47,27 @@ def plan_cuts(manifest: dict, source_duration_sec: float = 600.0,
         need = int(s.get("duration_ms", 0)) + int(s.get("pause_after_ms", 0))
         if need <= 0:
             continue
+        anchor = s.get("src_anchor_ms")
+        anchor_cursor = anchor if anchor is not None else None
         for seg_len in _split_duration(need, mn, mx, rnd):
             seg_id += 1
             speed = round(rnd.uniform(0.95, 1.05), 2)
             # 원본에서 이 세그먼트가 쓸 실제 길이(속도 반영)
             src_span = min(int(seg_len * speed), src_ms)
-            # 직전 세그먼트와 원본상 5초+ 떨어진 지점 선택 → 5초 연속 재사용 금지
-            src_start = 0
-            for _ in range(10):
-                cand = rnd.randint(0, max(0, src_ms - src_span))
-                if abs(cand - last_src_start) > 5000:
+            if anchor_cursor is not None:
+                # ⚓ 앵커 모드: 대본 문장이 가리키는 원본 장면부터 순차 진행
+                #   (같은 문장의 후속 세그먼트는 이어지는 구간 → 문장-장면 정확 매칭)
+                src_start = min(max(anchor_cursor, 0), max(0, src_ms - src_span))
+                anchor_cursor = src_start + src_span
+            else:
+                # 앵커 없음(레거시): 직전과 5초+ 이격 랜덤 → 동일 구간 연속 재사용 금지
+                src_start = 0
+                for _ in range(10):
+                    cand = rnd.randint(0, max(0, src_ms - src_span))
+                    if abs(cand - last_src_start) > 5000:
+                        src_start = cand
+                        break
                     src_start = cand
-                    break
-                src_start = cand
             last_src_start = src_start
             segments.append({
                 "seg_id": seg_id,

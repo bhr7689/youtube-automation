@@ -174,6 +174,86 @@ def tts_download(job_id: str):
     return FileResponse(p, filename=f"{job_id}.zip", media_type="application/zip")
 
 
+# ── 📚 대본 코퍼스 + ✍️ 시선 비틀기 대본 작성 ────────────
+
+import script_corpus as sc
+import scriptwriter as sw
+
+
+class CorpusCollectReq(BaseModel):
+    genre: str = "heartwarming"
+    target: int = 100
+    min_multiplier: float = 2.0
+
+
+@app.post("/api/corpus/collect")
+def corpus_collect(req: CorpusCollectReq):
+    return sc.collect(req.genre, req.target, req.min_multiplier)
+
+
+@app.get("/api/corpus/stats")
+def corpus_stats(genre: str = ""):
+    return {"count": store.corpus_count(genre),
+            "items": [{k: i.get(k) for k in
+                       ("video_id", "title", "multiplier", "views")}
+                      for i in store.corpus_list(genre, limit=20)]}
+
+
+@app.post("/api/corpus/learn")
+def corpus_learn(genre: str = ""):
+    return sc.learn_rules(genre)
+
+
+@app.get("/api/corpus/rules")
+def corpus_rules():
+    r = sc.load_rules()
+    return r or {"error": "규칙이 아직 없어요 — 수집 후 학습하세요."}
+
+
+class ScriptReq(BaseModel):
+    source_transcript: list[dict] = Field(default_factory=list)  # [{t,dur,text}]
+    source_video_id: str = ""       # 있으면 자막 자동 수집
+    viral_script: str = ""
+    viral_video_id: str = ""        # 있으면 자막·댓글 자동 수집
+    comments: list[str] = Field(default_factory=list)
+    angle: str = "lesson"
+    language: str = "ko"
+
+
+@app.post("/api/script/write")
+def script_write(req: ScriptReq):
+    transcript = req.source_transcript
+    if not transcript and req.source_video_id:
+        transcript = sc._fetch_transcript(req.source_video_id)
+    if not transcript:
+        raise HTTPException(400, "원본 롱폼 자막이 필요해요 (source_transcript 또는 source_video_id)")
+    viral = req.viral_script
+    comments = req.comments
+    if req.viral_video_id:
+        if not viral:
+            viral = " ".join(s.get("text", "") for s in sc._fetch_transcript(req.viral_video_id))
+        if not comments:
+            comments = sc._fetch_comments(req.viral_video_id)
+    return sw.write_script(transcript, viral, comments, req.angle, req.language)
+
+
+class AnchoredTTSReq(BaseModel):
+    sentences: list[dict] = Field(default_factory=list)  # [{text, src_anchor_ms}]
+    voice: int = 3
+    speed: float = 1.2
+
+
+@app.post("/api/script/to-narration")
+def script_to_narration(req: AnchoredTTSReq):
+    """시선 비틀기 대본(앵커) → 일본어 변환(앵커 유지) → narration job."""
+    if not req.sentences:
+        raise HTTPException(400, "대본 문장이 없어요")
+    ja_sents = sw.translate_anchored(req.sentences)
+    manifest = ttsmod.build_job(ja_sents, voice=req.voice, speed=req.speed)
+    manifest.pop("zip_path", None)
+    return manifest
+
+
 # ── ✂️ 자동 컷편집 (도구 ③) ─────────────────────────────
 
 import cutplanner as cp
