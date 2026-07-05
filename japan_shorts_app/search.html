@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>검색 · RefTracker</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <span class="sidebar-badge">쇼치 강사님 시리즈</span>
+        <div class="sidebar-brand">RefTracker</div>
+        <div class="sidebar-brand-sub">레퍼런스 채널 추적</div>
+      </div>
+      <nav class="nav-section">
+        <a href="trend.html" class="nav-item">🔥 트렌드 피드</a>
+        <a href="youtube_discover.html" class="nav-item">🌐 YouTube 발굴</a>
+        <a href="search.html" class="nav-item active">🔍 검색</a>
+        <a href="source_finder.html" class="nav-item">🕵️ 원본 소스 찾기</a>
+        <a href="channels.html" class="nav-item">📺 레퍼런스 채널</a>
+        <a href="collections.html" class="nav-item">📁 컬렉션</a>
+        <a href="bookmarks.html" class="nav-item">⭐ 북마크</a>
+        <a href="notifications.html" class="nav-item">🔔 알림</a>
+        <a href="settings.html" class="nav-item">⚙️ 설정</a>
+      </nav>
+      <div class="nav-divider"></div>
+      <nav class="nav-section">
+        <a href="index.html" class="nav-item-secondary"><span>🏠 포털 메인</span><span>›</span></a>
+        <a href="translator.html" class="nav-item-secondary"><span>🌸 일본어 번역봇</span><span>›</span></a>
+        <a href="editor.html" class="nav-item-secondary"><span>✂️ 자동 컷편집</span><span>›</span></a>
+      </nav>
+      <div class="user-card">
+        <div class="avatar-pill">남정</div>
+        <div class="user-card-info">
+          <div class="user-name">박남정</div>
+          <div class="user-email">parkzz5157@gmail.com</div>
+          <button class="logout">로그아웃</button>
+        </div>
+      </div>
+      <div class="version">v0.4.0</div>
+    </aside>
+
+    <main class="main">
+      <div class="page-header-row">
+        <div>
+          <span class="badge-dot">검색</span>
+          <h1 class="page-title"><span class="gradient-text">키워드로</span> 영상·채널 발굴</h1>
+          <p class="page-sub">유튜브에서 키워드 검색 · 등록 채널 영상이면 배수도 함께 표시</p>
+        </div>
+      </div>
+
+      <div class="search-box">
+        <span class="icon">🔍</span>
+        <input type="text" id="searchInput" placeholder="키워드 입력 후 Enter — 예: shark tank, science, K-pop" />
+        <button class="btn-primary" style="border-radius: 12px;" onclick="runSearch()">검색</button>
+      </div>
+
+      <div class="recent-row" id="recentRow" style="display:none;">
+        <span class="recent-label">🕐 최근 검색</span>
+        <span id="recentChips"></span>
+        <span class="recent-clear" onclick="clearRecent()">전체 지우기</span>
+      </div>
+
+      <div class="filter-block">
+        <div class="filter-block-title">검색 옵션 <span style="color:var(--c-text-light);font-weight:400;">(변경 시 새로 가져옴)</span></div>
+        <div class="filter-row" id="fPeriod">
+          <span class="filter-label">기간</span>
+          <span class="chip" data-v="1">1일</span>
+          <span class="chip" data-v="3">3일</span>
+          <span class="chip" data-v="7">1주</span>
+          <span class="chip" data-v="30">1달</span>
+          <span class="chip" data-v="90">3달</span>
+          <span class="chip" data-v="180">6달</span>
+          <span class="chip" data-v="365">1년</span>
+          <span class="chip selected" data-v="0">전체</span>
+        </div>
+        <div class="filter-row" id="fOrder">
+          <span class="filter-label">기준</span>
+          <span class="chip selected" data-v="viewCount">🔥 인기 영상</span>
+          <span class="chip" data-v="date">📰 최신 영상</span>
+        </div>
+        <div class="filter-row" id="fType">
+          <span class="filter-label">형식</span>
+          <span class="chip selected" data-v="shorts">🍿 Shorts</span>
+          <span class="chip" data-v="long">🎬 롱폼</span>
+          <span class="chip" data-v="all">전체</span>
+        </div>
+        <div class="filter-row" id="fCount">
+          <span class="filter-label">개수</span>
+          <span class="chip selected" data-v="50">50개</span>
+          <span class="chip" data-v="100">100개</span>
+          <span class="chip" data-v="200">200개</span>
+        </div>
+        <div class="filter-row" id="fLang">
+          <span class="filter-label">언어</span>
+          <span class="chip" data-v="ko">🇰🇷 한국어</span>
+          <span class="chip" data-v="en">🇺🇸 영어</span>
+          <span class="chip" data-v="ja">🇯🇵 일본어</span>
+          <span class="chip" data-v="zh">🇹🇼 중국어</span>
+          <span class="chip" data-v="es">🇪🇸 스페인어</span>
+          <span class="chip" data-v="de">🇩🇪 독일어</span>
+          <span class="chip" data-v="fr">🇫🇷 프랑스어</span>
+          <span class="chip" data-v="pt">🇧🇷 포르투갈어</span>
+          <span class="chip" data-v="hi">🇮🇳 힌디어</span>
+          <span class="chip" data-v="">🌐 전체</span>
+        </div>
+      </div>
+
+      <div class="filter-block">
+        <div class="filter-block-title">결과 내 정렬 / 필터 <span style="color:var(--c-text-light);font-weight:400;">(즉시 적용 — API 재호출 없음)</span></div>
+        <div class="filter-row" id="fSort">
+          <span class="filter-label">정렬</span>
+          <span class="chip selected" data-v="views">조회수</span>
+          <span class="chip" data-v="mult">🔥 급등 배수</span>
+          <span class="chip" data-v="date">📰 최신</span>
+        </div>
+        <div class="filter-row" id="fMult">
+          <span class="filter-label">배수</span>
+          <span class="chip selected" data-v="0">전체</span>
+          <span class="chip" data-v="1">×1↑</span>
+          <span class="chip" data-v="2">×2↑</span>
+          <span class="chip" data-v="3">×3↑</span>
+          <span class="chip" data-v="5">×5↑</span>
+          <span class="chip" data-v="10">×10↑</span>
+          <span class="chip" data-v="30">×30↑</span>
+        </div>
+        <div class="filter-row" id="fViews">
+          <span class="filter-label">조회수</span>
+          <span class="chip selected" data-v="0">전체</span>
+          <span class="chip" data-v="100000">10만↑</span>
+          <span class="chip" data-v="500000">50만↑</span>
+          <span class="chip" data-v="1000000">100만↑</span>
+          <span class="chip" data-v="5000000">500만↑</span>
+          <span class="chip" data-v="10000000">1000만↑</span>
+        </div>
+        <div class="filter-row" id="fAge">
+          <span class="filter-label">🌱 채널 나이</span>
+          <span class="chip selected" data-v="0">전체</span>
+          <span class="chip" data-v="1">1개월↓</span>
+          <span class="chip" data-v="3">3개월↓</span>
+          <span class="chip" data-v="6">6개월↓</span>
+          <span class="chip" data-v="12">12개월↓</span>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <div class="result-count" id="resultCount">키워드를 검색해 보세요</div>
+        <div class="legend-row">
+          <span class="legend-dot registered">✓ 이미 등록된 채널</span>
+          <span class="legend-dot new-add">+ 새로 추가할 채널</span>
+        </div>
+      </div>
+
+      <div class="card-grid" id="grid"></div>
+    </main>
+  </div>
+
+  <script src="assets/api.js"></script>
+  <script>
+    let RESULTS = [];
+
+    async function loadRecent() {
+      try {
+        const { queries } = await api("/api/recent");
+        const row = document.getElementById("recentRow");
+        if (!queries.length) { row.style.display = "none"; return; }
+        row.style.display = "";
+        document.getElementById("recentChips").innerHTML = queries.map(q =>
+          `<span class="recent-chip" onclick="document.getElementById('searchInput').value=${JSON.stringify(q)};runSearch()">${esc(q)}</span>`
+        ).join("");
+      } catch (e) { /* 서버 미기동 시 무시 */ }
+    }
+
+    async function clearRecent() {
+      await api("/api/recent", { method: "DELETE" });
+      loadRecent();
+    }
+
+    async function runSearch() {
+      const q = document.getElementById("searchInput").value.trim();
+      if (!q) { toast("키워드를 입력하세요"); return; }
+      const grid = document.getElementById("grid");
+      grid.innerHTML = '<div class="loading-row"><span class="spinner"></span>유튜브에서 가져오는 중…</div>';
+      document.getElementById("resultCount").textContent = "검색 중…";
+      const params = new URLSearchParams({
+        q,
+        video_type: selectedValue(document.getElementById("fType")) || "all",
+        order: selectedValue(document.getElementById("fOrder")) || "viewCount",
+        max_results: selectedValue(document.getElementById("fCount")) || "50",
+        period_days: selectedValue(document.getElementById("fPeriod")) || "0",
+        lang: selectedValue(document.getElementById("fLang")) || "",
+      });
+      try {
+        const data = await api("/api/search?" + params);
+        RESULTS = data.cards;
+        showDemoBanner(data.demo);
+        applyFilters();
+        loadRecent();
+      } catch (e) {
+        grid.innerHTML = `<div class="loading-row">⚠️ ${esc(e.message)} — 백엔드 서버가 켜져 있는지 확인하세요</div>`;
+      }
+    }
+
+    function applyFilters() {
+      const cards = applyLocalFilter(RESULTS, {
+        sort: selectedValue(document.getElementById("fSort")),
+        minMult: +(selectedValue(document.getElementById("fMult")) || 0),
+        minViews: +(selectedValue(document.getElementById("fViews")) || 0),
+        maxAgeMonths: +(selectedValue(document.getElementById("fAge")) || 0),
+      });
+      renderGrid(document.getElementById("grid"), cards);
+      document.getElementById("resultCount").textContent = `${cards.length}개 표시중 (가져온 ${RESULTS.length}개 중)`;
+    }
+
+    /* 칩 그룹: 검색 옵션 → 재검색 / 결과 필터 → 즉시 적용 */
+    ["fPeriod", "fOrder", "fType", "fCount", "fLang"].forEach(id =>
+      chipGroup(document.getElementById(id), { onChange: () => RESULTS.length && runSearch() }));
+    ["fSort", "fMult", "fViews", "fAge"].forEach(id =>
+      chipGroup(document.getElementById(id), { onChange: applyFilters }));
+
+    document.getElementById("searchInput").addEventListener("keydown", e => {
+      if (e.key === "Enter") runSearch();
+    });
+
+    /* URL 파라미터 q= 로 진입 시 자동 검색 (📰 유사 버튼 연동) */
+    (function () {
+      const q = new URLSearchParams(location.search).get("q");
+      if (q) { document.getElementById("searchInput").value = q; runSearch(); }
+      loadRecent();
+    })();
+  </script>
+</body>
+</html>

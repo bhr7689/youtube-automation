@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>알림 · RefTracker</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <span class="sidebar-badge">쇼치 강사님 시리즈</span>
+        <div class="sidebar-brand">RefTracker</div>
+        <div class="sidebar-brand-sub">레퍼런스 채널 추적</div>
+      </div>
+      <nav class="nav-section">
+        <a href="trend.html" class="nav-item">🔥 트렌드 피드</a>
+        <a href="youtube_discover.html" class="nav-item">🌐 YouTube 발굴</a>
+        <a href="search.html" class="nav-item">🔍 검색</a>
+        <a href="source_finder.html" class="nav-item">🕵️ 원본 소스 찾기</a>
+        <a href="channels.html" class="nav-item">📺 레퍼런스 채널</a>
+        <a href="collections.html" class="nav-item">📁 컬렉션</a>
+        <a href="bookmarks.html" class="nav-item">⭐ 북마크</a>
+        <a href="notifications.html" class="nav-item active">🔔 알림 <span class="nav-badge">3</span></a>
+        <a href="settings.html" class="nav-item">⚙️ 설정</a>
+      </nav>
+      <div class="nav-divider"></div>
+      <nav class="nav-section">
+        <a href="index.html" class="nav-item-secondary"><span>🏠 포털 메인</span><span>›</span></a>
+        <a href="translator.html" class="nav-item-secondary"><span>🌸 일본어 번역봇</span><span>›</span></a>
+        <a href="editor.html" class="nav-item-secondary"><span>✂️ 자동 컷편집</span><span>›</span></a>
+      </nav>
+      <div class="user-card">
+        <div class="avatar-pill">남정</div>
+        <div class="user-card-info">
+          <div class="user-name">박남정</div>
+          <div class="user-email">parkzz5157@gmail.com</div>
+          <button class="logout">로그아웃</button>
+        </div>
+      </div>
+      <div class="version">v0.3.0</div>
+    </aside>
+
+    <main class="main">
+      <div class="page-header-row">
+        <div>
+          <span class="badge-dot">알림</span>
+          <h1 class="page-title"><span class="gradient-text">급등 알림</span></h1>
+          <p class="page-sub">레퍼런스 채널 영상이 조회수 임계값을 넘으면 바로 알림 · 현재 기준 <strong>50만 조회수 ↑</strong> &nbsp;·&nbsp; <a href="settings.html" style="color:var(--c-primary-dark);">설정 바꾸기 →</a></p>
+        </div>
+      </div>
+
+      <div class="notif-filter-row">
+        <span class="chip selected">전체 (7)</span>
+        <span class="chip">안 읽음 (3)</span>
+        <span class="chip">오늘</span>
+        <span class="chip">이번 주</span>
+        <span class="notif-mark-read">✓ 모두 읽음으로 표시</span>
+      </div>
+
+      <div class="alert-list">
+        <!-- 안 읽음 알림 1 -->
+        <div class="alert-card unread">
+          <div class="alert-icon-circle">🔥</div>
+          <div class="alert-thumb-mini">
+            <img src="https://picsum.photos/seed/n1/200/110" alt="">
+            <span class="duration-tag">0:53</span>
+          </div>
+          <div class="alert-body">
+            <div class="alert-channel">📺 <strong>Pitch Reality</strong> · 🇺🇸 영어</div>
+            <div class="alert-message"><span class="threshold">50만 조회수 돌파!</span> &nbsp;배수 ×3.5 &nbsp;시간당 6.4만</div>
+            <div class="alert-title">"Smartest hair invention on Shark Tank ⁉️…"</div>
+          </div>
+          <div class="alert-right">
+            <div class="alert-time">방금 전</div>
+            <div class="alert-actions">
+              <button class="primary">패널 보기</button>
+              <button>🌸 번역</button>
+              <button>✂️ 컷편집</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 안 읽음 알림 2 -->
+        <div class="alert-card unread">
+          <div class="alert-icon-circle">🔥</div>
+          <div class="alert-thumb-mini">
+            <img src="https://picsum.photos/seed/n2/200/110" alt="">
+            <span class="duration-tag">0:45</span>
+          </div>
+          <div class="alert-body">
+            <div class="alert-channel">📺 <strong>BIZZTOK</strong> · 🇺🇸 영어</div>
+            <div class="alert-message"><span class="threshold">50만 조회수 돌파!</span> &nbsp;배수 ×7.2 &nbsp;시간당 4.1만</div>
+            <div class="alert-title">"All women will buy this 🤩‼️ #sharktank"</div>
+          </div>
+          <div class="alert-right">
+            <div class="alert-time">17분 전</div>
+            <div class="alert-actions">
+              <button class="primary">패널 보기</button>
+              <button>🌸 번역</button>
+              <button>✂️ 컷편집</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 안 읽음 알림 3 -->
+        <div class="alert-card unread">
+          <div class="alert-icon-circle">🚀</div>
+          <div class="alert-thumb-mini">
+            <img src="https://picsum.photos/seed/n3/200/110" alt="">
+            <span class="duration-tag">0:46</span>
+          </div>
+          <div class="alert-body">
+            <div class="alert-channel">📺 <strong>Wealth Opti…</strong> · 🇺🇸 영어</div>
+            <div class="alert-message"><span class="threshold">100만 조회수 돌파!</span> &nbsp;배수 ×4.1 &nbsp;시간당 2.8만</div>
+            <div class="alert-title">"Chiller EVER Seen on…"</div>
+          </div>
+          <div class="alert-right">
+            <div class="alert-time">1시간 전</div>
+            <div class="alert-actions">
+              <button class="primary">패널 보기</button>
+              <button>🌸 번역</button>
+              <button>✂️ 컷편집</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 읽음 알림 -->
+        <div class="alert-card">
+          <div class="alert-icon-circle">🔥</div>
+          <div class="alert-thumb-mini">
+            <img src="https://picsum.photos/seed/n4/200/110" alt="">
+            <span class="duration-tag">0:39</span>
+          </div>
+          <div class="alert-body">
+            <div class="alert-channel">📺 <strong>Enticible</strong> · 🇺🇸 영어</div>
+            <div class="alert-message">50만 조회수 돌파! &nbsp;배수 ×5.1 &nbsp;시간당 1.2만</div>
+            <div class="alert-title">"The Gym Product That Changes Workouts…"</div>
+          </div>
+          <div class="alert-right">
+            <div class="alert-time">3시간 전</div>
+            <div class="alert-actions">
+              <button>패널 보기</button>
+              <button>🌸 번역</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="alert-card">
+          <div class="alert-icon-circle cool">📈</div>
+          <div class="alert-thumb-mini">
+            <img src="https://picsum.photos/seed/n5/200/110" alt="">
+            <span class="duration-tag">0:24</span>
+          </div>
+          <div class="alert-body">
+            <div class="alert-channel">📺 <strong>Growasweal…</strong> · 🇺🇸 영어</div>
+            <div class="alert-message">500만 조회수 돌파! &nbsp;배수 ×15.5 &nbsp;시간당 7.8만</div>
+            <div class="alert-title">"This is how trump unpredictable in thes…"</div>
+          </div>
+          <div class="alert-right">
+            <div class="alert-time">어제 14:32</div>
+            <div class="alert-actions">
+              <button>패널 보기</button>
+              <button>🌸 번역</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="alert-card">
+          <div class="alert-icon-circle">🔥</div>
+          <div class="alert-thumb-mini">
+            <img src="https://picsum.photos/seed/n6/200/110" alt="">
+            <span class="duration-tag">0:42</span>
+          </div>
+          <div class="alert-body">
+            <div class="alert-channel">📺 <strong>Pitch Reality</strong> · 🇺🇸 영어</div>
+            <div class="alert-message">50만 조회수 돌파! &nbsp;배수 ×1.5 &nbsp;시간당 0.9만</div>
+            <div class="alert-title">"Kevin O'Leary Roasts Pitch For Going Nowhere"</div>
+          </div>
+          <div class="alert-right">
+            <div class="alert-time">어제 09:15</div>
+            <div class="alert-actions">
+              <button>패널 보기</button>
+              <button>🌸 번역</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="alert-card">
+          <div class="alert-icon-circle">🔥</div>
+          <div class="alert-thumb-mini">
+            <img src="https://picsum.photos/seed/n7/200/110" alt="">
+            <span class="duration-tag">0:50</span>
+          </div>
+          <div class="alert-body">
+            <div class="alert-channel">📺 <strong>Insider's Den</strong> · 🇺🇸 영어</div>
+            <div class="alert-message">50만 조회수 돌파! &nbsp;배수 ×1.7 &nbsp;시간당 0.6만</div>
+            <div class="alert-title">"Every Gym Rat Needs To See THIS | Shark…"</div>
+          </div>
+          <div class="alert-right">
+            <div class="alert-time">2일 전</div>
+            <div class="alert-actions">
+              <button>패널 보기</button>
+              <button>🌸 번역</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

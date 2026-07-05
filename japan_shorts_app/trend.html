@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>트렌드 피드 · RefTracker</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <span class="sidebar-badge">쇼치 강사님 시리즈</span>
+        <div class="sidebar-brand">RefTracker</div>
+        <div class="sidebar-brand-sub">레퍼런스 채널 추적</div>
+      </div>
+      <nav class="nav-section">
+        <a href="trend.html" class="nav-item active">🔥 트렌드 피드</a>
+        <a href="youtube_discover.html" class="nav-item">🌐 YouTube 발굴</a>
+        <a href="search.html" class="nav-item">🔍 검색</a>
+        <a href="source_finder.html" class="nav-item">🕵️ 원본 소스 찾기</a>
+        <a href="channels.html" class="nav-item">📺 레퍼런스 채널</a>
+        <a href="collections.html" class="nav-item">📁 컬렉션</a>
+        <a href="bookmarks.html" class="nav-item">⭐ 북마크</a>
+        <a href="notifications.html" class="nav-item">🔔 알림 <span class="nav-badge">3</span></a>
+        <a href="settings.html" class="nav-item">⚙️ 설정</a>
+      </nav>
+      <div class="nav-divider"></div>
+      <nav class="nav-section">
+        <a href="index.html" class="nav-item-secondary"><span>🏠 포털 메인</span><span>›</span></a>
+        <a href="translator.html" class="nav-item-secondary"><span>🌸 일본어 번역봇</span><span>›</span></a>
+        <a href="editor.html" class="nav-item-secondary"><span>✂️ 자동 컷편집</span><span>›</span></a>
+      </nav>
+      <div class="user-card">
+        <div class="avatar-pill">남정</div>
+        <div class="user-card-info">
+          <div class="user-name">박남정</div>
+          <div class="user-email">parkzz5157@gmail.com</div>
+          <button class="logout">로그아웃</button>
+        </div>
+      </div>
+      <div class="version">v0.3.0</div>
+    </aside>
+
+    <main class="main">
+      <div class="page-header-row">
+        <div>
+          <span class="badge-dot">트렌드 피드</span>
+          <h1 class="page-title"><span class="gradient-text">급등 영상</span> 한 번에</h1>
+          <p class="page-sub">등록된 레퍼런스 채널의 평균 대비 폭발한 영상 모음</p>
+        </div>
+        <div>
+          <button class="btn-secondary">📋 CSV</button>
+        </div>
+      </div>
+
+      <div class="filter-block">
+        <div class="filter-row">
+          <span class="filter-label">기간</span>
+          <span class="chip">1일</span>
+          <span class="chip">3일</span>
+          <span class="chip selected">1주</span>
+          <span class="chip">1달</span>
+          <span class="chip">3달</span>
+          <span class="chip">6달</span>
+          <span class="chip">1년</span>
+          <span class="chip">전체</span>
+        </div>
+        <div class="filter-row">
+          <span class="filter-label">배수</span>
+          <span class="chip selected">전체</span>
+          <span class="chip">×1↑(평균↑)</span>
+          <span class="chip">×2↑</span>
+          <span class="chip">×3↑</span>
+          <span class="chip">×5↑</span>
+          <span class="chip">×10↑</span>
+          <span class="chip">×30↑</span>
+        </div>
+        <div class="filter-row">
+          <span class="filter-label">조회수</span>
+          <span class="chip selected">전체</span>
+          <span class="chip">10만↑</span>
+          <span class="chip">50만↑</span>
+          <span class="chip">100만↑</span>
+          <span class="chip">500만↑</span>
+          <span class="chip">1000만↑</span>
+        </div>
+        <div class="filter-row">
+          <span class="filter-label">형식</span>
+          <span class="chip selected">전체</span>
+          <span class="chip">숏폼</span>
+          <span class="chip">롱폼</span>
+        </div>
+        <div class="filter-row">
+          <span class="filter-label">정렬</span>
+          <span class="chip">🔥 급등 배수</span>
+          <span class="chip selected">👁️ 조회수</span>
+          <span class="chip">📰 최신순</span>
+          <span class="chip">❤️ 좋아요</span>
+          <span class="chip">💬 댓글</span>
+          <span class="chip">⚡ 시간당 조회</span>
+        </div>
+        <div class="filter-row">
+          <span class="filter-label">개수</span>
+          <span class="chip selected">200개</span>
+          <span class="chip">300개</span>
+          <span class="chip">500개</span>
+          <span class="chip">1000개</span>
+        </div>
+        <div class="filter-link">· 채널 속성 필터</div>
+      </div>
+
+      <div class="result-count">55개 영상</div>
+
+      <div class="card-grid">
+        <!-- Row 1 (from screenshot) -->
+        <a href="video_detail.html" class="video-card" style="text-decoration:none;color:inherit;">
+          <div class="video-thumb">
+            <img src="https://picsum.photos/seed/tf1/400/225" alt="">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="multiplier-tag">×5.1</span>
+            <span class="duration-tag">0:39</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">The Gym Product That Changes Workouts…</div>
+            <div class="video-channel">
+              <div class="channel-avatar" style="background:#1f2937;"></div>
+              <span class="channel-name">Enticible</span>
+              <span class="channel-card-lang">🇺🇸 영어</span>
+            </div>
+            <div class="video-stats">
+              <span>조회 892.0만</span>
+              <span>4일 전</span>
+            </div>
+            <div class="video-actions">
+              <div class="action-row">
+                <span class="action-chip">📜 자막</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">⚪ 원본</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">📰 유사</span>
+              </div>
+              <div class="action-row">
+                <span class="action-chip">💬 댓글</span>
+                <span class="action-chip">🔗 링크</span>
+              </div>
+            </div>
+          </div>
+        </a>
+
+        <a href="video_detail.html" class="video-card" style="text-decoration:none;color:inherit;">
+          <div class="video-thumb">
+            <img src="https://picsum.photos/seed/tf2/400/225" alt="">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="multiplier-tag">×15.5</span>
+            <span class="duration-tag">0:24</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">This is how trump unpredictable in thes…</div>
+            <div class="video-channel">
+              <div class="channel-avatar" style="background:#7c2d12;"></div>
+              <span class="channel-name">Growasweal…</span>
+              <span class="channel-card-lang">🇺🇸 영어</span>
+            </div>
+            <div class="video-stats">
+              <span>조회 523.9만</span>
+              <span>1주 전</span>
+            </div>
+            <div class="video-actions">
+              <div class="action-row">
+                <span class="action-chip">📜 자막</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">⚪ 원본</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">📰 유사</span>
+              </div>
+              <div class="action-row">
+                <span class="action-chip">💬 댓글</span>
+                <span class="action-chip">🔗 링크</span>
+              </div>
+            </div>
+          </div>
+        </a>
+
+        <a href="video_detail.html" class="video-card" style="text-decoration:none;color:inherit;">
+          <div class="video-thumb">
+            <img src="https://picsum.photos/seed/tf3/400/225" alt="">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="duration-tag">0:45</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">They Tricked Everyone With Fake Fried…</div>
+            <div class="video-channel">
+              <div class="channel-avatar" style="background:#0891b2;"></div>
+              <span class="channel-name">Enticible</span>
+              <span class="channel-card-lang">🇺🇸 영어</span>
+            </div>
+            <div class="video-stats">
+              <span>조회 12.4만</span>
+              <span>6일 전</span>
+            </div>
+            <div class="video-actions">
+              <div class="action-row">
+                <span class="action-chip">📜 자막</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">⚪ 원본</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">📰 유사</span>
+              </div>
+              <div class="action-row">
+                <span class="action-chip">💬 댓글</span>
+                <span class="action-chip">🔗 링크</span>
+              </div>
+            </div>
+          </div>
+        </a>
+
+        <a href="video_detail.html" class="video-card" style="text-decoration:none;color:inherit;">
+          <div class="video-thumb">
+            <img src="https://picsum.photos/seed/tf4/400/225" alt="">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="multiplier-tag">×1.7</span>
+            <span class="duration-tag">0:50</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">Every Gym Rat Needs To See THIS | Shark…</div>
+            <div class="video-channel">
+              <div class="channel-avatar" style="background:#0e7490;"></div>
+              <span class="channel-name">Insider's Den</span>
+              <span class="channel-card-lang">🇺🇸 영어</span>
+            </div>
+            <div class="video-stats">
+              <span>조회 9.4만</span>
+              <span>1주 전</span>
+            </div>
+            <div class="video-actions">
+              <div class="action-row">
+                <span class="action-chip">📜 자막</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">⚪ 원본</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">📰 유사</span>
+              </div>
+              <div class="action-row">
+                <span class="action-chip">💬 댓글</span>
+                <span class="action-chip">🔗 링크</span>
+              </div>
+            </div>
+          </div>
+        </a>
+
+        <a href="video_detail.html" class="video-card" style="text-decoration:none;color:inherit;">
+          <div class="video-thumb">
+            <img src="https://picsum.photos/seed/tf5/400/225" alt="">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="duration-tag">0:48</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">This INDIAN Entrepreneur…</div>
+            <div class="video-channel">
+              <div class="channel-avatar" style="background:#ca8a04;"></div>
+              <span class="channel-name">Wealth Opti…</span>
+              <span class="channel-card-lang">🇺🇸 영어</span>
+            </div>
+            <div class="video-stats">
+              <span>조회 8.5만</span>
+              <span>4일 전</span>
+            </div>
+            <div class="video-actions">
+              <div class="action-row">
+                <span class="action-chip">📜 자막</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">⚪ 원본</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">📰 유사</span>
+              </div>
+              <div class="action-row">
+                <span class="action-chip">💬 댓글</span>
+                <span class="action-chip">🔗 링크</span>
+              </div>
+            </div>
+          </div>
+        </a>
+
+        <!-- Row 2 (continuing the trend feed) -->
+        <a href="video_detail.html" class="video-card" style="text-decoration:none;color:inherit;">
+          <div class="video-thumb">
+            <img src="https://picsum.photos/seed/tf6/400/225" alt="">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="multiplier-tag">×1.5</span>
+            <span class="duration-tag">0:42</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">Kevin O'Leary Roasts Pitch For Going Nowhere</div>
+            <div class="video-channel">
+              <div class="channel-avatar" style="background:#9d174d;"></div>
+              <span class="channel-name">Pitch Reality</span>
+              <span class="channel-card-lang">🇺🇸 영어</span>
+            </div>
+            <div class="video-stats">
+              <span>조회 6.8만</span>
+              <span>5일 전</span>
+            </div>
+            <div class="video-actions">
+              <div class="action-row">
+                <span class="action-chip">📜 자막</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">⚪ 원본</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">📰 유사</span>
+              </div>
+              <div class="action-row">
+                <span class="action-chip">💬 댓글</span>
+                <span class="action-chip">🔗 링크</span>
+              </div>
+            </div>
+          </div>
+        </a>
+
+        <a href="video_detail.html" class="video-card" style="text-decoration:none;color:inherit;">
+          <div class="video-thumb">
+            <img src="https://picsum.photos/seed/tf7/400/225" alt="">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="multiplier-tag">×3.2</span>
+            <span class="duration-tag">0:33</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">Record-Breaking Product Just Got Funded</div>
+            <div class="video-channel">
+              <div class="channel-avatar" style="background:#0369a1;"></div>
+              <span class="channel-name">BIZZTOK</span>
+              <span class="channel-card-lang">🇺🇸 영어</span>
+            </div>
+            <div class="video-stats">
+              <span>조회 4.5만</span>
+              <span>3일 전</span>
+            </div>
+            <div class="video-actions">
+              <div class="action-row">
+                <span class="action-chip">📜 자막</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">⚪ 원본</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">📰 유사</span>
+              </div>
+              <div class="action-row">
+                <span class="action-chip">💬 댓글</span>
+                <span class="action-chip">🔗 링크</span>
+              </div>
+            </div>
+          </div>
+        </a>
+
+        <a href="video_detail.html" class="video-card" style="text-decoration:none;color:inherit;">
+          <div class="video-thumb">
+            <img src="https://picsum.photos/seed/tf8/400/225" alt="">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="duration-tag">0:46</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">The Pitch That Made All Investors Speechless</div>
+            <div class="video-channel">
+              <div class="channel-avatar" style="background:#1e40af;"></div>
+              <span class="channel-name">Insider's Den</span>
+              <span class="channel-card-lang">🇺🇸 영어</span>
+            </div>
+            <div class="video-stats">
+              <span>조회 3.8만</span>
+              <span>2주 전</span>
+            </div>
+            <div class="video-actions">
+              <div class="action-row">
+                <span class="action-chip">📜 자막</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">⚪ 원본</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">📰 유사</span>
+              </div>
+              <div class="action-row">
+                <span class="action-chip">💬 댓글</span>
+                <span class="action-chip">🔗 링크</span>
+              </div>
+            </div>
+          </div>
+        </a>
+
+        <a href="video_detail.html" class="video-card" style="text-decoration:none;color:inherit;">
+          <div class="video-thumb">
+            <img src="https://picsum.photos/seed/tf9/400/225" alt="">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="multiplier-tag">×2.8</span>
+            <span class="duration-tag">0:39</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">Everyone Is Addicted To This Snack</div>
+            <div class="video-channel">
+              <div class="channel-avatar" style="background:#b91c1c;"></div>
+              <span class="channel-name">Chefs Vault</span>
+              <span class="channel-card-lang">🇺🇸 영어</span>
+            </div>
+            <div class="video-stats">
+              <span>조회 3.2만</span>
+              <span>1주 전</span>
+            </div>
+            <div class="video-actions">
+              <div class="action-row">
+                <span class="action-chip">📜 자막</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">⚪ 원본</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">📰 유사</span>
+              </div>
+              <div class="action-row">
+                <span class="action-chip">💬 댓글</span>
+                <span class="action-chip">🔗 링크</span>
+              </div>
+            </div>
+          </div>
+        </a>
+
+        <a href="video_detail.html" class="video-card" style="text-decoration:none;color:inherit;">
+          <div class="video-thumb">
+            <img src="https://picsum.photos/seed/tf10/400/225" alt="">
+            <span class="shorts-tag">SHORTS</span>
+            <span class="multiplier-tag">×1.9</span>
+            <span class="duration-tag">0:51</span>
+            <div class="thumb-bookmark">☆</div>
+          </div>
+          <div class="video-body">
+            <div class="video-title">Robert Roasts Contestant For 30 Seconds Straight</div>
+            <div class="video-channel">
+              <div class="channel-avatar" style="background:#312e81;"></div>
+              <span class="channel-name">TuxMotivation</span>
+              <span class="channel-card-lang">🇺🇸 영어</span>
+            </div>
+            <div class="video-stats">
+              <span>조회 2.4만</span>
+              <span>4일 전</span>
+            </div>
+            <div class="video-actions">
+              <div class="action-row">
+                <span class="action-chip">📜 자막</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">⚪ 원본</span>
+                <span class="action-dot">·</span>
+                <span class="action-chip">📰 유사</span>
+              </div>
+              <div class="action-row">
+                <span class="action-chip">💬 댓글</span>
+                <span class="action-chip">🔗 링크</span>
+              </div>
+            </div>
+          </div>
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <!-- 자막 불러오기 모달 -->
+  <div class="modal-backdrop" id="subtitleModal">
+    <div class="modal modal-subtitle">
+      <button class="modal-close" onclick="closeSubtitleModal()">×</button>
+      <div class="subtitle-modal-title">📜 자막</div>
+      <div class="subtitle-modal-video" id="subtitleVideoTitle">The Gym Product That Changes Workouts Forever 😱</div>
+
+      <div class="subtitle-source-tabs">
+        <span class="chip selected">원본 자막</span>
+        <span class="chip">🇰🇷 한국어 (Claude)</span>
+        <span class="chip">🇺🇸 영어 (Claude)</span>
+        <span class="sep">|</span>
+        <span class="chip">🎤 Whisper</span>
+        <span class="chip">🎤 Whisper (다국어)</span>
+      </div>
+
+      <div class="subtitle-meta-row">
+        <span class="subtitle-meta-lang">언어: <strong>en</strong> (자동 생성)</span>
+        <span class="subtitle-meta-count">20개 세그먼트</span>
+      </div>
+
+      <div class="subtitle-search-row">
+        <input type="text" class="subtitle-search-input" placeholder="자막 내에서 검색…" />
+        <button class="btn-secondary">📋 전체 복사</button>
+        <a href="translator.html?state=initial" class="btn-primary" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center;">🌸 번역봇으로 보내기</a>
+      </div>
+
+      <div class="subtitle-content" id="subtitleContent">
+        <div class="subtitle-loading-state">자막 불러오는 중...</div>
+      </div>
+
+      <div class="subtitle-hint-bottom">💡 어떤 언어 자막이든 YouTube 내장 번역으로 한국어/영어 변환 가능 · 쿼터 무료</div>
+
+      <div class="subtitle-actions" id="subtitleActions" style="display:none;"></div>
+    </div>
+  </div>
+
+  <script>
+    function openSubtitleModal(title) {
+      document.getElementById('subtitleVideoTitle').textContent = title || 'The Gym Product That Changes Workouts Forever 😱';
+      document.getElementById('subtitleContent').innerHTML = '<div class="subtitle-loading-state">자막 불러오는 중...</div>';
+      document.getElementById('subtitleActions').style.display = 'none';
+      document.getElementById('subtitleModal').classList.add('open');
+    }
+    function closeSubtitleModal() {
+      document.getElementById('subtitleModal').classList.remove('open');
+    }
+    function showLoadedSubtitle() {
+      const lines = [
+        ['00:00', '자막 한 줄이 여기에 보입니다.'],
+        ['00:03', '실제 영상의 자막을 자동으로 가져와 시간 코드와 함께 보여줘요.'],
+        ['00:07', '한 줄씩 체크해서 골라낼 수 있고, 전체를 한꺼번에 일본어 번역봇으로 보낼 수도 있어요.'],
+        ['00:12', '원본 자막이 없으면 Whisper 음성 인식으로 자동 생성됩니다.'],
+        ['00:18', '여러 언어 영상도 한국어/영어 두 가지로 동시에 받아볼 수 있고요.'],
+        ['00:24', '시니어 친화 어휘로 번역하는 옵션은 다음 단계(번역봇)에서 고를 수 있어요.'],
+        ['00:30', '한 줄씩 묶음 선택해 인용·컷편집 구간 마크도 됩니다.'],
+        ['00:38', '스크롤하면 영상 끝까지 한눈에 흐름이 보입니다.'],
+        ['00:45', '감동 구간이 어디인지 댓글 반응과 같이 보고 결정할 수 있어요.'],
+        ['00:50', '이 줄이 마지막 자막입니다.']
+      ];
+      let html = '<div class="subtitle-box">';
+      for (const [t, txt] of lines) {
+        html += '<div class="subtitle-line"><span class="subtitle-time">' + t + '</span><span class="subtitle-text">' + txt + '</span></div>';
+      }
+      html += '</div>';
+      document.getElementById('subtitleContent').innerHTML = html;
+      document.getElementById('subtitleActions').style.display = 'flex';
+    }
+    // 자막 chip 클릭 → 모달 열기 (카드 링크 막기)
+    document.addEventListener('click', function (e) {
+      const t = e.target;
+      if (t.classList && t.classList.contains('action-chip') && t.textContent.indexOf('자막') !== -1) {
+        e.preventDefault();
+        e.stopPropagation();
+        const card = t.closest('.video-card');
+        const title = card ? card.querySelector('.video-title').textContent.trim() : '';
+        openSubtitleModal(title);
+        return false;
+      }
+      if (t.id === 'subtitleModal') closeSubtitleModal();
+    });
+    // URL 파라미터로 모달 상태 미리 보기
+    (function () {
+      const q = new URLSearchParams(location.search);
+      if (q.get('subtitle') === 'loading') openSubtitleModal();
+      if (q.get('subtitle') === 'loaded') { openSubtitleModal(); setTimeout(showLoadedSubtitle, 50); }
+    })();
+  </script>
+</body>
+</html>

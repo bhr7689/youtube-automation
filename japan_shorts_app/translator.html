@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🌸 쇼치 강사의 일본어 자동번역 프로그램</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <div class="translator-app">
+    <!-- 상단 툴바 -->
+    <div class="translator-toolbar">
+      <div class="tb-item"><span class="tb-icon">🏠</span><span>홈</span></div>
+      <div class="tb-item"><span class="tb-icon">🕐</span><span>히스토리</span></div>
+      <div class="tb-item"><span class="tb-icon">📋</span><span>참고 대본</span></div>
+      <div class="tb-item"><span class="tb-icon">🗑️</span><span>초기화</span></div>
+      <div class="tb-title">🌸 쇼치 강사의 일본어 자동번역 프로그램</div>
+      <div class="tb-item"><span class="tb-icon">🩺</span><span>진단</span></div>
+      <div class="tb-item"><span class="tb-icon">🛟</span><span>도움말</span></div>
+      <div class="tb-item"><span class="tb-icon">📥</span><span>백업/복원</span></div>
+      <div class="tb-item"><span class="tb-icon">✂️</span><span>컷편집</span></div>
+      <div class="tb-item"><span class="tb-icon">🔑</span><span>API 키</span></div>
+      <div class="tb-spacer"></div>
+      <div class="tb-user">
+        <div class="avatar-pill">남정</div>
+        <span style="font-weight:500;">박남정</span>
+      </div>
+    </div>
+
+    <!-- 알림 배너 -->
+    <div class="translator-banner-row">
+      <div class="translator-banner">🌸 레퍼런스 자막을 가져왔어요 (555자). 곧바로 "쇼츠 만들기" 눌러보세요.</div>
+    </div>
+
+    <!-- 4 컬럼 -->
+    <div class="translator-columns">
+      <!-- STEP 1 -->
+      <div class="translator-col">
+        <div class="tc-header">
+          <span class="step-badge step1">STEP 1</span>
+          <span class="tc-title">영어 원본</span>
+          <span class="tc-copy">📋</span>
+        </div>
+        <div class="tc-content monospace" id="col1">Sample subtitle line shown here.
+Generic placeholder content demonstrates layout.
+Each line represents a transcript segment.
+>> Speaker label format is supported.
+>> Another speaker comment appears here.
+Continued narration in the original language.
+Layout shows how the source column displays content.
+Real transcripts populate this column when loaded.
+Generic dummy text for the mockup structure.
+Click 쇼츠 만들기 below to begin the workflow.
+The next column will fill with Korean direct translation.
+Click 자동완성 in STEP 2 to fill STEP 3 automatically.</div>
+        <div class="tc-footer">
+          <span class="tc-stats" id="col1Stats">555자 <span class="tc-duration">~ 35초</span></span>
+          <button class="tc-action icon-only">⚙️</button>
+          <button class="tc-action purple">⚡ 쇼츠 만들기</button>
+        </div>
+      </div>
+
+      <!-- 검토용 한국어 직역 -->
+      <div class="translator-col">
+        <div class="tc-header">
+          <span class="step-badge review" id="badgeReview">검토용</span>
+          <span class="tc-title">한국어 직역 <span class="tc-title-meta">(선택)</span></span>
+          <span class="tc-copy">📋</span>
+        </div>
+        <div class="tc-content placeholder" id="col2">영어 원문을 한국어로 직역한 내용이 여기 표시됩니다.
+
+검토가 필요할 때만 사용하세요.
+필수 단계는 아니예요.</div>
+        <div class="tc-footer">
+          <span class="tc-stats" id="col2Stats">0자 <span class="tc-duration">~ 0초</span></span>
+          <button class="tc-action purple">↻ 직역하기</button>
+        </div>
+      </div>
+
+      <!-- STEP 2 한국어 쇼츠 -->
+      <div class="translator-col">
+        <div class="tc-header">
+          <span class="step-badge step2">STEP 2</span>
+          <span class="tc-title">한국어 쇼츠</span>
+          <span class="tc-copy">📋</span>
+        </div>
+        <div class="tc-content placeholder" id="col3">쇼츠 스타일로 재구성된 한국어 대본이 여기 표시됩니다.
+
+여기서 직접 수정한 뒤 다음 단계로 갈 수 있어요.
+
+Ctrl/Cmd + Enter = 일본어 번역</div>
+        <div class="tc-footer">
+          <span class="tc-stats" id="col3Stats">0자 <span class="tc-duration">~ 0초</span></span>
+          <button class="tc-action icon-only">⚙️</button>
+          <button class="tc-action white">재작성</button>
+          <button class="tc-action orange">✨ 자동완성</button>
+          <button class="tc-action purple">번역하기</button>
+        </div>
+      </div>
+
+      <!-- STEP 3 일본어 대본 -->
+      <div class="translator-col">
+        <div class="tc-header">
+          <span class="step-badge step3">STEP 3</span>
+          <span class="tc-title">일본어 대본</span>
+          <span class="tc-copy">📋</span>
+        </div>
+        <div class="tc-content placeholder" id="col4">번역된 일본어 쇼츠 대본이 여기 표시됩니다.
+
+🔍 점검 버튼으로 품질을 다듬을 수 있어요.
+💾 저장하면 3가지 포맷 파일로 만들어져요.</div>
+        <div class="tc-footer">
+          <span class="tc-stats" id="col4Stats">0자 <span class="tc-duration">~ 0초</span></span>
+          <span class="tc-progress" id="col4Progress" style="display:none;"></span>
+          <button class="tc-action icon-only">🔍</button>
+          <button class="tc-action icon-only">⚙️</button>
+          <button class="tc-action orange" onclick="openTTSModal()">🔊 TTS</button>
+          <button class="tc-action pink">✂️ 컷편집</button>
+          <button class="tc-action purple">💾 저장하기</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 토스트 -->
+    <div class="translator-toast" id="toast" style="display:none;">✓ 쇼츠 생성 완료</div>
+  </div>
+
+  <!-- TTS 모달 (VOICEVOX 전용) -->
+  <div class="modal-backdrop" id="ttsModal">
+    <div class="modal" style="width:680px;max-width:92vw;padding:24px 28px;position:relative;">
+      <button class="modal-close" onclick="closeTTSModal()">×</button>
+      <div class="subtitle-modal-title">🔊 TTS 음성 선택</div>
+      <p style="font-size:13px;color:var(--c-text-muted);margin:8px 0 6px;line-height:1.6;">
+        일본어 나레이션을 mp3로 생성합니다. 각 줄별 개별 mp3 파일로 ZIP으로 묶어 다운로드됩니다.
+      </p>
+      <p style="font-size:12px;color:var(--c-text-muted);margin-bottom:18px;">
+        🪶 TTS 텍스트 준비되지 않음 — 생성 버튼 누르면 먼저 자동 생성됩니다 (10-20초 추가)
+      </p>
+
+      <!-- TTS 엔진: VOICEVOX 전용 -->
+      <div class="settings-section-title" style="font-size:13px;margin-bottom:8px;">🎙️ TTS 엔진</div>
+      <div style="background:linear-gradient(135deg,#f5f3ff,#fce7f3);border:2px solid var(--c-primary);border-radius:14px;padding:16px 18px;display:flex;align-items:center;gap:14px;margin-bottom:18px;">
+        <div style="font-size:28px;">🌱</div>
+        <div style="flex:1;">
+          <div style="font-weight:700;font-size:15px;color:var(--c-primary-dark);">VOICEVOX</div>
+          <div style="font-size:12px;color:var(--c-text-muted);margin-top:2px;">일본어 네이티브 · 무료 · 시니어 친화 톤 지원</div>
+        </div>
+        <div style="font-size:11px;color:#047857;background:#d1fae5;padding:3px 9px;border-radius:999px;">✓ 사용 중</div>
+      </div>
+
+      <!-- 재생 속도 -->
+      <div class="settings-section-title" style="font-size:13px;margin-bottom:8px;display:flex;justify-content:space-between;">
+        <span>🎚️ 재생 속도</span>
+        <span style="color:var(--c-primary-dark);font-weight:700;">1.20x</span>
+      </div>
+      <input type="range" min="0.5" max="2.0" step="0.05" value="1.2"
+             style="width:100%;accent-color:var(--c-primary);margin-bottom:8px;">
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--c-text-light);margin-bottom:10px;">
+        <span>0.5x</span><span>1.0x</span><span>1.5x</span><span>2.0x</span>
+      </div>
+      <div class="settings-chip-row" style="margin-bottom:20px;">
+        <span class="chip">0.9x 차분</span>
+        <span class="chip">1.0x 기본</span>
+        <span class="chip">1.1x 가볍게</span>
+        <span class="chip selected">1.2x 빠르게 (쇼츠 권장)</span>
+        <span class="chip">1.3x 더 빠르게</span>
+      </div>
+
+      <!-- 음성 선택 -->
+      <div class="settings-section-title" style="font-size:13px;margin-bottom:10px;">🎤 음성 선택</div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:18px;">
+
+        <div class="voicevox-card">
+          <div class="vv-header">
+            <button class="vv-play">▶</button>
+            <div class="vv-name">🌱 ずんだもん <span class="vv-meta">— 즌다몬, 인기 마스코트</span></div>
+          </div>
+          <div class="vv-desc">귀엽고 친근한 톤 (가장 인기, 권장)</div>
+          <button class="vv-pick">이 음성으로 생성</button>
+        </div>
+
+        <div class="voicevox-card">
+          <div class="vv-header">
+            <button class="vv-play">▶</button>
+            <div class="vv-name">🌸 四国めたん <span class="vv-meta">— 시코쿠 메탄</span></div>
+          </div>
+          <div class="vv-desc">차분한 여성 톤, 정보·다큐형</div>
+          <button class="vv-pick">이 음성으로 생성</button>
+        </div>
+
+        <div class="voicevox-card">
+          <div class="vv-header">
+            <button class="vv-play">▶</button>
+            <div class="vv-name">🌷 春日部つむぎ <span class="vv-meta">— 카스카베 츠무기</span></div>
+          </div>
+          <div class="vv-desc">밝고 또렷한 톤, 청량한 나레이션</div>
+          <button class="vv-pick">이 음성으로 생성</button>
+        </div>
+
+        <div class="voicevox-card">
+          <div class="vv-header">
+            <button class="vv-play">▶</button>
+            <div class="vv-name">🍀 雨晴はう <span class="vv-meta">— 아마하레 하우</span></div>
+          </div>
+          <div class="vv-desc">부드럽고 따스한 톤, 시니어 친화</div>
+          <button class="vv-pick">이 음성으로 생성</button>
+        </div>
+
+      </div>
+
+      <div style="display:flex;justify-content:flex-end;">
+        <button class="btn-secondary" onclick="closeTTSModal()">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ====== 상태별 콘텐츠 ======
+    const KO_DIRECT = `여기는 직역 결과가 표시되는 자리입니다.
+영어 원문을 한국어로 그대로 옮겨놓은 형태로,
+영상의 내용을 빠르게 파악할 수 있게 도와줘요.
+
+이 단계는 선택 사항이에요.
+영어가 친숙하지 않으실 때만 사용하시면 됩니다.
+
+원문에 어색한 표현이나 슬랭이 있어도
+그대로 한국어로 변환해서 보여줘요.
+
+직역 결과를 보고 STEP 2 의 '쇼츠 만들기' 또는
+'재작성'으로 톤을 다듬을 수 있어요.`;
+
+    const KO_SHORTS = `제목 : 새로운 운동 액세서리의 천재적인 발명
+
+기존 제품의 문제점을 지적하는데
+"기존 제품들은 내구성이 없고, 사용하기 불편하며, 안전하지도 않다는 불만으로 영상이 시작됩니다."
+
+새로운 제품을 소개합니다
+"바로 이 클립이 모든 문제를 해결해 준다는 자신감 넘치는 발언이 이어지죠."
+
+어릴 때 가지고 놀던 팔찌처럼 작동한다는데
+"같은 방식으로 작동하지만 각 클립에는 강화 처리된 강철과 군용급 케블라 소재가 겹겹이 들어 있다는 설명이 더해집니다."
+
+사용 방법을 직접 보여주는 장면
+"이렇게 잡고 바에 끼우면 자리에 그대로 고정된다고 시연합니다."
+
+옆에서 보던 다른 출연자의 반응
+"와, 정말이네." 라며 놀라는 모습을 함께 보여줘 임팩트를 줍니다.`;
+
+    const JA_FINAL = `タイトル : ジムクリップの|天才的な|発明
+(타이틀 : 헬스장 클립의|천재적인|발명 / 타이토루 : 지무쿠립푸노 텐사이테키나 핫메에)
+
+既存クリップの|問題点を|指摘するんだけど
+(기존 클립의 문제점을 지적하는데 / 키존쿠립푸노 몬다이텐오 시테키스룬다케도)
+
+耐久性もない|使いにくい|安全でもない
+(내구성도 없고 사용하기 어렵고 안전하지도 않다 / 타이큐세이모나이 츠카이니쿠이 안젠데모나이)
+
+ワオ
+(와우)
+
+スナップクリップは|全部の問題を|解決するんだ
+(스냅 클립은 모든 문제를 해결한다 / 스나푸쿠립푸와 젠부노 몬다이오 카이케츠스룬다)
+
+子供の頃|遊んだブレスレットみたいに|動くんだけど
+(어릴 때 가지고 놀던 팔찌처럼 작동하는데 / 코도모노 코로 아손다 부레스렛토미타이니 우고쿤다케도)
+
+各クリップには|何層もの|強化スチールと|軍用ケブラーが|入っています
+(각 클립에는 여러 겹의 강화 강철과 군용 케블라가 들어 있습니다)
+
+こうやって|バーに|挟むと|その場で|固定されます
+(이렇게 바에 끼우면 그 자리에 고정됩니다)
+
+ワオ、|見せて
+(와우, 보여줘)`;
+
+    // ====== 상태 전환 ======
+    function setShortsDone() {
+      document.getElementById('col2').textContent = KO_DIRECT;
+      document.getElementById('col2').classList.remove('placeholder');
+      document.getElementById('col2Stats').innerHTML = '261자 <span class="tc-duration">~ 43초</span>';
+      document.getElementById('badgeReview').classList.add('selected');
+      document.getElementById('badgeReview').textContent = '검토용';
+
+      document.getElementById('col3').textContent = KO_SHORTS;
+      document.getElementById('col3').classList.remove('placeholder');
+      document.getElementById('col3Stats').innerHTML = '650자 <span class="tc-duration">~ 1분 28초</span>';
+
+      showToast('✓ 쇼츠 생성 완료');
+    }
+    function setAutoProgress(stage) {
+      // STEP 3 자동완성 진행 상태
+      setShortsDone();
+      const prog = document.getElementById('col4Progress');
+      prog.style.display = 'flex';
+      prog.textContent = stage === 1 ? '[자동 1/3] 일본어 번역중...'
+                       : stage === 2 ? '[자동 2/3] 현지화 점검중...'
+                       :                '[자동 2/3] 3개 이슈 반영중...';
+      document.getElementById('col4Stats').style.display = 'none';
+    }
+    function setDone() {
+      setShortsDone();
+      document.getElementById('col4').textContent = JA_FINAL;
+      document.getElementById('col4').classList.remove('placeholder');
+      document.getElementById('col4Stats').innerHTML = '1,355자 <span class="tc-duration">~ 4분 26초</span>';
+      document.getElementById('col4Stats').style.display = 'flex';
+      document.getElementById('col4Progress').style.display = 'none';
+      showToast('✓ 일본어 번역·점검 완료');
+    }
+
+    function showToast(text) {
+      const t = document.getElementById('toast');
+      t.textContent = text;
+      t.style.display = 'flex';
+      setTimeout(() => { t.style.display = 'none'; }, 4000);
+    }
+
+    function openTTSModal() { document.getElementById('ttsModal').classList.add('open'); }
+    function closeTTSModal() { document.getElementById('ttsModal').classList.remove('open'); }
+    document.addEventListener('click', (e) => { if (e.target.id === 'ttsModal') closeTTSModal(); });
+
+    // URL 파라미터로 상태 직접 보기
+    (function () {
+      const s = new URLSearchParams(location.search).get('state');
+      if (s === 'shorts') setShortsDone();
+      else if (s === 'auto1') setAutoProgress(1);
+      else if (s === 'auto2') setAutoProgress(2);
+      else if (s === 'auto2b') setAutoProgress(3);
+      else if (s === 'done') setDone();
+      else if (s === 'tts') { setDone(); setTimeout(openTTSModal, 100); }
+    })();
+  </script>
+
+  <style>
+    .voicevox-card {
+      background: #fafafa;
+      border: 1px solid var(--c-border);
+      border-radius: 12px;
+      padding: 12px 14px;
+    }
+    .vv-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .vv-play {
+      width: 28px; height: 28px;
+      background: var(--c-primary);
+      color: white;
+      border-radius: 50%;
+      font-size: 11px;
+      display: inline-flex; align-items: center; justify-content: center;
+      cursor: pointer; border: none;
+    }
+    .vv-name { font-size: 13px; font-weight: 600; flex: 1; }
+    .vv-meta { color: var(--c-text-muted); font-weight: 400; font-size: 11px; }
+    .vv-desc { font-size: 11.5px; color: var(--c-text-muted); margin-bottom: 10px; padding-left: 36px; }
+    .vv-pick {
+      width: 100%;
+      background: var(--c-primary-100);
+      color: var(--c-primary-dark);
+      padding: 8px;
+      border-radius: 8px;
+      font-size: 12px; font-weight: 600;
+      cursor: pointer; border: none;
+    }
+    .vv-pick:hover { background: var(--c-primary); color: white; }
+  </style>
+</body>
+</html>
