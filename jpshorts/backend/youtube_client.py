@@ -150,10 +150,16 @@ def search_videos(
             "duration_sec": dur,
             "is_short": is_short,
             "views": views,
+            "likes": int(st.get("likeCount", 0) or 0),
+            "comments": int(st.get("commentCount", 0) or 0),
             "published_at": sn["publishedAt"],
             "channel_age_months": ch.get("age_months", 999),
             "channel_avg_views": avg,
+            "subscribers": int(ch.get("subs", 0) or 0),
             "multiplier": round(views / avg, 1) if avg else None,
+            "vph": _vph(views, sn["publishedAt"]),
+            # 실제 업로더가 검색 노출용으로 넣은 태그(키워드) — 공식 API snippet.tags
+            "keywords": sn.get("tags", []) or [],
         })
     return cards
 
@@ -192,6 +198,7 @@ def trending_from_channels(
                 "uploads": it.get("contentDetails", {})
                     .get("relatedPlaylists", {}).get("uploads"),
                 "avg_views": vc / n,
+                "subs": int(st.get("subscriberCount", 0) or 0),
                 "title": it["snippet"]["title"],
                 "age_months": _months_since(it["snippet"]["publishedAt"]),
             }
@@ -264,8 +271,10 @@ def trending_from_channels(
                 "published_at": pub,
                 "channel_age_months": ci.get("age_months", 999),
                 "channel_avg_views": avg,
+                "subscribers": int(ci.get("subs", 0) or 0),
                 "multiplier": round(views / avg, 1) if avg else None,
                 "vph": _vph(views, pub),
+                "keywords": sn.get("tags", []) or [],
             })
     cards.sort(key=lambda c: -(c.get("multiplier") or 0))
     return cards[:max_results]
@@ -279,6 +288,20 @@ def _vph(views: int, published_at: str) -> float:
         return round(views / hours, 1)
     except Exception:
         return 0.0
+
+
+# 데모용 키워드(태그) 풀 — 실제 API 는 snippet.tags 를 그대로 씀
+_DEMO_KW = [
+    "emotional", "heartwarming", "wholesome", "reunion", "family", "shark tank",
+    "got talent", "golden buzzer", "감동", "휴먼스토리", "인생역전", "reaction",
+    "shorts", "viral", "touching moment", "kindness", "life lesson", "senior",
+    "tearjerker", "documentary", "inspiring", "surprise", "second chance",
+]
+
+
+def _demo_keywords(rnd, k=None) -> list[str]:
+    k = k if k is not None else rnd.randint(6, 14)
+    return rnd.sample(_DEMO_KW, min(k, len(_DEMO_KW)))
 
 
 # 해외 예능/리얼리티 시드 채널 (이 프로젝트 테마 — idea 문서 30선 기반)
@@ -323,8 +346,10 @@ def _demo_trend(video_type: str, n: int) -> list[dict]:
             "published_at": pub.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "channel_age_months": age,
             "channel_avg_views": avg,
+            "subscribers": rnd.randint(200_000, 12_000_000),
             "multiplier": mult,
             "vph": _vph(views, pub.strftime("%Y-%m-%dT%H:%M:%SZ")),
+            "keywords": _demo_keywords(rnd),
             "registered": True,   # 트렌드는 등록 채널 기준 → 배수 배지 표시
             "demo": True,
         })
@@ -370,7 +395,10 @@ def _demo_cards(query: str, video_type: str, n: int) -> list[dict]:
             "published_at": pub.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "channel_age_months": age,
             "channel_avg_views": avg,
+            "subscribers": rnd.randint(100_000, 8_000_000),
             "multiplier": round(views / avg, 1),
+            "vph": _vph(views, pub.strftime("%Y-%m-%dT%H:%M:%SZ")),
+            "keywords": _demo_keywords(rnd),
             "demo": True,
         })
     return cards

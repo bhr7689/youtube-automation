@@ -3,6 +3,26 @@
 
 const API_BASE = "";
 
+/* 카드 확장 요소(구독자·VPH·키워드 피드) 스타일 — 자체 주입(오프라인·CDN무관) */
+(function injectCardStyles() {
+  if (document.getElementById("jp-card-ext")) return;
+  const s = document.createElement("style");
+  s.id = "jp-card-ext";
+  s.textContent = `
+  .video-substat{font-size:11px;color:#9a90b5;margin-top:2px;}
+  .kw-block{margin-top:6px;border-top:1px dashed #ece7f5;padding-top:6px;}
+  .kw-head{font-size:11px;color:#7c3aed;cursor:pointer;user-select:none;font-weight:600;}
+  .kw-caret{display:inline-block;transition:transform .18s;}
+  .kw-block.open .kw-caret{transform:rotate(180deg);}
+  .kw-list{display:none;flex-wrap:wrap;gap:4px;margin-top:6px;max-height:120px;overflow:auto;}
+  .kw-block.open .kw-list{display:flex;}
+  .kw-chip{font-size:10px;background:#f3e8ff;color:#6b21a8;padding:2px 7px;border-radius:6px;white-space:nowrap;cursor:pointer;}
+  .kw-chip:hover{background:#e9d5ff;}
+  .kw-empty .kw-head{font-weight:400;}
+  `;
+  (document.head || document.documentElement).appendChild(s);
+})();
+
 async function api(path, opts = {}) {
   const res = await fetch(API_BASE + path, {
     headers: { "Content-Type": "application/json" },
@@ -19,6 +39,15 @@ function fmtViews(n) {
   if (n >= 100000000) return `조회 ${(n / 100000000).toFixed(1)}억`;
   if (n >= 10000) return `조회 ${(n / 10000).toFixed(1)}만`;
   return `조회 ${n.toLocaleString()}`;
+}
+
+/* 접두사 없는 압축 숫자 (구독자·VPH 등) */
+function fmtCompact(n) {
+  n = Number(n) || 0;
+  if (n >= 100000000) return `${(n / 100000000).toFixed(1)}억`;
+  if (n >= 10000) return `${(n / 10000).toFixed(1)}만`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}천`;
+  return n.toLocaleString();
 }
 
 function fmtDuration(sec) {
@@ -113,7 +142,15 @@ function renderCard(c) {
         <span>${fmtViews(c.views)}</span>
         <span>${fmtAgo(c.published_at)}</span>
       </div>
+      ${(c.subscribers || c.vph) ? `<div class="video-substat">${c.subscribers ? `👤 구독 ${fmtCompact(c.subscribers)}` : ""}${(c.subscribers && c.vph) ? " · " : ""}${c.vph ? `⚡ ${fmtCompact(c.vph)}/시간` : ""}</div>` : ""}
       ${sprout ? `<div style="margin-bottom:6px;">${sprout}</div>` : ""}
+      ${(c.keywords && c.keywords.length) ? `
+      <div class="kw-block">
+        <div class="kw-head" onclick="event.stopPropagation();this.parentNode.classList.toggle('open')">
+          🔑 검색 키워드 <b>${c.keywords.length}</b>개 <span class="kw-caret">▾</span>
+        </div>
+        <div class="kw-list">${c.keywords.map(k => `<span class="kw-chip" onclick="event.stopPropagation();navigator.clipboard.writeText('${esc(k).replace(/'/g,"")}').then(()=>toast('복사: ${esc(k).replace(/'/g,"")}'))">${esc(k)}</span>`).join("")}</div>
+      </div>` : `<div class="kw-block kw-empty"><div class="kw-head" style="color:#c3bad6;cursor:default;">🔑 공개된 태그 없음</div></div>`}
       <div class="video-actions">
         <div class="action-row">
           <span class="action-chip" onclick="window.open('https://downsub.com/?url=${encodeURIComponent(videoUrl(c))}','_blank')">📜 자막</span>
