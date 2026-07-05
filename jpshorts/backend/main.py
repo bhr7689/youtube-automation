@@ -174,6 +174,64 @@ def tts_download(job_id: str):
     return FileResponse(p, filename=f"{job_id}.zip", media_type="application/zip")
 
 
+# ── ✂️ 자동 컷편집 (도구 ③) ─────────────────────────────
+
+import cutplanner as cp
+
+
+class CutPlanReq(BaseModel):
+    job_id: str = ""
+    manifest: dict = Field(default_factory=dict)
+    source_duration_sec: float = 600.0
+    source_name: str = "source.mp4"
+    seg_min_s: float = 3.0
+    seg_max_s: float = 5.0
+
+
+def _load_manifest(job_id: str) -> dict | None:
+    import json as _json
+    p = os.path.join(ttsmod.JOBS_DIR, job_id, "manifest.json")
+    if os.path.isfile(p):
+        with open(p, encoding="utf-8") as f:
+            return _json.load(f)
+    return None
+
+
+@app.post("/api/cut/plan")
+def cut_plan(req: CutPlanReq):
+    manifest = req.manifest or (_load_manifest(req.job_id) if req.job_id else None)
+    if not manifest or not manifest.get("sentences"):
+        raise HTTPException(400, "narration job(manifest)이 필요해요. 번역봇에서 먼저 저장하세요.")
+    plan = cp.plan_cuts(manifest, source_duration_sec=req.source_duration_sec,
+                        seg_min_s=req.seg_min_s, seg_max_s=req.seg_max_s)
+    return plan
+
+
+@app.get("/api/cut/jobs")
+def cut_jobs():
+    return {"jobs": ttsmod.list_jobs()}
+
+
+@app.get("/api/cut/{plan_id}/capcut")
+def cut_capcut(plan_id: str, source_name: str = "source.mp4"):
+    if any(c in plan_id for c in ("/", "\\", "..")):
+        raise HTTPException(400, "잘못된 경로")
+    p = cp.save_capcut(plan_id, source_name)
+    if not p:
+        raise HTTPException(404, "플랜을 찾을 수 없어요")
+    return FileResponse(p, filename=f"{plan_id}_capcut.json", media_type="application/json")
+
+
+@app.get("/api/cut/{plan_id}/ffmpeg")
+def cut_ffmpeg(plan_id: str, source_name: str = "source.mp4"):
+    if any(c in plan_id for c in ("/", "\\", "..")):
+        raise HTTPException(400, "잘못된 경로")
+    p = cp.save_ffmpeg(plan_id, source_name)
+    if not p:
+        raise HTTPException(404, "플랜을 찾을 수 없어요")
+    return FileResponse(p, filename=f"{plan_id}_render.sh", media_type="text/plain")
+
+
 # ── 🔥 트렌드 피드 (등록 레퍼런스 채널의 급등 영상) ────
 
 @app.get("/api/trend")

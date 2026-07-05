@@ -55,6 +55,9 @@ jpshorts/backend/
 | `GET /api/translate/status` | Gemini·VOICEVOX 감지 + 화자 목록 |
 | `POST /api/tts` | 문장별 TTS(VOICEVOX/무음폴백) → narration job(manifest·SRT·ZIP) |
 | `GET /api/tts/{job_id}/download` | narration job ZIP 다운로드 |
+| `POST /api/cut/plan` | ✂️ 컷 플래너 — narration job → 3~5초 세그먼트 타임라인(줌·미러·속도) |
+| `GET /api/cut/{plan_id}/capcut` | CapCut 초안(A안) JSON 다운로드 |
+| `GET /api/cut/{plan_id}/ffmpeg` | ffmpeg 렌더 스크립트(B안) 다운로드 |
 
 ## 작동 화면 (japan_shorts_app/*.html)
 
@@ -75,7 +78,15 @@ jpshorts/backend/
   ⚡쇼츠만들기·↻직역·✨자동완성·번역·🔍점검. Gemini(없으면 데모). 🔊 TTS 모달 →
   문장별 음성(VOICEVOX/무음폴백) + 자막(SRT) + manifest.json → ZIP 다운로드/컷편집 핸드오프.
   · 신규 모듈: `translator.py`(번역·문장분해·품질점검) `tts.py`(VOICEVOX+narration job 패키지)
-- ⏳ `editor.html` — 다음 단계 (자동 컷편집 · 도구③)
+- ✅ `editor.html` — ✂️ 자동 컷편집(도구③ v1): narration job → 컷 플랜(문장별 3~5초 세그먼트,
+  줌 1.1~1.3·좌우반전·속도 0.95~1.05, 동일 원본 5초+ 연속 금지) → 색상 타임라인 +
+  세그먼트 상세 + 내보내기(CapCut 초안 JSON·ffmpeg 렌더 스크립트·narration ZIP).
+  · 신규 모듈: `cutplanner.py` (플랜·CapCut draft 스켈레톤·ffmpeg 스크립트 생성)
+  · 실제 렌더는 사용자 PC(CapCut 또는 ffmpeg). yt-dlp 원본 다운로드는 다음 단계.
+
+## 🔗 전체 파이프라인 (3도구 연결 완료)
+발굴(RefTracker) → 자막/대본 → 🌸 번역봇(일본어+TTS 패키지) → ✂️ 컷편집(컷 플랜+내보내기)
+→ CapCut/ffmpeg 렌더 → 업로드
 
 ## 검증
 
