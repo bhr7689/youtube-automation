@@ -106,6 +106,30 @@ def search(
     return {"cards": _annotate(cards), "demo": not yc.has_key()}
 
 
+# ── 🔥 트렌드 피드 (등록 레퍼런스 채널의 급등 영상) ────
+
+@app.get("/api/trend")
+def trend(
+    period_days: int = 7,
+    video_type: str = "all",       # shorts | long | all
+    max_results: int = 200,
+):
+    channel_ids = list(store.channel_ids())
+    cards = yc.trending_from_channels(
+        channel_ids, period_days=period_days,
+        video_type=video_type, max_results=max_results,
+    )
+    cards = _annotate(cards)
+    # 트렌드 피드의 카드는 정의상 '등록 채널'에서 나온 것 → 배수 배지 항상 표시
+    for c in cards:
+        c["registered"] = True
+    return {
+        "cards": cards,
+        "demo": not yc.has_key(),
+        "channel_count": len([c for c in channel_ids if not c.startswith("demo_")]),
+    }
+
+
 # ── 북마크 (크로스 화면 공유 자산) ──────────────────────
 
 class CardReq(BaseModel):

@@ -43,6 +43,7 @@ jpshorts/backend/
 | `POST /api/discover/queries` | 칩 선택 → 검색어 자동 생성 |
 | `POST /api/discover/search` | 검색어 여러 개 → 병합·중복제거·배수 정렬 |
 | `GET /api/search` | 키워드 검색 (기간·형식·개수·언어) |
+| `GET /api/trend` | 🔥 트렌드 피드 — 등록 채널 최근 업로드 → 배수 급등 정렬 |
 | `GET/POST/DELETE /api/bookmarks` | ⭐ 북마크 (크로스 화면 공유) |
 | `GET/POST/DELETE /api/channels` | ➕ 레퍼런스 채널 |
 | `GET/DELETE /api/recent` | 최근 검색어 |
@@ -51,9 +52,11 @@ jpshorts/backend/
 
 - ✅ `search.html` — 키워드 검색 + 옵션(기간/기준/형식/개수/언어) + 결과 내 필터(정렬/배수/조회수/🌱채널나이)
 - ✅ `youtube_discover.html` — 3축 칩 조합 → 검색어 생성 → 발굴 (신생 채널 필터)
+- ✅ `trend.html` — 🔥 트렌드 피드: 등록 레퍼런스 채널 최근 업로드 → 평균 대비 배수 급등 정렬
+  (기간/배수/조회수/형식/정렬[배수·조회·최신·좋아요·댓글·시간당]/개수 필터 + CSV)
 - ✅ `bookmarks.html` — 크로스 화면 북마크 모아보기
 - ✅ `channels.html` — 레퍼런스 채널 관리 + CSV 내보내기
-- ⏳ `trend.html` `collections.html` `translator.html` `editor.html` — 다음 단계 (아직 정적 시안)
+- ⏳ `collections.html` `translator.html` `editor.html` — 다음 단계 (아직 정적 시안)
 
 ## 검증
 
