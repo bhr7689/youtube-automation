@@ -106,6 +106,74 @@ def search(
     return {"cards": _annotate(cards), "demo": not yc.has_key()}
 
 
+# ── 🌸 번역봇 (도구 ②) ─────────────────────────────────
+
+import translator as tr
+import tts as ttsmod
+
+
+class TranslateReq(BaseModel):
+    text: str = ""
+    mode: str = "auto"          # shorts | literal | japanese | auto | check
+
+
+@app.get("/api/translate/status")
+def translate_status():
+    return {"gemini": tr.has_gemini(), "voicevox": ttsmod.voicevox_available(),
+            "voices": ttsmod.VOICES}
+
+
+@app.post("/api/translate")
+def translate(req: TranslateReq):
+    t = req.text or ""
+    m = req.mode
+    if m == "shorts":
+        return {"result": tr.to_korean_shorts(t), "gemini": tr.has_gemini()}
+    if m == "literal":
+        return {"result": tr.to_korean_literal(t), "gemini": tr.has_gemini()}
+    if m == "japanese":
+        ja = tr.to_japanese(t)
+        return {"result": ja, "sentences": [{"id": i + 1, "jp": s}
+                for i, s in enumerate(tr.split_sentences(ja))], "gemini": tr.has_gemini()}
+    if m == "check":
+        return tr.quality_check(t)
+    return tr.auto_translate(t)
+
+
+class TTSReq(BaseModel):
+    sentences: list[dict] = Field(default_factory=list)   # [{"jp":..,"src":..}]
+    ja_text: str = ""
+    voice: int = 3
+    speed: float = 1.2
+
+
+@app.post("/api/tts")
+def make_tts(req: TTSReq):
+    sents = req.sentences
+    if not sents and req.ja_text:
+        sents = [{"id": i + 1, "jp": s} for i, s in enumerate(tr.split_sentences(req.ja_text))]
+    if not sents:
+        raise HTTPException(400, "일본어 대본이 없어요")
+    manifest = ttsmod.build_job(sents, voice=req.voice, speed=req.speed)
+    manifest.pop("zip_path", None)   # 경로는 감춤(다운로드는 별도 엔드포인트)
+    return manifest
+
+
+@app.get("/api/tts/jobs")
+def tts_jobs():
+    return {"jobs": ttsmod.list_jobs()}
+
+
+@app.get("/api/tts/{job_id}/download")
+def tts_download(job_id: str):
+    if any(c in job_id for c in ("/", "\\", "..")):
+        raise HTTPException(400, "잘못된 경로")
+    p = ttsmod.job_zip_path(job_id)
+    if not p:
+        raise HTTPException(404, "작업을 찾을 수 없어요")
+    return FileResponse(p, filename=f"{job_id}.zip", media_type="application/zip")
+
+
 # ── 🔥 트렌드 피드 (등록 레퍼런스 채널의 급등 영상) ────
 
 @app.get("/api/trend")

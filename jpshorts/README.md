@@ -51,6 +51,10 @@ jpshorts/backend/
 | `GET/POST/DELETE /api/bookmarks` | ⭐ 북마크 (크로스 화면 공유) |
 | `GET/POST/DELETE /api/channels` | ➕ 레퍼런스 채널 |
 | `GET/DELETE /api/recent` | 최근 검색어 |
+| `POST /api/translate` | 🌸 번역봇 — shorts/literal/japanese/auto/check (Gemini, 데모폴백) |
+| `GET /api/translate/status` | Gemini·VOICEVOX 감지 + 화자 목록 |
+| `POST /api/tts` | 문장별 TTS(VOICEVOX/무음폴백) → narration job(manifest·SRT·ZIP) |
+| `GET /api/tts/{job_id}/download` | narration job ZIP 다운로드 |
 
 ## 작동 화면 (japan_shorts_app/*.html)
 
@@ -67,7 +71,11 @@ jpshorts/backend/
 - ✅ `channels.html` — 레퍼런스 채널 관리 + CSV 내보내기
 - ✅ `collections.html` + `collection_detail.html` — 📁 채널 폴더(플랫 v1): 폴더 생성/이름변경/삭제,
   등록 채널을 폴더에 담기/빼기. (2단계 중첩 폴더는 다음 단계)
-- ⏳ `translator.html` `editor.html` — 다음 단계 (아직 정적 시안 · 번역봇/컷편집)
+- ✅ `translator.html` — 🌸 번역봇(도구②): 4컬럼(원본→한국어직역→한국어쇼츠→일본어) 실작동.
+  ⚡쇼츠만들기·↻직역·✨자동완성·번역·🔍점검. Gemini(없으면 데모). 🔊 TTS 모달 →
+  문장별 음성(VOICEVOX/무음폴백) + 자막(SRT) + manifest.json → ZIP 다운로드/컷편집 핸드오프.
+  · 신규 모듈: `translator.py`(번역·문장분해·품질점검) `tts.py`(VOICEVOX+narration job 패키지)
+- ⏳ `editor.html` — 다음 단계 (자동 컷편집 · 도구③)
 
 ## 검증
 
