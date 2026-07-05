@@ -294,6 +294,30 @@ def title_log(req: TitleLogReq):
     return {"ok": True}
 
 
+# ── 🌡️ 키워드 레이더 (시기성·상승 키워드 탐지) ──────────
+
+import keyword_radar as kr
+
+
+@app.get("/api/keyword-radar/rising")
+def radar_rising(category: str, lang: str = ""):
+    if not category.strip():
+        raise HTTPException(400, "카테고리(예: 플레이리스트, shark tank)가 필요해요")
+    return kr.rising_keywords(category.strip(), lang)
+
+
+@app.get("/api/keyword-radar/heat")
+def radar_heat(keyword: str, days: int = 14, lang: str = ""):
+    if not keyword.strip():
+        raise HTTPException(400, "키워드가 필요해요")
+    return kr.keyword_heat(keyword.strip(), days, lang)
+
+
+@app.get("/api/keyword-radar/seasonal")
+def radar_seasonal(month: int = 0):
+    return kr.seasonal_pack(month or None)
+
+
 # ── ✂️ 자동 컷편집 (도구 ③) ─────────────────────────────
 
 import cutplanner as cp

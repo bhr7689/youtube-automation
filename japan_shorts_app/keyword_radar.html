@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>키워드 레이더 · RefTracker</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/api.js"></script>
+  <style>
+    .kr-panel{background:#fff;border:1px solid #f0ecf7;border-radius:16px;padding:18px 20px;margin-bottom:16px;box-shadow:0 2px 10px rgba(120,60,180,.05);}
+    .kr-h{font-size:15px;font-weight:800;margin-bottom:4px;}
+    .kr-sub{font-size:12px;color:#8a80a5;margin-bottom:12px;}
+    .kr-input-row{display:flex;gap:8px;margin-bottom:12px;}
+    .kr-input{flex:1;border:1px solid #e5d9f5;border-radius:10px;padding:10px 14px;font-size:14px;outline:none;}
+    .kr-input:focus{border-color:#c084fc;}
+    .rise-row{display:flex;align-items:center;gap:12px;padding:9px 4px;border-bottom:1px dashed #f0ecf7;font-size:14px;}
+    .rise-row:last-child{border-bottom:none;}
+    .rise-rank{width:24px;text-align:center;font-weight:800;color:#a855f7;}
+    .rise-kw{font-weight:700;min-width:90px;cursor:pointer;}
+    .rise-kw:hover{color:#7c3aed;}
+    .rise-mult{font-weight:800;color:#e11d68;min-width:60px;}
+    .rise-docs{font-size:11px;color:#a99fc0;min-width:90px;}
+    .rise-ex{flex:1;font-size:12px;color:#8a80a5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .heat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin:10px 0;}
+    .heat-tile{background:#faf7ff;border:1px solid #efe6fb;border-radius:12px;padding:12px;text-align:center;}
+    .heat-val{font-size:20px;font-weight:800;color:#7e22ce;}
+    .heat-lbl{font-size:11px;color:#8a80a5;margin-top:2px;}
+    .season-chip{display:inline-block;background:#fef3c7;color:#92400e;border-radius:999px;padding:5px 13px;margin:3px;font-weight:600;font-size:13px;cursor:pointer;}
+    .season-chip:hover{background:#fde68a;}
+    .season-chip.next{background:#e0f2fe;color:#075985;}
+    .kr-note{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;border-radius:10px;padding:10px 13px;font-size:12.5px;line-height:1.6;margin-top:10px;}
+    .heat-sample{font-size:12px;color:#64748b;padding:4px 0;border-bottom:1px dashed #f1f5f9;}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <span class="sidebar-badge">쇼치 강사님 시리즈</span>
+        <div class="sidebar-brand">RefTracker</div>
+        <div class="sidebar-brand-sub">레퍼런스 채널 추적</div>
+      </div>
+      <nav class="nav-section">
+        <a href="trend.html" class="nav-item">🔥 트렌드 피드</a>
+        <a href="global_surge.html" class="nav-item">🌍 글로벌 급등</a>
+        <a href="youtube_discover.html" class="nav-item">🌐 YouTube 발굴</a>
+        <a href="search.html" class="nav-item">🔍 검색</a>
+        <a href="source_finder.html" class="nav-item">🕵️ 원본 소스 찾기</a>
+        <a href="surge_analysis.html" class="nav-item">📊 급등 규칙 분석</a>
+        <a href="keyword_radar.html" class="nav-item active">🌡️ 키워드 레이더</a>
+        <a href="channels.html" class="nav-item">📺 레퍼런스 채널</a>
+        <a href="collections.html" class="nav-item">📁 컬렉션</a>
+        <a href="bookmarks.html" class="nav-item">⭐ 북마크</a>
+        <a href="settings.html" class="nav-item">⚙️ 설정</a>
+      </nav>
+      <div class="nav-divider"></div>
+      <nav class="nav-section">
+        <a href="index.html" class="nav-item-secondary"><span>🏠 포털 메인</span><span>›</span></a>
+        <a href="translator.html" class="nav-item-secondary"><span>🌸 일본어 번역봇</span><span>›</span></a>
+        <a href="editor.html" class="nav-item-secondary"><span>✂️ 자동 컷편집</span><span>›</span></a>
+      </nav>
+      <div class="user-card">
+        <div class="avatar-pill">남정</div>
+        <div class="user-card-info">
+          <div class="user-name">박남정</div>
+          <div class="user-email">parkzz5157@gmail.com</div>
+          <button class="logout">로그아웃</button>
+        </div>
+      </div>
+      <div class="version">v0.4.0</div>
+    </aside>
+
+    <main class="main">
+      <span class="badge-dot">키워드 레이더</span>
+      <h1 class="page-title"><span class="gradient-text">지금 당김 받는</span> 키워드 찾기</h1>
+      <p class="page-sub">시기성 키워드(예: 7월·여름)는 수요의 파도 — 감이 아니라 데이터로 찾습니다</p>
+
+      <!-- ① 떠오르는 키워드 -->
+      <div class="kr-panel">
+        <div class="kr-h">📈 떠오르는 키워드</div>
+        <div class="kr-sub">카테고리를 넣으면 — 최근 7일 인기 영상 vs 30~60일 전을 비교해 <b>갑자기 급증한 키워드</b>를 찾아요 (실측)</div>
+        <div class="kr-input-row">
+          <input class="kr-input" id="catInput" placeholder="카테고리 — 예: 플레이리스트, shark tank, 감동" value="플레이리스트">
+          <button class="btn-primary" onclick="loadRising()">탐지</button>
+        </div>
+        <div id="risingList"><div style="color:#a99fc0;padding:14px 0;">카테고리를 넣고 탐지를 눌러보세요</div></div>
+      </div>
+
+      <!-- ② 키워드 히트 체크 -->
+      <div class="kr-panel">
+        <div class="kr-h">🌡️ 키워드 히트 체크</div>
+        <div class="kr-sub">"이 키워드 넣으면 지금 당김 받나?" — 최근 2주 그 키워드 영상들의 <b>중앙값 조회수·시간당 조회</b>로 답해요</div>
+        <div class="kr-input-row">
+          <input class="kr-input" id="kwInput" placeholder="키워드 — 예: 여름 플레이리스트, 7월 감성">
+          <button class="btn-primary" onclick="checkHeat()">체크</button>
+        </div>
+        <div id="heatResult"></div>
+      </div>
+
+      <!-- ③ 계절 캘린더 -->
+      <div class="kr-panel">
+        <div class="kr-h">📅 이번 달 시기성 키워드</div>
+        <div class="kr-sub">칩을 누르면 바로 히트 체크 — <b>다음 달 키워드를 월말에 미리 심는 게 선점 전략</b></div>
+        <div id="seasonBox">불러오는 중…</div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    async function loadRising() {
+      const cat = document.getElementById('catInput').value.trim();
+      if (!cat) return toast('카테고리를 입력하세요');
+      const box = document.getElementById('risingList');
+      box.innerHTML = '<div style="color:#a855f7;padding:14px 0;">탐지 중…</div>';
+      try {
+        const d = await api('/api/keyword-radar/rising?category=' + encodeURIComponent(cat));
+        showDemoBanner(d.demo);
+        if (!d.rising.length) { box.innerHTML = '<div style="color:#a99fc0;padding:14px 0;">상승 키워드 없음 — 카테고리를 넓혀보세요</div>'; return; }
+        box.innerHTML = d.rising.map((r, i) => `
+          <div class="rise-row">
+            <span class="rise-rank">${i + 1}</span>
+            <span class="rise-kw" onclick="quickHeat('${esc(r.keyword)}')">${esc(r.keyword)}</span>
+            <span class="rise-mult">×${r.rise}</span>
+            <span class="rise-docs">최근 ${r.recent_docs}편 · 이전 ${r.baseline_docs}편</span>
+            <span class="rise-ex">${esc(r.example || '')}</span>
+          </div>`).join('') +
+          `<div class="kr-note">💡 키워드를 클릭하면 아래에서 바로 히트 체크. ${esc(d.note)}</div>`;
+      } catch (e) { box.innerHTML = '오류: ' + e.message; }
+    }
+
+    function quickHeat(kw) {
+      document.getElementById('kwInput').value = kw;
+      checkHeat();
+      document.getElementById('heatResult').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    async function checkHeat() {
+      const kw = document.getElementById('kwInput').value.trim();
+      if (!kw) return toast('키워드를 입력하세요');
+      const box = document.getElementById('heatResult');
+      box.innerHTML = '<div style="color:#a855f7;padding:10px 0;">측정 중…</div>';
+      try {
+        const d = await api('/api/keyword-radar/heat?keyword=' + encodeURIComponent(kw));
+        showDemoBanner(d.demo);
+        if (!d.video_count) { box.innerHTML = `<div class="kr-note">😴 "${esc(kw)}" — ${esc(d.note)}</div>`; return; }
+        const grade = d.median_vph >= 5000 ? '🔥 뜨거움' : d.median_vph >= 1000 ? '🌤️ 따뜻함' : '❄️ 차가움';
+        box.innerHTML = `
+          <div class="heat-grid">
+            <div class="heat-tile"><div class="heat-val">${grade}</div><div class="heat-lbl">판정</div></div>
+            <div class="heat-tile"><div class="heat-val">${fmtCompact(d.median_views)}</div><div class="heat-lbl">중앙값 조회수</div></div>
+            <div class="heat-tile"><div class="heat-val">${fmtCompact(d.median_vph)}</div><div class="heat-lbl">중앙값 VPH</div></div>
+            <div class="heat-tile"><div class="heat-val">${d.top_multiplier ? '×' + d.top_multiplier : '—'}</div><div class="heat-lbl">최고 배수</div></div>
+            <div class="heat-tile"><div class="heat-val">${d.video_count}</div><div class="heat-lbl">표본 영상</div></div>
+          </div>
+          ${(d.samples || []).map(s => `<div class="heat-sample">• ${esc(s.title)} — 조회 ${fmtCompact(s.views)}</div>`).join('')}
+          <div class="kr-note">📏 ${esc(d.note)} · 판정 기준: VPH 5천↑ 뜨거움 / 1천↑ 따뜻함</div>`;
+      } catch (e) { box.innerHTML = '오류: ' + e.message; }
+    }
+
+    async function loadSeason() {
+      const d = await api('/api/keyword-radar/seasonal');
+      const chips = (obj, cls) => ['ko', 'ja', 'en'].map(l =>
+        (obj[l] || []).map(k => `<span class="season-chip ${cls}" onclick="quickHeat('${esc(k)}')">${esc(k)}</span>`).join('')).join('');
+      document.getElementById('seasonBox').innerHTML =
+        `<div style="font-weight:700;margin-bottom:4px;">☀️ ${d.month}월 (지금)</div>` +
+        chips(d.this_month, '') +
+        `<div style="font-weight:700;margin:12px 0 4px;">⏭️ ${d.month % 12 + 1}월 (미리 선점)</div>` +
+        chips(d.next_month_preview, 'next') +
+        `<div class="kr-note">🎯 ${esc(d.note)}</div>`;
+    }
+
+    loadSeason();
+    loadRising();
+  </script>
+</body>
+</html>
