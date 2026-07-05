@@ -174,8 +174,8 @@ def to_ffmpeg_script(plan: dict, source_name: str = "source.mp4",
         i = seg["seg_id"]
         ss = seg["src_start_ms"] / 1000
         du = (seg["src_end_ms"] - seg["src_start_ms"]) / 1000
-        vf = [f"scale={W}:-2", f"crop={W}:{H}", f"scale=iw*{seg['zoom']}:ih*{seg['zoom']}",
-              f"crop={W}:{H}"]
+        vf = [f"scale={W}:{H}:force_original_aspect_ratio=increase", f"crop={W}:{H}",
+              f"scale=iw*{seg['zoom']}:ih*{seg['zoom']}", f"crop={W}:{H}"]
         if seg["mirror"]:
             vf.append("hflip")
         if abs(seg["speed"] - 1.0) > 0.001:

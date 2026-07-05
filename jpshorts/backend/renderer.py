@@ -90,7 +90,9 @@ def render_plan(plan: dict, source_path: str, job_dir: str | None = None) -> dic
         ss = min(max(seg["src_start_ms"] / 1000.0, 0), max(src_dur - 0.6, 0))
         out_dur = max(seg["dur_ms"] / 1000.0, 0.3)
         z = seg["zoom"]
-        vf = [f"scale={W}:-2", f"crop={W}:{H}",
+        # 가로 원본 → 세로 쇼츠: 먼저 1080x1920 를 채우도록 확대(cover) 후 크롭,
+        # 그다음 zoom 배율로 추가 확대·크롭. (원본이 세로보다 낮아도 안전)
+        vf = [f"scale={W}:{H}:force_original_aspect_ratio=increase", f"crop={W}:{H}",
               f"scale=iw*{z}:ih*{z}", f"crop={W}:{H}"]
         if seg["mirror"]:
             vf.append("hflip")
