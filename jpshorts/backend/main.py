@@ -178,6 +178,60 @@ def delete_channel(channel_id: str):
     return {"ok": True}
 
 
+# ── 📁 컬렉션 (채널 폴더) ───────────────────────────────
+
+class CollectionReq(BaseModel):
+    name: str = "새 폴더"
+
+
+class CollectionMemberReq(BaseModel):
+    channel_id: str
+    title: str = ""
+    payload: dict = Field(default_factory=dict)
+
+
+@app.get("/api/collections")
+def get_collections():
+    return {"collections": store.list_collections()}
+
+
+@app.post("/api/collections")
+def post_collection(req: CollectionReq):
+    return store.create_collection(req.name)
+
+
+@app.get("/api/collections/{cid}")
+def get_collection(cid: str):
+    col = store.get_collection(cid)
+    if not col:
+        raise HTTPException(404, "컬렉션을 찾을 수 없어요")
+    return col
+
+
+@app.patch("/api/collections/{cid}")
+def patch_collection(cid: str, req: CollectionReq):
+    store.rename_collection(cid, req.name)
+    return {"ok": True}
+
+
+@app.delete("/api/collections/{cid}")
+def del_collection(cid: str):
+    store.delete_collection(cid)
+    return {"ok": True}
+
+
+@app.post("/api/collections/{cid}/channels")
+def add_collection_member(cid: str, req: CollectionMemberReq):
+    store.add_to_collection(cid, req.channel_id, req.title, req.payload)
+    return {"ok": True}
+
+
+@app.delete("/api/collections/{cid}/channels/{channel_id}")
+def del_collection_member(cid: str, channel_id: str):
+    store.remove_from_collection(cid, channel_id)
+    return {"ok": True}
+
+
 # ── 최근 검색 ──────────────────────────────────────────
 
 @app.get("/api/recent")

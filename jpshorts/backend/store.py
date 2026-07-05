@@ -37,6 +37,19 @@ CREATE TABLE IF NOT EXISTS channel_cache (
   payload    TEXT NOT NULL,
   fetched_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS collections (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS collection_members (
+  collection_id TEXT NOT NULL,
+  channel_id    TEXT NOT NULL,
+  title         TEXT NOT NULL DEFAULT '',
+  payload       TEXT NOT NULL DEFAULT '{}',
+  added_at      REAL NOT NULL,
+  PRIMARY KEY (collection_id, channel_id)
+);
 """
 
 
@@ -139,6 +152,84 @@ def recent_searches(limit: int = 15) -> list[str]:
 def clear_searches() -> None:
     with _conn() as c:
         c.execute("DELETE FROM recent_searches")
+
+
+# ── 📁 컬렉션 (채널 폴더 — 플랫 v1) ────────────────────
+
+def _slug(name: str) -> str:
+    import hashlib as _h
+    return "col_" + _h.md5(f"{name}{time.time()}".encode()).hexdigest()[:8]
+
+
+def create_collection(name: str) -> dict:
+    cid = _slug(name)
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO collections(id, name, created_at) VALUES(?,?,?)",
+            (cid, name.strip() or "새 폴더", time.time()),
+        )
+    return {"id": cid, "name": name.strip() or "새 폴더"}
+
+
+def rename_collection(cid: str, name: str) -> None:
+    with _conn() as c:
+        c.execute("UPDATE collections SET name=? WHERE id=?", (name.strip(), cid))
+
+
+def delete_collection(cid: str) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM collection_members WHERE collection_id=?", (cid,))
+        c.execute("DELETE FROM collections WHERE id=?", (cid,))
+
+
+def list_collections() -> list[dict]:
+    with _conn() as c:
+        cols = c.execute(
+            "SELECT id, name, created_at FROM collections ORDER BY created_at DESC"
+        ).fetchall()
+        out = []
+        for col in cols:
+            members = c.execute(
+                "SELECT channel_id, title, payload FROM collection_members "
+                "WHERE collection_id=? ORDER BY added_at DESC",
+                (col["id"],),
+            ).fetchall()
+            chans = []
+            for m in members:
+                item = json.loads(m["payload"] or "{}")
+                item.update({"channel_id": m["channel_id"], "title": m["title"]})
+                chans.append(item)
+            out.append({
+                "id": col["id"], "name": col["name"],
+                "channel_count": len(chans), "channels": chans,
+            })
+    return out
+
+
+def get_collection(cid: str) -> dict | None:
+    for col in list_collections():
+        if col["id"] == cid:
+            return col
+    return None
+
+
+def add_to_collection(cid: str, channel_id: str, title: str = "",
+                      payload: dict | None = None) -> None:
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO collection_members(collection_id, channel_id, title, payload, added_at) "
+            "VALUES(?,?,?,?,?) ON CONFLICT(collection_id, channel_id) DO UPDATE SET "
+            "title=excluded.title, payload=excluded.payload",
+            (cid, channel_id, title, json.dumps(payload or {}, ensure_ascii=False), time.time()),
+        )
+
+
+def remove_from_collection(cid: str, channel_id: str) -> None:
+    with _conn() as c:
+        c.execute(
+            "DELETE FROM collection_members WHERE collection_id=? AND channel_id=?",
+            (cid, channel_id),
+        )
 
 
 # ── 채널 캐시 (24h TTL) ────────────────────────────────

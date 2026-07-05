@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>고든램지 · 컬렉션 · RefTracker</title>
+  <title>컬렉션 · RefTracker</title>
   <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/api.js"></script>
 </head>
 <body>
   <div class="app">
@@ -39,7 +40,7 @@
           <button class="logout">로그아웃</button>
         </div>
       </div>
-      <div class="version">v0.3.0</div>
+      <div class="version">v0.4.0</div>
     </aside>
 
     <main class="main">
@@ -48,53 +49,112 @@
           <div class="breadcrumb">
             <a href="collections.html">📁 컬렉션</a>
             <span class="sep">›</span>
-            <span class="current">고든램지</span>
+            <span class="current" id="crumbName">폴더</span>
           </div>
-          <h1 class="page-title">📁 고든램지</h1>
-          <p class="page-sub">3개 하위 폴더 · 8 채널 (하위 합산) · 같은 주제, 나라별로 모아둠</p>
+          <h1 class="page-title">📁 <span id="folderName">폴더</span></h1>
+          <p class="page-sub" id="folderSub">이 폴더에 모아둔 레퍼런스 채널</p>
         </div>
         <div style="display:flex;gap:8px;">
-          <button class="btn-secondary">+ 새 하위 폴더</button>
-          <button class="btn-primary">+ 채널 추가</button>
+          <button class="btn-primary" id="addBtn">+ 채널 추가</button>
         </div>
       </div>
 
-      <div class="section-label">📂 하위 폴더 (3)</div>
-      <div class="card-grid cols-3">
-        <a href="collection_leaf.html" class="sub-folder-card">
-          <div class="sub-folder-icon">🇰🇷</div>
-          <div class="sub-folder-info">
-            <div class="sub-folder-name">한국 채널</div>
-            <div class="sub-folder-meta">2 채널</div>
-          </div>
-          <span style="color:var(--c-text-light);">›</span>
-        </a>
-
-        <a href="collection_leaf.html" class="sub-folder-card">
-          <div class="sub-folder-icon">🇯🇵</div>
-          <div class="sub-folder-info">
-            <div class="sub-folder-name">일본 채널</div>
-            <div class="sub-folder-meta">3 채널</div>
-          </div>
-          <span style="color:var(--c-text-light);">›</span>
-        </a>
-
-        <a href="collection_leaf.html" class="sub-folder-card">
-          <div class="sub-folder-icon">🇺🇸</div>
-          <div class="sub-folder-info">
-            <div class="sub-folder-name">영어 원본</div>
-            <div class="sub-folder-meta">3 채널</div>
-          </div>
-          <span style="color:var(--c-text-light);">›</span>
-        </a>
-      </div>
-
-      <div class="section-label">📺 이 폴더에 직접 등록된 채널 (0)</div>
-      <div class="empty-state">
-        <div class="empty-state-title">아직 직접 등록한 채널이 없습니다</div>
-        <div class="empty-state-sub">하위 폴더로 정리하거나 "+ 채널 추가"로 이 단계에 바로 넣을 수 있어요</div>
+      <div class="section-label">📺 이 폴더의 채널 (<span id="cnt">0</span>)</div>
+      <div class="card-grid cols-3" id="chanGrid"></div>
+      <div id="empty" style="display:none;" class="empty-state">
+        <div class="empty-state-title">아직 채널이 없습니다</div>
+        <div class="empty-state-sub">“+ 채널 추가”로 등록된 레퍼런스 채널을 이 폴더에 담아보세요</div>
       </div>
     </main>
   </div>
+
+  <!-- 채널 추가 모달 -->
+  <div class="modal-backdrop" id="pickModal" style="display:none;">
+    <div class="modal" style="max-width:520px;">
+      <button class="modal-close" onclick="closePick()">×</button>
+      <div style="font-size:17px;font-weight:700;margin-bottom:4px;">📺 폴더에 채널 추가</div>
+      <div style="color:#8a80a5;font-size:13px;margin-bottom:14px;">등록된 레퍼런스 채널 중에서 골라 담습니다</div>
+      <div id="pickList" style="max-height:52vh;overflow:auto;display:flex;flex-direction:column;gap:8px;"></div>
+    </div>
+  </div>
+
+  <script>
+    const CID = new URLSearchParams(location.search).get("id");
+    let COL = null;
+
+    function chanCard(ch, inFolder) {
+      return `
+        <div class="folder-card" data-cid="${esc(ch.channel_id)}" style="cursor:default;">
+          <div class="folder-card-top">
+            <div class="channel-avatar" style="background:${avatarColor(ch.title || ch.channel_id)};width:40px;height:40px;"></div>
+            ${inFolder ? '<div class="folder-actions"><span title="폴더에서 빼기" data-act="remove">×</span></div>' : ''}
+          </div>
+          <div>
+            <div class="folder-name">${esc(ch.title || ch.channel_id)}</div>
+            <div class="folder-meta">${ch.age_months !== undefined && ch.age_months < 900 ? "🌱 " + ch.age_months + "개월" : "레퍼런스 채널"}</div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:4px;">
+            <a class="btn-secondary" href="https://youtube.com/channel/${esc(ch.channel_id)}" target="_blank" style="text-decoration:none;font-size:12px;">▶ 채널 열기</a>
+          </div>
+        </div>`;
+    }
+
+    async function load() {
+      if (!CID) { location.href = "collections.html"; return; }
+      COL = await api(`/api/collections/${CID}`);
+      document.getElementById("folderName").textContent = COL.name;
+      document.getElementById("crumbName").textContent = COL.name;
+      document.title = COL.name + " · 컬렉션 · RefTracker";
+      const chans = COL.channels || [];
+      document.getElementById("cnt").textContent = chans.length;
+      document.getElementById("folderSub").textContent = `이 폴더에 모아둔 레퍼런스 채널 ${chans.length}개`;
+      document.getElementById("empty").style.display = chans.length ? "none" : "block";
+      document.getElementById("chanGrid").innerHTML = chans.map(c => chanCard(c, true)).join("");
+    }
+
+    // 폴더에서 채널 빼기
+    document.getElementById("chanGrid").addEventListener("click", async (e) => {
+      if (e.target.dataset.act !== "remove") return;
+      const cid = e.target.closest(".folder-card").dataset.cid;
+      await api(`/api/collections/${CID}/channels/${encodeURIComponent(cid)}`, { method: "DELETE" });
+      toast("폴더에서 뺐어요"); load();
+    });
+
+    // 채널 추가 모달 — 등록된 레퍼런스 채널 목록에서 선택
+    document.getElementById("addBtn").onclick = async () => {
+      const d = await api("/api/channels");
+      const inFolder = new Set((COL.channels || []).map(c => c.channel_id));
+      const avail = (d.channels || []).filter(c => !inFolder.has(c.channel_id));
+      const list = document.getElementById("pickList");
+      if (!avail.length) {
+        list.innerHTML = '<div style="color:#8a80a5;padding:20px;text-align:center;line-height:1.7;">추가할 등록 채널이 없어요.<br>검색·발굴·트렌드 화면에서 채널을 <b>+ 추가</b>하면 여기에 나타납니다.</div>';
+      } else {
+        list.innerHTML = avail.map(c => `
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid #eee;border-radius:12px;">
+            <div class="channel-avatar" style="background:${avatarColor(c.title || c.channel_id)};"></div>
+            <div style="flex:1;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(c.title || c.channel_id)}</div>
+            <button class="btn-add" data-cid="${esc(c.channel_id)}" data-title="${esc(c.title || "")}">+ 담기</button>
+          </div>`).join("");
+      }
+      document.getElementById("pickModal").style.display = "flex";
+    };
+
+    document.getElementById("pickList").addEventListener("click", async (e) => {
+      const btn = e.target.closest(".btn-add");
+      if (!btn) return;
+      await api(`/api/collections/${CID}/channels`, {
+        method: "POST",
+        body: JSON.stringify({ channel_id: btn.dataset.cid, title: btn.dataset.title, payload: {} }),
+      });
+      toast("📁 폴더에 담았어요");
+      btn.outerHTML = '<span style="color:#059669;font-size:13px;font-weight:600;">✓ 담김</span>';
+      COL = await api(`/api/collections/${CID}`);  // 로컬 상태 갱신
+    });
+
+    function closePick() { document.getElementById("pickModal").style.display = "none"; load(); }
+    document.getElementById("pickModal").addEventListener("click", e => { if (e.target.id === "pickModal") closePick(); });
+
+    load();
+  </script>
 </body>
 </html>
