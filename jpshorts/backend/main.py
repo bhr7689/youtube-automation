@@ -336,6 +336,34 @@ def script_structures():
             "angles": sw.ANGLES}
 
 
+# ── 🎨 플리 컨셉 제조기 (지침 v1.4 내장) ────────────────
+
+import concept_maker as cm
+
+
+class ConceptReq(BaseModel):
+    channels: list[str] = Field(default_factory=list)   # 채널 URL/핸들 1~3개
+    song_type: str = "auto"      # lyric | instrumental | auto
+    num_songs: int = 1           # 1 | 10 | 25
+    extra_notes: str = ""
+
+
+@app.post("/api/concept/analyze")
+def concept_analyze(req: ConceptReq):
+    urls = [u for u in req.channels if u.strip()][:3]
+    if not urls:
+        raise HTTPException(400, "채널 URL 을 1개 이상 넣어주세요")
+    r = cm.generate_report(urls, req.song_type, req.num_songs, req.extra_notes)
+    if r.get("error"):
+        raise HTTPException(400, r["error"])
+    return r
+
+
+@app.get("/api/concept/status")
+def concept_status():
+    return {**cm.llm_status(), "youtube_key": yc.has_key()}
+
+
 # ── ✂️ 자동 컷편집 (도구 ③) ─────────────────────────────
 
 import cutplanner as cp
