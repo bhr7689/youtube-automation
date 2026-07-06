@@ -21,7 +21,17 @@ from collections import Counter
 import store
 import youtube_client as yc
 
-RULES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "hook_rules.json")
+RULES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "hook_rules")
+
+
+def _rules_path(genre: str = "") -> str:
+    """카테고리별 규칙 파일 — 카테고리가 섞이지 않게 각자 저장."""
+    safe = re.sub(r"[^\w가-힣-]", "_", genre.strip()) or "all"
+    return os.path.join(RULES_DIR, f"{safe}.json")
+
+
+# 하위 호환(renderer 등 외부 참조용)
+RULES_PATH = _rules_path("all")
 
 # 장르 시드 검색어 (사용자 채널 = 감동·인생교훈. 필요 시 확장)
 GENRE_QUERIES = {
@@ -119,8 +129,11 @@ def collect(genre: str = "heartwarming", target: int = 100,
     """
     if not yc.has_key():
         n = _seed_demo_corpus(genre)
+        rules = learn_rules(genre)   # 🔄 수집 즉시 자동 재학습 — 규칙이 항상 최신
         return {"genre": genre, "added": n, "skipped_no_transcript": 0,
-                "total": store.corpus_count(genre), "demo": True}
+                "total": store.corpus_count(genre), "demo": True,
+                "rules_updated": not rules.get("error"),
+                "corpus_in_rules": rules.get("corpus_count", 0)}
 
     queries = GENRE_QUERIES.get(genre, [genre])
     added = skipped = 0
@@ -153,8 +166,11 @@ def collect(genre: str = "heartwarming", target: int = 100,
                 "comments": _fetch_comments(vid), "features": feats,
             })
             added += 1
+    rules = learn_rules(genre)   # 🔄 수집 즉시 자동 재학습
     return {"genre": genre, "added": added, "skipped_no_transcript": skipped,
-            "total": store.corpus_count(genre), "demo": False}
+            "total": store.corpus_count(genre), "demo": False,
+            "rules_updated": not rules.get("error"),
+            "corpus_in_rules": rules.get("corpus_count", 0)}
 
 
 # ── 규칙 학습 (코퍼스 통계 → hook_rules.json) ───────────
@@ -192,22 +208,43 @@ def learn_rules(genre: str = "") -> dict:
         "cta_pct": round(100 * sum(1 for f in feats if f.get("has_cta")) / n),
         "top_samples": samples,
     }
-    os.makedirs(os.path.dirname(RULES_PATH), exist_ok=True)
-    with open(RULES_PATH, "w", encoding="utf-8") as f:
+    os.makedirs(RULES_DIR, exist_ok=True)
+    with open(_rules_path(genre), "w", encoding="utf-8") as f:
         json.dump(rules, f, ensure_ascii=False, indent=2)
     return rules
 
 
-def load_rules() -> dict | None:
-    if os.path.isfile(RULES_PATH):
-        with open(RULES_PATH, encoding="utf-8") as f:
-            return json.load(f)
+def load_rules(genre: str = "") -> dict | None:
+    """카테고리 규칙 로드. 그 카테고리 파일이 없으면 전체(all)로 폴백."""
+    for path in (_rules_path(genre), _rules_path("")):
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
     return None
 
 
-def rules_prompt_block(rules: dict | None = None) -> str:
-    """규칙 → 대본 생성 프롬프트 주입 블록."""
-    r = rules or load_rules()
+def list_genres() -> list[dict]:
+    """카테고리 현황 — 코퍼스 수 + 규칙 학습 여부 (섞임 없이 각자)."""
+    genres = set(GENRE_QUERIES)
+    for i in store.corpus_list(limit=5000):
+        if i.get("genre"):
+            genres.add(i["genre"])
+    out = []
+    for g in sorted(genres):
+        r = None
+        if os.path.isfile(_rules_path(g)):
+            with open(_rules_path(g), encoding="utf-8") as f:
+                r = json.load(f)
+        out.append({"genre": g, "corpus_count": store.corpus_count(g),
+                    "rules_learned": bool(r),
+                    "rules_corpus_count": (r or {}).get("corpus_count", 0),
+                    "queries": GENRE_QUERIES.get(g, [g])})
+    return out
+
+
+def rules_prompt_block(rules: dict | None = None, genre: str = "") -> str:
+    """규칙 → 대본 생성 프롬프트 주입 블록 (카테고리별)."""
+    r = rules or load_rules(genre)
     if not r or r.get("error"):
         return ""
     hooks = ", ".join(f"{h['name']}({h['pct']}%)" for h in r.get("hook_distribution", [])[:4])

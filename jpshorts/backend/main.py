@@ -205,9 +205,15 @@ def corpus_learn(genre: str = ""):
 
 
 @app.get("/api/corpus/rules")
-def corpus_rules():
-    r = sc.load_rules()
+def corpus_rules(genre: str = ""):
+    r = sc.load_rules(genre)
     return r or {"error": "규칙이 아직 없어요 — 수집 후 학습하세요."}
+
+
+@app.get("/api/corpus/genres")
+def corpus_genres():
+    """카테고리 현황 — 각자 몇 개 쌓였고 규칙이 학습됐는지 (섞임 없음)."""
+    return {"genres": sc.list_genres()}
 
 
 class ScriptReq(BaseModel):
@@ -218,6 +224,7 @@ class ScriptReq(BaseModel):
     comments: list[str] = Field(default_factory=list)
     angle: str = "lesson"
     language: str = "ko"
+    genre: str = ""
 
 
 @app.post("/api/script/write")
@@ -234,7 +241,7 @@ def script_write(req: ScriptReq):
             viral = " ".join(s.get("text", "") for s in sc._fetch_transcript(req.viral_video_id))
         if not comments:
             comments = sc._fetch_comments(req.viral_video_id)
-    return sw.write_script(transcript, viral, comments, req.angle, req.language)
+    return sw.write_script(transcript, viral, comments, req.angle, req.language, genre=req.genre)
 
 
 class AnchoredTTSReq(BaseModel):
@@ -286,11 +293,12 @@ class TitleLogReq(BaseModel):
     keywords: list[str] = Field(default_factory=list)
     views: int = 0
     note: str = ""
+    genre: str = ""
 
 
 @app.post("/api/title/log")
 def title_log(req: TitleLogReq):
-    te.log_title(req.video_id, req.title, req.keywords, req.views, req.note)
+    te.log_title(req.video_id, req.title, req.keywords, req.views, req.note, req.genre)
     return {"ok": True}
 
 

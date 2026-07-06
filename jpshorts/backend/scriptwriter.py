@@ -71,13 +71,14 @@ def _fmt_ts(sec: float) -> str:
 
 def write_script(source_transcript: list[dict], viral_script: str = "",
                  comments: list[str] | None = None, angle: str = "lesson",
-                 language: str = "ko", loop: bool = True) -> dict:
+                 language: str = "ko", loop: bool = True,
+                 genre: str = "") -> dict:
     """시선 비틀기 대본 생성 + 게이트(훅·유사도) 통과 확인.
 
     source_transcript: 원본 롱폼 자막 [{t,dur,text}] — 사실 그라운딩 + 앵커 원천.
     viral_script: 터진 숏폼 대본(참고·일치 금지 대상). comments: 그 댓글.
     """
-    rules_block = script_corpus.rules_prompt_block() or ""
+    rules_block = script_corpus.rules_prompt_block(genre=genre) or ""   # 카테고리별 규칙
     angle_desc = ANGLES.get(angle, ANGLES["lesson"])
     comments = comments or []
 

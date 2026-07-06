@@ -58,7 +58,7 @@ def gather_keywords(genre: str = "") -> dict:
 # ── 제목 채점 (학습 규칙 기반 — 결정론적) ───────────────
 
 def score_title(title: str, rules: dict | None = None) -> dict:
-    r = rules or script_corpus.load_rules() or {}
+    r = rules or script_corpus.load_rules() or {}   # 호출부가 카테고리 규칙을 넘김
     med = r.get("first_line_len_median", 35) or 35
     hooks = script_corpus.classify_hook(title)
     pts = 0
@@ -84,7 +84,7 @@ def score_title(title: str, rules: dict | None = None) -> dict:
 def generate_titles(topic: str, script_first_line: str = "", genre: str = "",
                     language: str = "ko", n: int = 5) -> dict:
     kw = gather_keywords(genre)
-    rules = script_corpus.load_rules() or {}
+    rules = script_corpus.load_rules(genre) or {}   # 카테고리별 규칙
     rules_block = script_corpus.rules_prompt_block(rules)
     lang_name = {"ko": "한국어", "ja": "일본어", "en": "영어"}.get(language, "한국어")
 
@@ -137,7 +137,7 @@ def _demo_titles(topic: str, language: str) -> list[str]:
 # ── 성과 기록 (피드백 루프 — 진짜 '대안') ───────────────
 
 def log_title(video_id: str, title: str, keywords: list[str],
-              views: int = 0, note: str = "") -> None:
+              views: int = 0, note: str = "", genre: str = "") -> None:
     """올린 제목·키워드·성과 기록 → 다음 키워드 선택의 근거."""
     import os
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -145,5 +145,6 @@ def log_title(video_id: str, title: str, keywords: list[str],
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps({"ts": time.time(), "video_id": video_id, "title": title,
-                            "keywords": keywords, "views": views, "note": note},
+                            "keywords": keywords, "views": views, "note": note,
+                            "genre": genre},
                            ensure_ascii=False) + "\n")
