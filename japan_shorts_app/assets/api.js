@@ -23,6 +23,23 @@ const API_BASE = "";
   (document.head || document.documentElement).appendChild(s);
 })();
 
+/* 📲 PWA — '홈 화면에 추가' 되게 manifest·아이콘·메타를 모든 페이지 head 에 주입 */
+(function injectPWA() {
+  const head = document.head || document.documentElement;
+  const add = (tag, attrs) => {
+    const el = document.createElement(tag);
+    for (const k in attrs) el.setAttribute(k, attrs[k]);
+    head.appendChild(el);
+  };
+  if (!document.querySelector('link[rel="manifest"]'))
+    add("link", { rel: "manifest", href: "manifest.json" });
+  add("meta", { name: "theme-color", content: "#7c3aed" });
+  add("meta", { name: "apple-mobile-web-app-capable", content: "yes" });
+  add("meta", { name: "apple-mobile-web-app-status-bar-style", content: "default" });
+  add("meta", { name: "apple-mobile-web-app-title", content: "일본쇼츠" });
+  add("link", { rel: "apple-touch-icon", href: "assets/icon-180.png" });
+})();
+
 /* 📱 모바일 햄버거 메뉴 — 사이드바가 있는 모든 페이지에 자동 주입 */
 (function injectMobileNav() {
   function build() {
