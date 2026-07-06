@@ -225,6 +225,7 @@ class ScriptReq(BaseModel):
     angle: str = "lesson"
     language: str = "ko"
     genre: str = ""
+    hook_type: str = "auto"   # question|shock|number|negation|address|cliffhang|scene|auto
 
 
 @app.post("/api/script/write")
@@ -241,7 +242,8 @@ def script_write(req: ScriptReq):
             viral = " ".join(s.get("text", "") for s in sc._fetch_transcript(req.viral_video_id))
         if not comments:
             comments = sc._fetch_comments(req.viral_video_id)
-    return sw.write_script(transcript, viral, comments, req.angle, req.language, genre=req.genre)
+    return sw.write_script(transcript, viral, comments, req.angle, req.language,
+                           genre=req.genre, hook_type=req.hook_type)
 
 
 class AnchoredTTSReq(BaseModel):
@@ -324,6 +326,14 @@ def radar_heat(keyword: str, days: int = 14, lang: str = ""):
 @app.get("/api/keyword-radar/seasonal")
 def radar_seasonal(month: int = 0):
     return kr.seasonal_pack(month or None)
+
+
+@app.get("/api/script/structures")
+def script_structures():
+    """훅 유형별 대본 구조 템플릿 목록."""
+    return {"structures": [{"hook_type": k, "name": v["name"], "beats": v["beats"]}
+                           for k, v in sw.STRUCTURES.items()],
+            "angles": sw.ANGLES}
 
 
 # ── ✂️ 자동 컷편집 (도구 ③) ─────────────────────────────

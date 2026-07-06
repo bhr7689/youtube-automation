@@ -196,6 +196,17 @@ def learn_rules(genre: str = "") -> dict:
                 "multiplier": i.get("multiplier"), "title": i.get("title", "")}
                for i in top if i.get("features")]
 
+    # 훅 유형별 구조 통계 — 훅이 다르면 본문 구조도 다르다(사용자 토의 2026-07-06)
+    by_hook = {}
+    for t in hook_counter:
+        sub = [f for f in feats if t in f.get("hook_types", [])]
+        if sub:
+            by_hook[t] = {
+                "count": len(sub),
+                "line_count_median": int(statistics.median([f["line_count"] for f in sub])),
+                "first_len_median": int(statistics.median([f["first_len"] for f in sub])),
+            }
+
     rules = {
         "genre": genre or "all", "corpus_count": n,
         "hook_distribution": [
@@ -206,6 +217,7 @@ def learn_rules(genre: str = "") -> dict:
         "line_count_median": int(statistics.median(line_counts)) if line_counts else 0,
         "chars_per_sec_median": round(statistics.median(cps), 1) if cps else 0,
         "cta_pct": round(100 * sum(1 for f in feats if f.get("has_cta")) / n),
+        "by_hook": by_hook,
         "top_samples": samples,
     }
     os.makedirs(RULES_DIR, exist_ok=True)
