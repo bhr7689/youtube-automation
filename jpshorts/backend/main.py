@@ -394,6 +394,33 @@ def cut_ffmpeg(plan_id: str, source_name: str = "source.mp4"):
     return FileResponse(p, filename=f"{plan_id}_render.sh", media_type="text/plain")
 
 
+# ── ⚙️ 시스템 상태 + 작업 기록 (설정·알림 화면용) ──────
+
+@app.get("/api/system/status")
+def system_status():
+    import shutil as _sh
+    return {
+        "youtube_key": yc.has_key(),
+        "gemini": tr.has_gemini(),
+        "voicevox": ttsmod.voicevox_available(),
+        "ffmpeg": bool(_sh.which("ffmpeg")),
+        "corpus": sc.list_genres(),
+        "narration_jobs": len(ttsmod.list_jobs()),
+        "cut_plans": len(cp.list_plans()),
+        "version": app.version,
+    }
+
+
+@app.get("/api/cut/plans")
+def cut_plans_list():
+    return {"plans": cp.list_plans()}
+
+
+@app.get("/api/title/logs")
+def title_logs():
+    return {"logs": te.read_logs()}
+
+
 # ── 🔥 트렌드 피드 (등록 레퍼런스 채널의 급등 영상) ────
 
 @app.get("/api/trend")

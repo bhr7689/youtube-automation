@@ -136,6 +136,23 @@ def _demo_titles(topic: str, language: str) -> list[str]:
 
 # ── 성과 기록 (피드백 루프 — 진짜 '대안') ───────────────
 
+def read_logs(limit: int = 50) -> list[dict]:
+    """제목 성과 기록(최신순) — 작업 기록 화면용."""
+    import os
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "data", "title_log.jsonl")
+    if not os.path.isfile(path):
+        return []
+    out = []
+    with open(path, encoding="utf-8") as f:
+        for ln in f.read().splitlines()[-limit:]:
+            try:
+                out.append(json.loads(ln))
+            except Exception:
+                pass
+    return list(reversed(out))
+
+
 def log_title(video_id: str, title: str, keywords: list[str],
               views: int = 0, note: str = "", genre: str = "") -> None:
     """올린 제목·키워드·성과 기록 → 다음 키워드 선택의 근거."""

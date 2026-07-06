@@ -140,6 +140,28 @@ def _save(plan: dict) -> None:
         json.dump(plan, f, ensure_ascii=False, indent=2)
 
 
+def list_plans(limit: int = 30) -> list[dict]:
+    """저장된 컷 플랜 목록(최신순) — 작업 기록 화면용."""
+    if not os.path.isdir(CUT_DIR):
+        return []
+    out = []
+    for fn in sorted(os.listdir(CUT_DIR), reverse=True):
+        if fn.startswith("cp_") and fn.endswith(".json") and "_capcut" not in fn:
+            try:
+                with open(os.path.join(CUT_DIR, fn), encoding="utf-8") as f:
+                    pl = json.load(f)
+                out.append({"plan_id": pl["plan_id"], "job_id": pl.get("job_id"),
+                            "segment_count": pl.get("segment_count"),
+                            "total_ms": pl.get("total_ms"),
+                            "created_at": pl.get("created_at"),
+                            "loop": pl.get("loop", False)})
+            except Exception:
+                pass
+            if len(out) >= limit:
+                break
+    return out
+
+
 def load_plan(plan_id: str) -> dict | None:
     p = os.path.join(CUT_DIR, plan_id + ".json")
     if not os.path.isfile(p):
