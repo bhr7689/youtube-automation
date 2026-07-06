@@ -84,6 +84,12 @@ jpshorts/backend/
   · 신규 모듈: `cutplanner.py` (플랜·CapCut draft 스켈레톤·ffmpeg 스크립트 생성)
   · 실제 렌더는 사용자 PC(CapCut 또는 ffmpeg). yt-dlp 원본 다운로드는 다음 단계.
 
+### 🖥️ 보조 화면 (2026-07-06 실작동 전환)
+- ✅ `index.html` 포털 — 3도구 카드 + 대본 공장 6단계 스트립 + 실시간 상태 칩
+- ✅ `settings.html` — 연결 상태(키·VOICEVOX·ffmpeg) + 카테고리별 [수집+재학습] UI + 데이터 보관 안내
+- ✅ `notifications.html` — 시스템 알림 + 내레이션/컷플랜/제목성과 작업 기록
+- API: /api/system/status · /api/cut/plans · /api/title/logs
+
 ### 🧠 대본 공장 (2026-07-05~06 확정 워크플로)
 - ✅ `scriptwriter.html` — ✍️ 대본 작성 UI: 터진 숏폼+원본 롱폼 → 카테고리 규칙 →
   훅 7종(구조 미리보기·🎲분포 가중 자동) → 게이트(유사도·훅-구조·앵커) →
