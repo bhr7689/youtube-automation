@@ -85,6 +85,20 @@
           대본·제목 생성이 그 카테고리 규칙만 사용. 목표 500편, 100편부터 규칙이 안정화됩니다.</div>
       </div>
 
+      <div class="st-panel" id="remote">
+        <div class="st-h">🌏 밖에서도 쓰기 (외부 접속)</div>
+        <div class="st-sub">외출 중 폰으로 작업한 것도 <b>사무실 데스크톱에 그대로 저장</b>돼요 — 폰이 밖에서도 이 서버에 연결되기만 하면 됩니다. 무료·안전·주소 안 바뀌는 <b>Tailscale</b> 방식을 권장해요.</div>
+        <div id="remoteState" style="margin-bottom:12px;">확인 중…</div>
+        <div class="note" style="background:#f5f3ff;border-color:#ddd6fe;color:#4c1d95;">
+          🔧 <b>Tailscale 설치 (10분, 한 번만)</b><br>
+          1. 서버 데스크톱: <code>tailscale.com/download</code> 에서 설치 → 구글 계정으로 로그인<br>
+          2. 폰: 앱스토어/플레이스토어에서 <b>Tailscale</b> 설치 → <b>같은 계정</b>으로 로그인<br>
+          3. 둘 다 로그인하면 끝 — 이 화면에 <b>🌏 어디서나 주소(100.x.x.x)</b>가 자동으로 떠요<br>
+          4. 폰에서 그 주소로 열고 <b>홈 화면에 추가</b> → 이제 <b>사무실·밖 어디서나</b> 같은 아이콘으로 접속<br>
+          <span style="font-size:12px;color:#6d28d9;">※ 공유기 설정·포트 개방 불필요. 데이터는 계속 사무실 PC 한 곳에만 쌓여요.</span>
+        </div>
+      </div>
+
       <div class="st-panel">
         <div class="st-h">💾 데이터 보관</div>
         <div class="st-sub" style="margin-bottom:8px;">학습 자산이 어디에 쌓이는지</div>
@@ -115,6 +129,31 @@
         row("🎬", "ffmpeg", s.ffmpeg, s.ffmpeg ? "렌더 가능" : "ffmpeg 설치 필요") +
         row("📦", "작업 자산", true, `내레이션 ${s.narration_jobs}건 · 컷 플랜 ${s.cut_plans}건`);
       renderGenres(s.corpus || []);
+      loadRemote();
+    }
+
+    async function loadRemote() {
+      try {
+        const c = await api("/api/connect-info");
+        const box = document.getElementById("remoteState");
+        if (c.has_remote) {
+          box.innerHTML =
+            `<div class="conn-row"><span class="conn-icon">🌏</span>
+              <span class="conn-name">어디서나 접속</span>
+              <span class="conn-state ok">✓ 켜짐</span>
+              <span class="conn-how">밖에서도 이 주소로 접속·저장: <code>${esc(c.tailscale_url)}</code></span></div>
+             <div class="conn-row"><span class="conn-icon">🏢</span>
+              <span class="conn-name">사무실 전용</span>
+              <span class="conn-state ok">✓</span>
+              <span class="conn-how"><code>${esc(c.lan_url)}</code></span></div>`;
+        } else {
+          box.innerHTML =
+            `<div class="conn-row"><span class="conn-icon">🏢</span>
+              <span class="conn-name">사무실 전용</span>
+              <span class="conn-state off">밖에선 불가</span>
+              <span class="conn-how">지금은 같은 와이파이에서만: <code>${esc(c.lan_url)}</code> · 아래 Tailscale 설치 시 어디서나 열림</span></div>`;
+        }
+      } catch (e) {}
     }
 
     function renderGenres(genres) {
