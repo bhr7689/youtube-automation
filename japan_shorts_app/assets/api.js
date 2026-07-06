@@ -163,6 +163,7 @@ function renderCard(c) {
           <span class="action-chip" onclick="window.open('${videoUrl(c)}','_blank')">💬 댓글</span>
           <span class="action-chip" onclick="navigator.clipboard.writeText('${videoUrl(c)}').then(()=>toast('🔗 링크 복사됨'))">🔗 링크</span>
           <span class="action-chip" onclick="location.href='source_finder.html?url='+encodeURIComponent('${videoUrl(c)}')">🕵️ 원본찾기</span>
+          <span class="action-chip" onclick="location.href='scriptwriter.html?viral='+encodeURIComponent('${esc(c.video_id)}')">✍️ 대본</span>
         </div>
       </div>
     </div>

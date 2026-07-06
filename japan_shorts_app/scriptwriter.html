@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>대본 작성 · RefTracker</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/api.js"></script>
+  <style>
+    .sw-panel{background:#fff;border:1px solid #f0ecf7;border-radius:16px;padding:18px 20px;margin-bottom:16px;box-shadow:0 2px 10px rgba(120,60,180,.05);}
+    .sw-h{font-size:15px;font-weight:800;margin-bottom:4px;}
+    .sw-sub{font-size:12px;color:#8a80a5;margin-bottom:12px;}
+    .sw-input{width:100%;border:1px solid #e5d9f5;border-radius:10px;padding:10px 14px;font-size:14px;outline:none;box-sizing:border-box;}
+    .sw-input:focus{border-color:#c084fc;}
+    .sw-label{font-size:12px;color:#8a80a5;font-weight:600;margin:10px 0 5px;display:block;}
+    .sw-chips{display:flex;flex-wrap:wrap;gap:7px;}
+    .sw-chip{border:1px solid #e5d9f5;background:#fff;color:#64748b;padding:6px 14px;border-radius:999px;font-size:13px;cursor:pointer;font-weight:600;}
+    .sw-chip:hover{border-color:#c084fc;}
+    .sw-chip.on{background:#f3e8ff;border-color:#c084fc;color:#7e22ce;}
+    .beats{background:#faf7ff;border:1px dashed #e5d9f5;border-radius:10px;padding:10px 14px;font-size:12px;color:#6b7280;line-height:1.8;margin-top:10px;display:none;}
+    .beats.show{display:block;}
+    .gate-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;}
+    .gate{font-size:12px;font-weight:700;padding:5px 12px;border-radius:999px;}
+    .gate.ok{background:#dcfce7;color:#166534;}
+    .gate.warn{background:#fef3c7;color:#92400e;}
+    .gate.info{background:#ede9fe;color:#6d28d9;}
+    .sent-row{display:flex;gap:10px;align-items:flex-start;padding:8px 4px;border-bottom:1px dashed #f0ecf7;font-size:14px;line-height:1.6;}
+    .sent-row:last-child{border-bottom:none;}
+    .sent-anchor{flex-shrink:0;font-size:11px;font-weight:700;background:#e0f2fe;color:#075985;padding:2px 8px;border-radius:6px;margin-top:2px;}
+    .sent-anchor.none{background:#f1f5f9;color:#94a3b8;}
+    .title-card{background:#faf7ff;border:1px solid #efe6fb;border-radius:10px;padding:10px 14px;margin-bottom:7px;display:flex;align-items:center;gap:10px;}
+    .title-score{font-weight:800;color:#7e22ce;flex-shrink:0;}
+    .title-text{flex:1;font-weight:600;cursor:pointer;}
+    .title-text:hover{color:#7c3aed;}
+    .hash-chip{display:inline-block;background:#eef6ff;color:#1d4ed8;border-radius:6px;padding:3px 9px;font-size:12px;margin:2px;cursor:pointer;}
+    .act-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;}
+    .dl{display:inline-flex;align-items:center;gap:6px;padding:10px 16px;border-radius:10px;font-weight:700;text-decoration:none;font-size:13px;border:none;cursor:pointer;}
+    .dl-jp{background:#ec4899;color:#fff;}
+    .dl-copy{background:#7c3aed;color:#fff;}
+    .nar-result{background:#f5f3ff;border:1px solid #ddd6fe;border-radius:12px;padding:14px 16px;font-size:13px;line-height:1.8;margin-top:12px;display:none;}
+    .nar-result.show{display:block;}
+    .spin{color:#a855f7;padding:12px 0;}
+    .two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+    @media(max-width:760px){.two-col{grid-template-columns:1fr;}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <span class="sidebar-badge">쇼치 강사님 시리즈</span>
+        <div class="sidebar-brand">RefTracker</div>
+        <div class="sidebar-brand-sub">레퍼런스 채널 추적</div>
+      </div>
+      <nav class="nav-section">
+        <a href="trend.html" class="nav-item">🔥 트렌드 피드</a>
+        <a href="global_surge.html" class="nav-item">🌍 글로벌 급등</a>
+        <a href="youtube_discover.html" class="nav-item">🌐 YouTube 발굴</a>
+        <a href="search.html" class="nav-item">🔍 검색</a>
+        <a href="source_finder.html" class="nav-item">🕵️ 원본 소스 찾기</a>
+        <a href="surge_analysis.html" class="nav-item">📊 급등 규칙 분석</a>
+        <a href="keyword_radar.html" class="nav-item">🌡️ 키워드 레이더</a>
+        <a href="scriptwriter.html" class="nav-item active">✍️ 대본 작성</a>
+        <a href="channels.html" class="nav-item">📺 레퍼런스 채널</a>
+        <a href="collections.html" class="nav-item">📁 컬렉션</a>
+        <a href="bookmarks.html" class="nav-item">⭐ 북마크</a>
+        <a href="settings.html" class="nav-item">⚙️ 설정</a>
+      </nav>
+      <div class="nav-divider"></div>
+      <nav class="nav-section">
+        <a href="index.html" class="nav-item-secondary"><span>🏠 포털 메인</span><span>›</span></a>
+        <a href="translator.html" class="nav-item-secondary"><span>🌸 일본어 번역봇</span><span>›</span></a>
+        <a href="editor.html" class="nav-item-secondary"><span>✂️ 자동 컷편집</span><span>›</span></a>
+      </nav>
+      <div class="user-card">
+        <div class="avatar-pill">남정</div>
+        <div class="user-card-info">
+          <div class="user-name">박남정</div>
+          <div class="user-email">parkzz5157@gmail.com</div>
+          <button class="logout">로그아웃</button>
+        </div>
+      </div>
+      <div class="version">v0.4.0</div>
+    </aside>
+
+    <main class="main">
+      <span class="badge-dot">대본 작성</span>
+      <h1 class="page-title"><span class="gradient-text">시선 비틀기</span> 대본 작성</h1>
+      <p class="page-sub">터진 숏폼 + 원본 롱폼 → 유사도 게이트 통과·교육 가치·3초 훅·장면 앵커가 달린 새 대본</p>
+
+      <!-- ① 재료 -->
+      <div class="sw-panel">
+        <div class="sw-h">① 재료</div>
+        <div class="sw-sub">원본 롱폼 자막이 <b>사실 근거 + 장면 앵커</b>가 되고, 터진 숏폼 대본·댓글은 <b>참고(일치 금지)</b>가 됩니다</div>
+        <div class="two-col">
+          <div>
+            <label class="sw-label">🔥 터진 숏폼 (URL 또는 영상 ID · 선택)</label>
+            <input class="sw-input" id="viralInput" placeholder="https://youtube.com/shorts/… 또는 영상 ID">
+          </div>
+          <div>
+            <label class="sw-label">🎬 원본 롱폼 (URL 또는 영상 ID)</label>
+            <input class="sw-input" id="sourceInput" placeholder="https://youtube.com/watch?v=… 또는 영상 ID">
+          </div>
+        </div>
+        <label class="sw-label">📂 카테고리 (그 카테고리의 학습 규칙 사용)</label>
+        <div class="sw-chips" id="genreChips"></div>
+        <div style="margin-top:12px;">
+          <button class="sw-chip" onclick="fillDemo()">🧪 데모 재료로 시험해 보기</button>
+          <span style="font-size:11px;color:#a99fc0;margin-left:6px;">자막 수집이 안 되는 환경에서도 흐름 검증 가능</span>
+        </div>
+      </div>
+
+      <!-- ② 훅 & 앵글 -->
+      <div class="sw-panel">
+        <div class="sw-h">② 훅 & 시선 비틀기</div>
+        <div class="sw-sub">훅은 약속, 본문은 약속 이행 구조 — 🎲 자동이면 카테고리 학습 분포에서 데이터가 고릅니다</div>
+        <label class="sw-label">🪝 훅 유형</label>
+        <div class="sw-chips" id="hookChips"></div>
+        <div class="beats" id="beatsBox"></div>
+        <label class="sw-label">🔀 시선 비틀기 앵글</label>
+        <div class="sw-chips" id="angleChips"></div>
+        <div class="act-row">
+          <button class="btn-primary" id="genBtn" onclick="generate()" style="font-size:15px;padding:12px 28px;">✍️ 대본 생성</button>
+        </div>
+      </div>
+
+      <!-- ③ 결과 -->
+      <div id="resultBox"></div>
+    </main>
+  </div>
+
+  <script>
+    const state = { genre: "", hook: "auto", angle: "lesson", result: null, structures: [], demoTranscript: null };
+
+    function vid(input) {
+      const s = (input || "").trim();
+      if (!s) return "";
+      const m = s.match(/(?:v=|shorts\/|youtu\.be\/|embed\/)([\w-]{6,})/);
+      return m ? m[1] : s;
+    }
+
+    // ── 초기 로드: 카테고리·훅 구조·앵글 ──
+    async function init() {
+      try {
+        const g = await api("/api/corpus/genres");
+        const chips = (g.genres || []).map(x =>
+          `<span class="sw-chip genre" data-v="${esc(x.genre)}">${esc(x.genre)} <small style="color:#a99fc0;">${x.corpus_count}편${x.rules_learned ? "·학습됨" : ""}</small></span>`).join("");
+        document.getElementById("genreChips").innerHTML = chips || '<span style="color:#a99fc0;font-size:12px;">코퍼스 없음 — 수집 후 카테고리가 나타나요</span>';
+        const first = document.querySelector(".sw-chip.genre");
+        if (first) { first.classList.add("on"); state.genre = first.dataset.v; }
+      } catch (e) {}
+      const s = await api("/api/script/structures");
+      state.structures = s.structures || [];
+      document.getElementById("hookChips").innerHTML =
+        '<span class="sw-chip hook on" data-v="auto">🎲 자동 (데이터가 선택)</span>' +
+        state.structures.map(x => `<span class="sw-chip hook" data-v="${x.hook_type}">${esc(x.name)}</span>`).join("");
+      document.getElementById("angleChips").innerHTML = Object.entries(s.angles || {}).map(([k, v], i) =>
+        `<span class="sw-chip angle ${i === 0 ? "on" : ""}" data-v="${k}" title="${esc(v)}">${esc(v.split(" — ")[0])}</span>`).join("");
+      bindChips("genre", v => state.genre = v);
+      bindChips("hook", v => { state.hook = v; showBeats(v); });
+      bindChips("angle", v => state.angle = v);
+      const q = new URLSearchParams(location.search);
+      if (q.get("viral")) document.getElementById("viralInput").value = q.get("viral");
+      if (q.get("source")) document.getElementById("sourceInput").value = q.get("source");
+      const h = await api("/api/health"); showDemoBanner(h.demo);
+    }
+
+    function bindChips(cls, cb) {
+      document.querySelectorAll(".sw-chip." + cls).forEach(c => c.onclick = () => {
+        document.querySelectorAll(".sw-chip." + cls).forEach(x => x.classList.remove("on"));
+        c.classList.add("on"); cb(c.dataset.v);
+      });
+    }
+
+    function showBeats(hookType) {
+      const box = document.getElementById("beatsBox");
+      const st = state.structures.find(x => x.hook_type === hookType);
+      if (!st) { box.classList.remove("show"); return; }
+      box.innerHTML = `<b>${esc(st.name)}</b> 구조<br>` + st.beats.map(b => "· " + esc(b)).join("<br>");
+      box.classList.add("show");
+    }
+
+    function fillDemo() {
+      state.demoTranscript = Array.from({ length: 40 }, (_, i) =>
+        ({ t: i * 8, dur: 6, text: `원본 롱폼 장면 ${i} — 재회의 순간이 가까워진다` }));
+      document.getElementById("sourceInput").value = "(데모 자막 40줄 로드됨)";
+      document.getElementById("viralInput").value = "(데모 — 터진 대본 참고 생략)";
+      toast("🧪 데모 재료 준비 완료 — 대본 생성을 눌러보세요");
+    }
+
+    // ── 생성 ──
+    async function generate() {
+      const box = document.getElementById("resultBox");
+      const payload = { angle: state.angle, hook_type: state.hook, genre: state.genre, language: "ko" };
+      const srcRaw = document.getElementById("sourceInput").value;
+      if (state.demoTranscript && srcRaw.startsWith("(데모")) payload.source_transcript = state.demoTranscript;
+      else if (srcRaw.trim()) payload.source_video_id = vid(srcRaw);
+      else return toast("원본 롱폼을 넣거나 '데모 재료'를 눌러주세요");
+      const viralRaw = document.getElementById("viralInput").value;
+      if (viralRaw.trim() && !viralRaw.startsWith("(데모")) payload.viral_video_id = vid(viralRaw);
+
+      box.innerHTML = '<div class="sw-panel spin">✍️ 대본 생성 중… (게이트 검사 포함)</div>';
+      try {
+        const r = await api("/api/script/write", { method: "POST", body: JSON.stringify(payload) });
+        state.result = r;
+        render(r);
+        loadTitles(r);
+      } catch (e) { box.innerHTML = `<div class="sw-panel" style="color:#b91c1c;">오류: ${esc(e.message)}</div>`; }
+    }
+
+    function ts(ms) { const s = Math.round(ms / 1000); return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; }
+
+    function render(r) {
+      const g = r.gates;
+      const gates = `
+        <span class="gate ${g.similarity_ok ? "ok" : "warn"}">${g.similarity_ok ? "✅" : "⚠️"} 유사도 ${g.similarity}${g.similarity_retried ? " (재생성됨)" : ""}</span>
+        <span class="gate ${g.hook_matches_structure ? "ok" : "warn"}">${g.hook_matches_structure ? "✅" : "⚠️"} 훅-구조 일치</span>
+        <span class="gate info">🪝 ${esc(r.structure)}</span>
+        <span class="gate info">🔀 ${esc(r.angle)}</span>
+        <span class="gate ${g.anchored_pct >= 80 ? "ok" : "warn"}">⚓ 앵커 ${g.anchored_pct}%</span>`;
+      const sents = r.sentences.map(s => `
+        <div class="sent-row">
+          <span class="sent-anchor ${s.src_anchor_ms == null ? "none" : ""}">${s.src_anchor_ms == null ? "앵커없음" : "🎬 " + ts(s.src_anchor_ms)}</span>
+          <span>${esc(s.text)}</span>
+        </div>`).join("");
+      document.getElementById("resultBox").innerHTML = `
+        <div class="sw-panel">
+          <div class="sw-h">③ 대본 결과 <span style="font-weight:400;font-size:12px;color:#8a80a5;">문장 ${r.sentences.length}개 · 앵커 = 컷편집이 자를 원본 장면</span></div>
+          <div class="gate-row">${gates}</div>
+          ${sents}
+          <div class="act-row">
+            <button class="dl dl-copy" onclick="copyScript()">📋 대본 복사</button>
+            <button class="dl dl-jp" onclick="toNarration()">🌸 일본어 내레이션 패키지 만들기</button>
+          </div>
+          <div class="nar-result" id="narResult"></div>
+        </div>
+        <div class="sw-panel" id="titlePanel">
+          <div class="sw-h">🏷️ 제목 후보 <span style="font-weight:400;font-size:12px;color:#8a80a5;">3층 키워드 + 학습 규칙 채점 · 클릭=복사</span></div>
+          <div class="spin">제목 생성 중…</div>
+        </div>`;
+    }
+
+    async function loadTitles(r) {
+      try {
+        const first = r.sentences[0] ? r.sentences[0].text : "";
+        const t = await api("/api/title/generate", { method: "POST", body: JSON.stringify({
+          topic: first, script_first_line: first, genre: state.genre, language: "ko", n: 5 }) });
+        const cards = t.candidates.map(c => `
+          <div class="title-card">
+            <span class="title-score">${c.score}점</span>
+            <span class="title-text" onclick="navigator.clipboard.writeText(this.textContent).then(()=>toast('📋 제목 복사'))">${esc(c.title)}</span>
+            <span style="font-size:11px;color:#a99fc0;">${(c.detail.hook_types || []).join("·")}</span>
+          </div>`).join("");
+        const hashes = t.hashtags.map(h => `<span class="hash-chip" onclick="navigator.clipboard.writeText('${esc(h)}').then(()=>toast('복사: ${esc(h)}'))">${esc(h)}</span>`).join("");
+        document.getElementById("titlePanel").innerHTML = `
+          <div class="sw-h">🏷️ 제목 후보 <span style="font-weight:400;font-size:12px;color:#8a80a5;">클릭=복사</span></div>
+          ${cards}<div style="margin-top:8px;">${hashes}</div>`;
+      } catch (e) {
+        document.getElementById("titlePanel").innerHTML = `<div class="sw-h">🏷️ 제목 후보</div><div style="color:#b91c1c;font-size:13px;">오류: ${esc(e.message)}</div>`;
+      }
+    }
+
+    function copyScript() {
+      const txt = state.result.sentences.map(s =>
+        (s.src_anchor_ms != null ? `[${ts(s.src_anchor_ms)}] ` : "") + s.text).join("\n");
+      navigator.clipboard.writeText(txt).then(() => toast("📋 대본 복사됨"));
+    }
+
+    async function toNarration() {
+      const box = document.getElementById("narResult");
+      box.classList.add("show");
+      box.innerHTML = "🌸 일본어 변환 + 문장별 TTS 패키지 생성 중…";
+      try {
+        const m = await api("/api/script/to-narration", { method: "POST", body: JSON.stringify({
+          sentences: state.result.sentences, voice: 3, speed: 1.2 }) });
+        const dur = Math.round(m.total_duration_ms / 1000);
+        box.innerHTML = `✅ <b>내레이션 패키지 완성</b> — ${m.job_id} · ${m.sentence_count}문장 · ${Math.floor(dur / 60)}분 ${dur % 60}초<br>
+          <span style="color:#9a3412;">${esc(m.engine_note || "")}</span><br>
+          <a class="dl dl-copy" style="margin-top:8px;" href="/api/tts/${m.job_id}/download">⬇️ ZIP (자막·음성·manifest)</a>
+          <a class="dl dl-jp" style="margin-top:8px;" href="editor.html?job=${m.job_id}">✂️ 컷편집으로 (앵커 매칭)</a>`;
+        toast("✓ 번역·TTS 완료 — 컷편집으로 넘길 수 있어요");
+      } catch (e) { box.innerHTML = "오류: " + esc(e.message); }
+    }
+
+    init();
+  </script>
+</body>
+</html>
