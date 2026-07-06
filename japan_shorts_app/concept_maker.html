@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>플리 컨셉 제조기 · RefTracker</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/api.js"></script>
+  <style>
+    .cm-panel{background:#fff;border:1px solid #f0ecf7;border-radius:16px;padding:18px 20px;margin-bottom:16px;box-shadow:0 2px 10px rgba(120,60,180,.05);}
+    .cm-h{font-size:15px;font-weight:800;margin-bottom:4px;}
+    .cm-sub{font-size:12px;color:#8a80a5;margin-bottom:12px;}
+    .cm-input{width:100%;border:1px solid #e5d9f5;border-radius:10px;padding:10px 14px;font-size:14px;outline:none;box-sizing:border-box;margin-bottom:8px;}
+    .cm-input:focus{border-color:#c084fc;}
+    textarea.cm-input{min-height:70px;resize:vertical;font-family:inherit;}
+    .cm-label{font-size:12px;color:#8a80a5;font-weight:600;margin:10px 0 6px;display:block;}
+    .cm-chips{display:flex;flex-wrap:wrap;gap:7px;}
+    .cm-chip{border:1px solid #e5d9f5;background:#fff;color:#64748b;padding:6px 14px;border-radius:999px;font-size:13px;cursor:pointer;font-weight:600;}
+    .cm-chip:hover{border-color:#c084fc;}
+    .cm-chip.on{background:#f3e8ff;border-color:#c084fc;color:#7e22ce;}
+    .report{font-size:14px;line-height:1.75;color:#334155;}
+    .report h1{font-size:20px;font-weight:800;margin:18px 0 10px;color:#1e1b2e;}
+    .report h2{font-size:16px;font-weight:800;margin:22px 0 8px;color:#5b21b6;border-bottom:2px solid #ede9fe;padding-bottom:5px;}
+    .report h3{font-size:14.5px;font-weight:700;margin:14px 0 6px;color:#1e1b2e;}
+    .report table{border-collapse:collapse;margin:8px 0;width:100%;font-size:13px;}
+    .report th,.report td{border:1px solid #e9e4f5;padding:6px 10px;text-align:left;}
+    .report th{background:#faf7ff;font-weight:700;color:#5b21b6;}
+    .report ul{padding-left:20px;margin:6px 0;}
+    .report li{margin:3px 0;}
+    .report hr{border:none;border-top:1px dashed #e9e4f5;margin:14px 0;}
+    .report code{background:#f3f0fa;border-radius:5px;padding:1px 6px;font-size:12.5px;}
+    .report strong{color:#1e1b2e;}
+    .engine-chip{font-size:11px;font-weight:700;padding:4px 11px;border-radius:999px;background:#ede9fe;color:#6d28d9;margin-left:8px;}
+    .spin{color:#a855f7;padding:14px 0;}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <div class="sidebar-brand">RefTracker</div>
+        <div class="sidebar-brand-sub">레퍼런스 채널 추적</div>
+      </div>
+      <nav class="nav-section">
+        <a href="trend.html" class="nav-item">🔥 트렌드 피드</a>
+        <a href="global_surge.html" class="nav-item">🌍 글로벌 급등</a>
+        <a href="youtube_discover.html" class="nav-item">🌐 YouTube 발굴</a>
+        <a href="search.html" class="nav-item">🔍 검색</a>
+        <a href="source_finder.html" class="nav-item">🕵️ 원본 소스 찾기</a>
+        <a href="surge_analysis.html" class="nav-item">📊 급등 규칙 분석</a>
+        <a href="keyword_radar.html" class="nav-item">🌡️ 키워드 레이더</a>
+        <a href="scriptwriter.html" class="nav-item">✍️ 대본 작성</a>
+        <a href="concept_maker.html" class="nav-item active">🎨 플리 컨셉 제조기</a>
+        <a href="channels.html" class="nav-item">📺 레퍼런스 채널</a>
+        <a href="collections.html" class="nav-item">📁 컬렉션</a>
+        <a href="bookmarks.html" class="nav-item">⭐ 북마크</a>
+        <a href="notifications.html" class="nav-item">🔔 알림·작업 기록</a>
+        <a href="settings.html" class="nav-item">⚙️ 설정</a>
+      </nav>
+      <div class="nav-divider"></div>
+      <nav class="nav-section">
+        <a href="index.html" class="nav-item-secondary"><span>🏠 포털 메인</span><span>›</span></a>
+        <a href="translator.html" class="nav-item-secondary"><span>🌸 일본어 번역봇</span><span>›</span></a>
+        <a href="editor.html" class="nav-item-secondary"><span>✂️ 자동 컷편집</span><span>›</span></a>
+      </nav>
+      <div class="version">v0.4.0</div>
+    </aside>
+
+    <main class="main">
+      <span class="badge-dot">플리 컨셉 제조기</span>
+      <h1 class="page-title"><span class="gradient-text">85% 결 유지, 15% 비틀기</span> 컨셉 설계</h1>
+      <p class="page-sub">플레이리스트 채널 URL만 넣으면 — 제목·조회수를 자동 수집해 분석하고, 신규 채널 컨셉 + Suno 곡 패키지까지 설계합니다</p>
+
+      <div class="cm-panel">
+        <div class="cm-h">① 분석할 채널 (1~3개)</div>
+        <div class="cm-sub">GPT 버전과 달리 캡처 업로드 불필요 — URL만 넣으면 제목·조회수·업로드 날짜를 <b>실데이터</b>로 수집해요. 2개 이상이면 융합 비율까지 분석.</div>
+        <input class="cm-input" id="ch1" placeholder="메인 기준 채널 — https://youtube.com/@채널핸들 또는 채널 URL">
+        <input class="cm-input" id="ch2" placeholder="(선택) 보조 채널 2">
+        <input class="cm-input" id="ch3" placeholder="(선택) 보조 채널 3">
+
+        <label class="cm-label">🎵 Suno 곡 유형</label>
+        <div class="cm-chips" id="songType">
+          <span class="cm-chip on" data-v="auto">🎲 자동 (채널 성격 판단)</span>
+          <span class="cm-chip" data-v="lyric">🎤 가사곡</span>
+          <span class="cm-chip" data-v="instrumental">🎹 연주곡</span>
+        </div>
+
+        <label class="cm-label">📀 곡 수</label>
+        <div class="cm-chips" id="numSongs">
+          <span class="cm-chip on" data-v="1">1곡 패키지</span>
+          <span class="cm-chip" data-v="10">10곡 묶음</span>
+          <span class="cm-chip" data-v="25">25곡 풀 플레이리스트</span>
+        </div>
+
+        <label class="cm-label">📝 추가 메모 (선택 — 썸네일 묘사, 원하는 방향 등)</label>
+        <textarea class="cm-input" id="notes" placeholder="예: 썸네일은 대부분 비 내리는 창가 일러스트, 앰버 톤. 새 채널은 겨울 감성으로 가고 싶어요."></textarea>
+
+        <button class="btn-primary" id="goBtn" style="font-size:15px;padding:12px 28px;margin-top:6px;">🎨 컨셉 리포트 생성</button>
+      </div>
+
+      <div id="resultBox"></div>
+    </main>
+  </div>
+
+  <script>
+    const state = { song_type: "auto", num_songs: 1 };
+    function bindChips(id, key) {
+      document.querySelectorAll("#" + id + " .cm-chip").forEach(c => c.onclick = () => {
+        document.querySelectorAll("#" + id + " .cm-chip").forEach(x => x.classList.remove("on"));
+        c.classList.add("on");
+        state[key] = isNaN(c.dataset.v) ? c.dataset.v : +c.dataset.v;
+      });
+    }
+    bindChips("songType", "song_type");
+    bindChips("numSongs", "num_songs");
+
+    // ── 미니 마크다운 렌더러 (제목/표/리스트/굵게/hr/코드) ──
+    function md(src) {
+      const lines = (src || "").split("\n");
+      let html = "", inTable = false, inList = false;
+      const inline = s => esc(s)
+        .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+        .replace(/`([^`]+)`/g, "<code>$1</code>");
+      const closeAll = () => {
+        if (inTable) { html += "</table>"; inTable = false; }
+        if (inList) { html += "</ul>"; inList = false; }
+      };
+      for (let raw of lines) {
+        const ln = raw.trimEnd();
+        if (/^\|.*\|$/.test(ln.trim())) {
+          const cells = ln.trim().slice(1, -1).split("|").map(c => c.trim());
+          if (cells.every(c => /^:?-{2,}:?$/.test(c))) continue;   // 구분선
+          if (!inTable) { closeAll(); html += "<table>"; inTable = true;
+            html += "<tr>" + cells.map(c => `<th>${inline(c)}</th>`).join("") + "</tr>";
+          } else {
+            html += "<tr>" + cells.map(c => `<td>${inline(c)}</td>`).join("") + "</tr>";
+          }
+          continue;
+        }
+        if (inTable) { html += "</table>"; inTable = false; }
+        if (/^#{1,3}\s/.test(ln)) {
+          closeAll();
+          const lvl = ln.match(/^(#{1,3})/)[1].length;
+          html += `<h${lvl}>${inline(ln.replace(/^#{1,3}\s*/, ""))}</h${lvl}>`;
+        } else if (/^[-*]\s/.test(ln.trim())) {
+          if (!inList) { html += "<ul>"; inList = true; }
+          html += `<li>${inline(ln.trim().replace(/^[-*]\s*/, ""))}</li>`;
+        } else if (/^-{3,}$/.test(ln.trim())) {
+          closeAll(); html += "<hr>";
+        } else if (ln.trim() === "") {
+          closeAll();
+        } else {
+          closeAll(); html += `<p style="margin:5px 0;">${inline(ln)}</p>`;
+        }
+      }
+      closeAll();
+      return html;
+    }
+
+    let LAST = "";
+    document.getElementById("goBtn").onclick = async () => {
+      const chans = ["ch1", "ch2", "ch3"].map(id => document.getElementById(id).value.trim()).filter(Boolean);
+      if (!chans.length) return toast("채널 URL 을 1개 이상 넣어주세요");
+      const box = document.getElementById("resultBox");
+      box.innerHTML = '<div class="cm-panel spin">🎨 채널 수집 + 지침 v1.4 분석 중… (30초~1분 걸릴 수 있어요)</div>';
+      try {
+        const r = await api("/api/concept/analyze", { method: "POST", body: JSON.stringify({
+          channels: chans, song_type: state.song_type, num_songs: state.num_songs,
+          extra_notes: document.getElementById("notes").value }) });
+        LAST = r.report;
+        const chips = r.channels.map(c =>
+          `<span class="engine-chip">${esc(c.title)} · 구독 ${fmtCompact(c.subscribers)} · 영상 ${c.videos}개${c.demo ? " · 데모" : ""}</span>`).join("");
+        box.innerHTML = `
+          <div class="cm-panel">
+            <div class="cm-h">📋 컨셉 리포트
+              <span class="engine-chip">엔진: ${esc(r.engine)}</span>${chips}
+              <button class="btn-secondary" style="float:right;font-size:12px;" onclick="navigator.clipboard.writeText(LAST).then(()=>toast('📋 리포트 전체 복사'))">📋 전체 복사</button>
+            </div>
+            <div class="report">${md(r.report)}</div>
+          </div>`;
+        if (r.engine === "demo") showDemoBanner(true);
+      } catch (e) {
+        box.innerHTML = `<div class="cm-panel" style="color:#b91c1c;">오류: ${esc(e.message)}</div>`;
+      }
+    };
+
+    (async () => {
+      try {
+        const s = await api("/api/concept/status");
+        if (!s.gemini && !s.openai) showDemoBanner(true);
+      } catch (e) {}
+    })();
+  </script>
+</body>
+</html>
