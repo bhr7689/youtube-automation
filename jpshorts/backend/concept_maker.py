@@ -10,6 +10,7 @@ GPT 버전보다 나은 점: 채널 URL 만 넣으면 YouTube Data API 로 제�
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 
@@ -94,6 +95,71 @@ Suno 스타일 프롬프트는 영어: [Main genre], [sub genre], [era/mood], [i
 [금지] 원본 복제 제안/거의 같은 채널명/로고·캐릭터·고유 구도 복제/데이터 없이 확정적
 인기 분석/핸들 가용성 단정/원본 제목 단어만 바꾼 유사 제목/원본과 전혀 다른 방향/분석
 없이 컨셉만 제시."""
+
+
+# ── JSON 출력 스키마 (마크다운 대신 구조화 — 화면에서 카드로 렌더) ──
+JSON_OUTPUT = """[출력 형식 — 매우 중요]
+위 [최종 출력 순서]의 마크다운 지시는 무시한다. 대신 아래 JSON 스키마 **하나만** 출력한다.
+설명·인사말·코드펜스(```) 금지. 순수 JSON 객체 하나만. 모든 분석 원칙(85% 유지·15% 변형·
+근거 기반·데이터 없으면 '(추정)' 표기)은 그대로 지킨다. 값 안의 텍스트는 한국어를 기본으로
+하되, Suno style_prompt·image_prompt·handles·hashtags·keywords·tags 처럼 원어가 자연스러운
+것은 원어(영어/스페인어 등) 유지. 빈 값도 키는 반드시 포함(빈 문자열/빈 배열).
+
+{
+  "input_assumptions": ["분석 전제·데이터 한계 2~4문장(예: 썸네일 미첨부→시각분석 추정)"],
+  "channels": [{
+    "name": "채널명",
+    "identity": {"mood":"전체 무드","world":"세계관","target":"타겟","purpose":"시청 목적","emotion":"감정 포인트","evidence":"근거(어떤 제목·반복 패턴에서 판단했는지)"},
+    "thumbnail": {"color":"컬러 경향","person":"인물 유무","composition":"구도","evidence":"근거","estimated": true},
+    "views": "③ 조회수 패턴 — 고조회 공통점, 저조회와의 차이(근거 포함). 데이터 없으면 문장 앞에 '(추정)'",
+    "evolution": {"early":"초기","mid":"중기","recent":"최근","diagnosis":"진단 한 줄"},
+    "keywords": {"repeated":["반복 키워드 Top"],"emotional":["감성 단어"],"place_time":"장소·시간대 단어","genre":["장르 단어"],"pattern":"문형 패턴","structure":"제목 구조 공식(예: 이모지+감성문장+검색키워드+회차번호)"},
+    "branding": {"consistency":9,"differentiation":7,"memorability":8,"scalability":9,"clickability":8,"total":41,"one_liner":"한줄평"}
+  }],
+  "fusion": "다채널이면 융합 비율(예: A 60% 제목문형 / B 30% 색감 / C 10% 악기). 1채널이면 빈 문자열",
+  "concepts": [{
+    "name":"컨셉명","definition":"이 채널은 [타겟]에게 [무드]를 [소재]로 전달하는 채널이다",
+    "moodboard": {"colors":"색감 5~7개(#hex 있으면 포함)","atmosphere":"분위기 묘사","ref_words":["레퍼런스 단어 5~7개"]},
+    "keep_85":["유지한 85% 항목들"],"twist_15":["새롭게 비튼 15% 항목들"],
+    "differentiation":["차별화 포인트"],"rationale":"왜 이렇게 잡았는지 1~2문장(근거)"
+  }],
+  "setup": {
+    "names":["채널이름 후보 2~3개"],"handles":["@핸들 후보 2~3개"],
+    "handle_note":"동일·유사 핸들이 이미 있을 수 있으니 유튜브에서 직접 검색해 확인하라는 안내",
+    "description":"채널 설명문 3~5문장(그대로 복붙용)",
+    "keywords":"채널 키워드 10~15개 쉼표 구분(복붙용)",
+    "title_template":"고정 제목 템플릿 예시(#01 포함)",
+    "desc_template":"기본 영상 설명문 템플릿(복붙용)",
+    "tags":"기본 태그 10~15개 쉼표 구분(복붙용)",
+    "hashtags":["#해시태그 3~7개"]
+  },
+  "preview": {
+    "profile":{"form":"형태","color":"컬러","objects":"상징 오브젝트","mood":"분위기","avoid":"피해야 할 요소"},
+    "banner":{"background":"배경","object":"메인 오브젝트","text":"텍스트 배치","margin":"여백","mood":"분위기"},
+    "thumbnail":{"composition":"구도","color":"컬러 비율","object_rule":"인물·오브젝트 규칙","text":"텍스트 위치","click_point":"클릭 포인트"}
+  },
+  "hero_thumbnail": {
+    "concept":"대표 썸네일 콘셉트","reason":"선정 이유",
+    "composition":"구도","color_codes":"컬러 코드(#hex 포함)","font":"폰트 톤",
+    "object_rule":"인물·오브젝트 규칙","text_placement":"텍스트 배치","forbidden":"금지 요소",
+    "image_prompt":"이미지 생성 프롬프트(영어, 16:9 명시, 복붙용)"
+  },
+  "titles": ["신규 제목 10개(원본 복제 금지, 감성문장+검색키워드 조합)"],
+  "suno": {
+    "song_type":"instrumental 또는 lyric",
+    "type_reason":"'채널 성격상 이번 곡은 [연주곡/가사곡]으로 설계했습니다' + 이유",
+    "concept":"곡 컨셉 요약 1~2문장",
+    "style_prompt":"Suno 스타일 프롬프트(영어, 복붙용)",
+    "structure":[{"section":"[Intro]","desc":"구간 악기·분위기·감정선"}],
+    "lyrics":"가사곡이면 [Verse 1]/[Chorus] 등 구조 가사, 연주곡이면 빈 문자열",
+    "title_candidates":["곡 제목 후보 3~5개"],
+    "yt_title_example":"유튜브 제목 연결 예시",
+    "song_pack":[]
+  },
+  "checklist": ["다음 실행 체크리스트 4~6개(실행 동사로)"]
+}
+
+곡 수가 2개 이상이면 suno.song_pack 을 그 개수만큼 채운다(각 {"no":1,"title":"곡 제목","mood":"무드","style":"Suno 스타일 요약","link":"연결할 썸네일·영상 제목"}), 이때 structure/lyrics 는 대표 1곡 기준으로만 채운다. 곡 수가 1이면 song_pack=[] 로 둔다."""
 
 
 # ── LLM 디스패처: Gemini 우선 → OpenAI(키 있으면) ──────
@@ -217,6 +283,25 @@ def _demo_channel(url: str) -> dict:
     }
 
 
+# ── JSON 파싱 (LLM 출력 방어적 파싱) ────────────────────
+
+def _parse_json(text: str) -> dict | None:
+    if not text:
+        return None
+    t = text.strip()
+    if t.startswith("```"):                       # 코드펜스 제거
+        t = re.sub(r"^```[a-zA-Z]*\s*", "", t)
+        t = re.sub(r"\s*```$", "", t).strip()
+    i, j = t.find("{"), t.rfind("}")              # 첫 { ~ 마지막 }
+    if i == -1 or j == -1 or j <= i:
+        return None
+    try:
+        obj = json.loads(t[i:j + 1])
+        return obj if isinstance(obj, dict) else None
+    except Exception:
+        return None
+
+
 # ── 리포트 생성 ─────────────────────────────────────────
 
 def generate_report(channel_urls: list[str], song_type: str = "auto",
@@ -239,28 +324,156 @@ def generate_report(channel_urls: list[str], song_type: str = "auto",
 
     song_line = {"lyric": "가사곡으로 제작", "instrumental": "연주곡으로 제작",
                  "auto": "채널 성격에 따라 가사곡/연주곡 자동 판단"}.get(song_type, "자동 판단")
-    songs_line = (f"곡 묶음 {num_songs}곡을 13번 형식(표+흐름 설계)으로 제공하라."
-                  if num_songs > 1 else "곡 1곡 패키지를 제공하라.")
+    songs_line = (f"곡 묶음 {num_songs}곡을 suno.song_pack 에 {num_songs}개 채워라."
+                  if num_songs > 1 else "곡 1곡 패키지(structure/가사)를 제공하라.")
 
     prompt = (
-        SPEC + "\n\n[입력 데이터 — YouTube API 실측]\n" + data_block +
+        SPEC + "\n\n" + JSON_OUTPUT +
+        "\n\n[입력 데이터 — YouTube API 실측]\n" + data_block +
         ("\n[사용자 추가 메모]\n" + extra_notes + "\n" if extra_notes.strip() else "") +
         f"\n[곡 유형] {song_line}\n[곡 수] {songs_line}\n"
-        "\n[주의] 썸네일 이미지는 첨부되지 않았다 — 썸네일 시각 분석(②④)은 제목·업로드"
-        " 흐름 기반 추정으로 표기하라. 위 '최종 출력 순서' 1~15를 마크다운으로 전부 출력하라."
+        "\n[주의] 썸네일 이미지 미첨부 — thumbnail.estimated=true 로 두고 시각/조회 근거는"
+        " 제목·업로드 흐름 기반 추정으로 표기. 위 JSON 스키마 하나만 순수 JSON으로 출력하라."
     )
     out = _llm(prompt)
     engine = ("gemini" if translator.has_gemini() else
               "openai" if os.environ.get("OPENAI_API_KEY", "").strip() else "demo")
-    if not out:
-        out = _demo_report(channels[0])
-        engine = "demo"
+
+    result = _parse_json(out) if out else None
+    markdown = None
+    if result is None:
+        if out:                    # LLM은 응답했지만 JSON 파싱 실패 → 원문 마크다운 폴백
+            markdown = out
+        else:                      # LLM 키 없음 → 구조화 데모(화면 전체 컴포넌트 시연)
+            result = _demo_result(channels[0])
+            engine = "demo"
+
     return {
-        "report": out,
+        "result": result,          # 구조화 객체(성공 시) — 프론트가 카드로 렌더
+        "markdown": markdown,      # 파싱 실패 시 원문(프론트가 마크다운 폴백 렌더)
         "channels": [{"title": c["title"], "subscribers": c["subscribers"],
                       "videos": len(c["videos"]), "demo": c.get("demo", False)}
                      for c in channels],
         "engine": engine,
+    }
+
+
+def _demo_result(ch: dict) -> dict:
+    """키 없을 때 보여줄 구조화 데모 — 모든 화면 컴포넌트를 채운다."""
+    return {
+        "input_assumptions": [
+            f"분석 대상: {ch['title']} (구독자 {ch['subscribers']:,}, 최근 영상 {len(ch['videos'])}개 실데이터).",
+            "썸네일 이미지 미첨부 → 썸네일 시각 분석은 제목·업로드 흐름 기반 (추정)입니다.",
+            "이 리포트는 데모입니다 — 설정에서 Gemini 키를 넣으면 실제 분석이 나옵니다.",
+        ],
+        "channels": [{
+            "name": ch["title"],
+            "identity": {
+                "mood": "새벽·비·카페의 고요한 위로", "world": "혼자 있는 시간의 안식처",
+                "target": "20~40대, 심야·출퇴근·작업 BGM 수요층", "purpose": "수면 유도·집중·감정 정리",
+                "emotion": "외로움을 부정하지 않고 감싸줌",
+                "evidence": "제목 8개 중 6개가 시간대(새벽·밤)+장소(카페·창가) 조합",
+            },
+            "thumbnail": {"color": "앰버·딥블루 야간 톤", "person": "인물 없음(창가·불빛 오브젝트)",
+                          "composition": "중앙 오브젝트 + 흐린 배경", "evidence": "제목의 장면 묘사 반복",
+                          "estimated": True},
+            "views": "(추정) 고조회 공통은 계절·날씨 키워드(겨울밤 340만, 새벽 2시 210만) — 시기성 훅. "
+                     "기능성 제목(공부용 76만)보다 장면 묘사형이 평균 1.8배.",
+            "evolution": {"early": "단순 BGM 제목", "mid": "시간대+장소 공식 정착",
+                          "recent": "계절·날씨 훅 강화", "diagnosis": "장면 묘사형으로 정체성 수렴 중"},
+            "keywords": {"repeated": ["새벽", "카페", "재즈", "로파이", "창가", "밤"],
+                         "emotional": ["혼자", "위로", "고요", "잠들기 전"],
+                         "place_time": "새벽·밤 / 카페·창가",
+                         "genre": ["재즈", "로파이", "보사노바"],
+                         "pattern": "시간·장소 + 감정 + 장르",
+                         "structure": "장면 묘사 문장 + | + 장르/목적 키워드"},
+            "branding": {"consistency": 9, "differentiation": 6, "memorability": 6,
+                         "scalability": 8, "clickability": 7, "total": 36,
+                         "one_liner": "결은 탄탄하나 시그니처 오브젝트가 없어 기억에 덜 남는다."},
+        }],
+        "fusion": "",
+        "concepts": [{
+            "name": "심야서점 라디오",
+            "definition": "이 채널은 혼자 있는 밤의 20~40대에게 책 냄새 나는 고요함을 재즈·로파이로 전달하는 채널이다.",
+            "moodboard": {"colors": "딥그린 #1F3D2B, 앰버 #E0A458, 크림 #F3E9D2, 우드브라운 #7A5A3A",
+                          "atmosphere": "스탠드 불빛, 낡은 책장, 창밖 빗소리",
+                          "ref_words": ["심야", "서점", "책장", "빗소리", "스탠드 불빛", "고요", "위로"]},
+            "keep_85": ["심야 시간대", "위로 무드", "장면 묘사형 제목", "잔잔한 재즈 결", "인물 없는 썸네일"],
+            "twist_15": ["카페 → 서점(시그니처: 스탠드 불빛+책)", "앰버 단색 → 딥그린 포인트"],
+            "differentiation": ["'장소+시간대' 공식은 유지하되 미개척 공간(서점)으로 차별화",
+                                "책이라는 시그니처 오브젝트로 기억용이성 보강"],
+            "rationale": "원본의 '장소+시간대' 공식은 검증됐고, 서점은 같은 정서의 미개척 공간이라 15% 변형에 적합.",
+        }],
+        "setup": {
+            "names": ["심야서점 라디오", "밤의 책방", "Midnight Bookstore"],
+            "handles": ["@midnight.bookstore", "@bam.chaekbang", "@simya.radio"],
+            "handle_note": "동일하거나 유사한 핸들이 이미 사용 중일 수 있으니, 유튜브 채널 설정에서 직접 검색해 사용 가능 여부를 확인하세요.",
+            "description": "혼자 있는 밤을 위한 작은 서점입니다.\n오래된 책장과 스탠드 불빛 사이에서 흐르는 재즈·로파이로\n독서, 작업, 잠들기 전 시간을 조용히 채워드려요.\n숨을 고르고, 오늘 하루를 천천히 내려놓으세요.",
+            "keywords": "심야 재즈, 밤 재즈, 로파이, 서점 음악, 독서 음악, 수면 음악, 집중 음악, 재즈 카페, 잔잔한 피아노, 밤 감성, 작업용 BGM, 위로 음악, 빗소리 재즈, 심야 라디오, 조용한 밤",
+            "title_template": "🌙 새벽 3시의 책방 | 잠들기 전 듣는 심야 재즈 #01",
+            "desc_template": "혼자 있는 밤, 오래된 책방에서 흐르는 잔잔한 재즈입니다.\n독서, 작업, 수면 전 배경음악으로 편하게 틀어두세요.\n숨을 고르고 오늘을 내려놓는 한 시간.\n들어주셔서 고맙습니다.",
+            "tags": "심야재즈, 밤재즈, 로파이, 서점음악, 독서음악, 수면음악, 집중음악, 재즈카페, 잔잔한피아노, 밤감성, 작업용브금, 위로음악, 빗소리, 심야라디오, 조용한밤",
+            "hashtags": ["#심야재즈", "#로파이", "#독서음악", "#수면음악", "#재즈카페", "#밤감성"],
+        },
+        "preview": {
+            "profile": {"form": "원형 로고 안 스탠드 불빛+책", "color": "딥그린+앰버",
+                        "objects": "책, 스탠드, 작은 창", "mood": "따뜻하고 조용한 밤",
+                        "avoid": "원본과 같은 커피잔 로고, 과도한 네온"},
+            "banner": {"background": "밤의 서점 창가, 멀리 빗줄기", "object": "책장과 스탠드 불빛",
+                       "text": "중앙보다 약간 왼쪽, 작게", "margin": "상·좌우 넓은 여백",
+                       "mood": "고요·안식"},
+            "thumbnail": {"composition": "전경 책+스탠드, 후경 흐린 창가", "color": "딥그린 60% 앰버 30% 크림 10%",
+                          "object_rule": "인물 없음, 책·불빛 중심", "text": "좌하단 2~4단어",
+                          "click_point": "'들어가 앉고 싶은 밤 서점' 느낌"},
+        },
+        "hero_thumbnail": {
+            "concept": "스탠드 불빛 아래 펼쳐진 책, 창밖엔 부드러운 빗줄기, 딥그린 배경의 심야 서점",
+            "reason": "원본 고조회 요소(야간·장면 묘사·불빛)를 유지하되 커피잔 대신 책으로 시그니처 차별화.",
+            "composition": "전경 책+스탠드 40%, 후경 창가·빗줄기 60%",
+            "color_codes": "딥그린 #1F3D2B, 앰버 #E0A458, 크림 #F3E9D2, 우드브라운 #7A5A3A",
+            "font": "썸네일 텍스트 최소화, 필요 시 부드러운 세리프",
+            "object_rule": "인물 없음. 책·스탠드·창가·빗방울 중심",
+            "text_placement": "넣는다면 좌하단 2~4단어만",
+            "forbidden": "원본 로고 복제, 커피잔 동일 구도, 랜덤 텍스트, 과도한 네온",
+            "image_prompt": "A cozy midnight bookstore, an open book under a warm stand lamp in the foreground, soft rain streaks on a window in the blurred background, deep green and amber color palette, calm and intimate late-night mood, cinematic realistic photography, shallow depth of field, no people, no text, no logos, relaxing jazz playlist thumbnail, 16:9",
+        },
+        "titles": [
+            "🌙 새벽 3시의 책방 | 잠들기 전 듣는 심야 재즈 #01",
+            "비 오는 밤, 오래된 서점에서 | 잔잔한 재즈 피아노 #02",
+            "혼자 있는 밤을 위한 재즈 | 독서와 위로 #03",
+            "스탠드 불빛 아래, 느린 재즈 발라드 #04",
+            "창밖엔 비, 책방엔 재즈 | 심야 감성 BGM #05",
+            "잠 안 오는 밤 | 마음이 풀리는 로파이 재즈 #06",
+            "책 한 권, 재즈 한 곡 | 조용한 밤의 서점 #07",
+            "새벽 감성 재즈 | 집중과 휴식 사이 #08",
+            "오늘 하루를 내려놓는 밤 | 느린 재즈 #09",
+            "여기 잠깐 앉았다 가세요 | 심야 서점 재즈 #10",
+        ],
+        "suno": {
+            "song_type": "instrumental",
+            "type_reason": "채널 성격상 이번 곡은 연주곡으로 설계했습니다 — 독서·수면·작업용은 가사보다 반복 재생 가능한 연주곡이 적합.",
+            "concept": "밤의 서점에서 마음을 천천히 내려놓는 1시간 플레이리스트용 힐링 연주곡. 피아노 중심, 브러시 드럼과 빗소리 앰비언스가 감싼다.",
+            "style_prompt": "Instrumental lofi jazz, late-night 1960s mood, soft piano trio, upright bass, brushed drums, no vocals, 68 BPM, slow swing, wistful but warm, small bookstore ambience with vinyl crackle and distant rain, warm analog mixing, midnight reading playlist",
+            "structure": [
+                {"section": "[Intro]", "desc": "솔로 피아노, 빗소리 앰비언스, 넓고 조용한 분위기"},
+                {"section": "[Main Theme]", "desc": "브러시 드럼 합류, 따뜻한 메인 멜로디"},
+                {"section": "[Variation]", "desc": "베이스 워킹, 피아노가 조금 더 표현적으로"},
+                {"section": "[Bridge]", "desc": "피아노만 남아 반성적이고 조용하게"},
+                {"section": "[Final Theme]", "desc": "메인 멜로디 회귀, 드라마 없이 따뜻한 상승"},
+                {"section": "[Outro]", "desc": "악기 서서히 페이드, 빗소리만 남기며 마무리"},
+            ],
+            "lyrics": "",
+            "title_candidates": ["Midnight Pages", "밤의 책방", "Rain on the Spine", "책장 사이의 재즈", "After Hours Bookstore"],
+            "yt_title_example": "🌙 Midnight Pages | 잠들기 전 듣는 심야 서점 재즈 #01",
+            "song_pack": [],
+        },
+        "checklist": [
+            "채널핸들 후보를 유튜브에서 직접 검색해 사용 가능 확인",
+            "대표 썸네일 1장 제작 → 첫 3영상 같은 색감·구도로 통일",
+            "고정 제목 템플릿으로 초반 10개 밀어 정체성 각인",
+            "영상 길이 1시간~1시간 10분 유지",
+            "25곡 풀 플레이리스트가 필요하면 곡 수를 25로 다시 생성",
+        ],
     }
 
 
