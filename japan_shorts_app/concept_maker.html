@@ -18,6 +18,110 @@
     .cm-chip{border:1px solid #e5d9f5;background:#fff;color:#64748b;padding:6px 14px;border-radius:999px;font-size:13px;cursor:pointer;font-weight:600;}
     .cm-chip:hover{border-color:#c084fc;}
     .cm-chip.on{background:#f3e8ff;border-color:#c084fc;color:#7e22ce;}
+    .spin{color:#a855f7;padding:14px 0;}
+
+    /* ── 결과: 헤더 + 섹션 네비 ── */
+    .rp-top{background:#fff;border:1px solid #f0ecf7;border-radius:16px;padding:16px 18px;margin-bottom:14px;box-shadow:0 2px 10px rgba(120,60,180,.05);}
+    .rp-top-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
+    .rp-title{font-size:16px;font-weight:800;color:#1e1b2e;}
+    .rp-chip{font-size:11px;font-weight:700;padding:4px 11px;border-radius:999px;background:#ede9fe;color:#6d28d9;}
+    .rp-chip.demo{background:#fef3c7;color:#92400e;}
+    .rp-nav{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;-webkit-overflow-scrolling:touch;}
+    .rp-nav::-webkit-scrollbar{height:0;}
+    .rp-pill{white-space:nowrap;font-size:12.5px;font-weight:700;padding:7px 13px;border-radius:999px;background:#faf7ff;border:1px solid #ede9fe;color:#6d28d9;cursor:pointer;flex:0 0 auto;}
+    .rp-pill:hover{background:#f3e8ff;}
+    .rp-copy-all{margin-left:auto;font-size:12px;font-weight:700;padding:6px 13px;border-radius:9px;background:#f3e8ff;border:1px solid #e5d9f5;color:#7e22ce;cursor:pointer;}
+
+    /* ── 섹션 카드 ── */
+    .rp-sec{background:#fff;border:1px solid #f0ecf7;border-radius:16px;padding:18px 20px;margin-bottom:14px;box-shadow:0 2px 10px rgba(120,60,180,.05);scroll-margin-top:12px;}
+    .rp-sec-h{font-size:15px;font-weight:800;color:#5b21b6;margin-bottom:12px;display:flex;align-items:center;gap:7px;}
+    .rp-sec-note{font-size:12px;color:#8a80a5;font-weight:400;}
+    .rp-block{margin-bottom:14px;}
+    .rp-block:last-child{margin-bottom:0;}
+    .rp-block-h{font-size:13px;font-weight:800;color:#1e1b2e;margin-bottom:7px;}
+    .rp-assumptions{background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:10px 14px;font-size:12.5px;color:#78591c;line-height:1.7;}
+    .rp-assumptions li{margin:2px 0;}
+
+    /* key-value */
+    .kv{display:grid;grid-template-columns:auto 1fr;gap:2px 0;font-size:13px;}
+    .kv-row{display:contents;}
+    .kv-k{font-weight:700;color:#6d28d9;padding:6px 12px 6px 0;white-space:nowrap;border-bottom:1px dashed #f0ecf7;}
+    .kv-v{color:#334155;padding:6px 0;border-bottom:1px dashed #f0ecf7;line-height:1.6;}
+    @media(max-width:640px){.kv{grid-template-columns:1fr;}.kv-k{border-bottom:none;padding-bottom:0;}.kv-v{padding-top:2px;}}
+
+    /* chips */
+    .chips{display:flex;flex-wrap:wrap;gap:6px;}
+    .chip{font-size:12px;font-weight:600;padding:4px 11px;border-radius:999px;background:#f3f0fa;color:#5b21b6;}
+    .cc-chip{font-size:13px;font-weight:700;padding:6px 13px;border-radius:999px;background:#fff;border:1px solid #e5d9f5;color:#334155;cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
+    .cc-chip:hover{border-color:#c084fc;background:#faf7ff;}
+    .cc-ic{font-size:11px;opacity:.6;}
+
+    /* score bars */
+    .sc-row{display:flex;align-items:center;gap:10px;margin:5px 0;font-size:12.5px;}
+    .sc-lab{width:74px;color:#64748b;font-weight:600;flex:0 0 auto;}
+    .sc-track{flex:1;height:9px;background:#f1edf9;border-radius:999px;overflow:hidden;}
+    .sc-fill{display:block;height:100%;border-radius:999px;transition:width .5s;}
+    .sc-val{width:20px;text-align:right;font-weight:800;color:#1e1b2e;flex:0 0 auto;}
+    .sc-total{display:inline-flex;align-items:baseline;gap:4px;background:linear-gradient(90deg,#7c3aed,#ec4899);color:#fff;padding:8px 16px;border-radius:12px;font-weight:800;font-size:15px;}
+    .sc-total small{font-size:11px;opacity:.85;font-weight:600;}
+    .one-liner{font-size:13px;color:#4b5563;font-style:italic;margin-top:8px;padding-left:10px;border-left:3px solid #ddd6fe;}
+
+    /* concept card */
+    .concept-card{border:1px solid #ede9fe;border-radius:14px;padding:16px 18px;margin-bottom:12px;background:linear-gradient(135deg,#faf7ff 0%,#fdf2f8 100%);}
+    .concept-name{font-size:16px;font-weight:800;color:#5b21b6;margin-bottom:4px;}
+    .concept-def{font-size:13.5px;color:#334155;line-height:1.7;margin-bottom:12px;}
+    .two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:10px 0;}
+    @media(max-width:640px){.two-col{grid-template-columns:1fr;}}
+    .col-box{background:#fff;border:1px solid #f0ecf7;border-radius:10px;padding:10px 13px;}
+    .col-h{font-size:12px;font-weight:800;margin-bottom:6px;}
+    .col-keep .col-h{color:#059669;}
+    .col-twist .col-h{color:#db2777;}
+    .col-box ul{margin:0;padding-left:16px;font-size:12.5px;color:#334155;line-height:1.65;}
+    .rationale{font-size:12.5px;color:#6b7280;background:#f9fafb;border-radius:9px;padding:8px 12px;margin-top:8px;}
+    .sws{display:inline-flex;gap:4px;margin-left:6px;vertical-align:middle;}
+    .sw{width:16px;height:16px;border-radius:4px;border:1px solid rgba(0,0,0,.1);display:inline-block;}
+
+    /* copy block */
+    .copy-block{border:1px solid #e9e4f5;border-radius:11px;overflow:hidden;margin-bottom:10px;}
+    .copy-block.hot{border-color:#c084fc;box-shadow:0 0 0 3px rgba(192,132,252,.12);}
+    .copy-head{display:flex;align-items:center;gap:8px;background:#faf7ff;padding:7px 12px;border-bottom:1px solid #f0ecf7;}
+    .copy-label{font-size:12px;font-weight:800;color:#5b21b6;flex:1;}
+    .copy-btn{font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:8px;background:#7c3aed;color:#fff;border:none;cursor:pointer;flex:0 0 auto;}
+    .copy-btn:hover{background:#6d28d9;}
+    .copy-btn.done{background:#059669;}
+    .copy-pre{margin:0;padding:11px 13px;font-size:12.5px;line-height:1.65;color:#1e1b2e;white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,Menlo,Consolas,monospace;background:#fff;max-height:360px;overflow:auto;}
+
+    /* mini cards grid (preview) */
+    .mini-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;}
+    .mini-card{background:#faf7ff;border:1px solid #f0ecf7;border-radius:11px;padding:12px 14px;}
+    .mini-card h4{font-size:12.5px;font-weight:800;color:#5b21b6;margin:0 0 7px;}
+    .mini-card .kv{font-size:12px;}
+
+    /* timeline (suno structure) */
+    .tl{position:relative;padding-left:18px;}
+    .tl::before{content:"";position:absolute;left:5px;top:4px;bottom:4px;width:2px;background:#ede9fe;}
+    .tl-item{position:relative;margin-bottom:9px;}
+    .tl-item::before{content:"";position:absolute;left:-16px;top:5px;width:9px;height:9px;border-radius:50%;background:#a855f7;border:2px solid #fff;}
+    .tl-sec{font-size:12.5px;font-weight:800;color:#6d28d9;}
+    .tl-desc{font-size:12.5px;color:#4b5563;line-height:1.6;}
+
+    /* titles list */
+    .title-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;font-size:13px;}
+    .title-row:nth-child(odd){background:#faf7ff;}
+    .title-no{width:22px;height:22px;border-radius:50%;background:#ede9fe;color:#6d28d9;font-weight:800;font-size:11px;display:flex;align-items:center;justify-content:center;flex:0 0 auto;}
+    .title-txt{flex:1;color:#1e1b2e;line-height:1.5;}
+    .title-cp{font-size:11px;font-weight:700;padding:4px 10px;border-radius:7px;background:#fff;border:1px solid #e5d9f5;color:#7e22ce;cursor:pointer;flex:0 0 auto;}
+    .title-cp:hover{background:#f3e8ff;}
+
+    /* checklist */
+    .check-item{display:flex;align-items:flex-start;gap:9px;padding:7px 0;font-size:13.5px;color:#334155;line-height:1.6;cursor:pointer;}
+    .check-box{width:19px;height:19px;border-radius:6px;border:2px solid #c4b5fd;flex:0 0 auto;margin-top:1px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff;}
+    .check-item.done .check-box{background:#7c3aed;border-color:#7c3aed;}
+    .check-item.done .check-txt{color:#9ca3af;text-decoration:line-through;}
+
+    .badge-song{font-size:12px;font-weight:800;padding:5px 13px;border-radius:999px;background:#ede9fe;color:#6d28d9;}
+
+    /* 마크다운 폴백 */
     .report{font-size:14px;line-height:1.75;color:#334155;}
     .report h1{font-size:20px;font-weight:800;margin:18px 0 10px;color:#1e1b2e;}
     .report h2{font-size:16px;font-weight:800;margin:22px 0 8px;color:#5b21b6;border-bottom:2px solid #ede9fe;padding-bottom:5px;}
@@ -26,12 +130,7 @@
     .report th,.report td{border:1px solid #e9e4f5;padding:6px 10px;text-align:left;}
     .report th{background:#faf7ff;font-weight:700;color:#5b21b6;}
     .report ul{padding-left:20px;margin:6px 0;}
-    .report li{margin:3px 0;}
-    .report hr{border:none;border-top:1px dashed #e9e4f5;margin:14px 0;}
     .report code{background:#f3f0fa;border-radius:5px;padding:1px 6px;font-size:12.5px;}
-    .report strong{color:#1e1b2e;}
-    .engine-chip{font-size:11px;font-weight:700;padding:4px 11px;border-radius:999px;background:#ede9fe;color:#6d28d9;margin-left:8px;}
-    .spin{color:#a855f7;padding:14px 0;}
   </style>
 </head>
 <body>
@@ -69,7 +168,7 @@
     <main class="main">
       <span class="badge-dot">플리 컨셉 제조기</span>
       <h1 class="page-title"><span class="gradient-text">85% 결 유지, 15% 비틀기</span> 컨셉 설계</h1>
-      <p class="page-sub">플레이리스트 채널 URL만 넣으면 — 제목·조회수를 자동 수집해 분석하고, 신규 채널 컨셉 + Suno 곡 패키지까지 설계합니다</p>
+      <p class="page-sub">플레이리스트 채널 URL만 넣으면 — 제목·조회수를 자동 수집해 분석하고, 신규 채널 컨셉 + 복붙용 세팅 문구 + Suno 곡 패키지까지 카드로 정리해요</p>
 
       <div class="cm-panel">
         <div class="cm-h">① 분석할 채널 (1~3개)</div>
@@ -114,50 +213,267 @@
     bindChips("songType", "song_type");
     bindChips("numSongs", "num_songs");
 
-    // ── 미니 마크다운 렌더러 (제목/표/리스트/굵게/hr/코드) ──
+    // ── 복사 저장소 + 헬퍼 ──
+    let COPY = [];
+    const stash = t => COPY.push(t) - 1;
+    function copyIdx(i, btn) {
+      navigator.clipboard.writeText(COPY[i] || "").then(() => {
+        toast("📋 복사했어요");
+        if (btn) { const o = btn.innerHTML; btn.innerHTML = "✓ 복사됨"; btn.classList.add("done");
+          setTimeout(() => { btn.innerHTML = o; btn.classList.remove("done"); }, 1200); }
+      });
+    }
+    function copyBlock(text, label, hot) {
+      if (!text || !String(text).trim()) return "";
+      const i = stash(String(text));
+      return `<div class="copy-block${hot ? " hot" : ""}">
+        <div class="copy-head"><span class="copy-label">${esc(label || "")}</span>
+          <button class="copy-btn" onclick="copyIdx(${i},this)">📋 복사</button></div>
+        <pre class="copy-pre">${esc(String(text))}</pre></div>`;
+    }
+    function ccChip(text) { const i = stash(String(text));
+      return `<span class="cc-chip" onclick="copyIdx(${i},this)" title="클릭하면 복사">${esc(text)}<span class="cc-ic">📋</span></span>`; }
+    function chipList(arr) { return `<div class="chips">${(arr || []).map(x => `<span class="chip">${esc(x)}</span>`).join("")}</div>`; }
+    function swatches(str) { const h = (str || "").match(/#[0-9a-fA-F]{6}/g) || [];
+      return h.length ? `<span class="sws">${h.map(c => `<span class="sw" style="background:${c}" title="${c}"></span>`).join("")}</span>` : ""; }
+    function kv(rows) { const r = rows.filter(x => x[1] && String(x[1]).trim());
+      return r.length ? `<div class="kv">${r.map(x => `<span class="kv-k">${esc(x[0])}</span><span class="kv-v">${esc(x[1])}</span>`).join("")}</div>` : ""; }
+    function scoreBar(lab, v) { v = +v || 0; const p = Math.max(0, Math.min(10, v)) * 10;
+      const col = v >= 8 ? "#22c55e" : v >= 6 ? "#f59e0b" : "#ef4444";
+      return `<div class="sc-row"><span class="sc-lab">${lab}</span><span class="sc-track"><span class="sc-fill" style="width:${p}%;background:${col}"></span></span><span class="sc-val">${v}</span></div>`; }
+    function scrollTo(id) { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }
+    function toggleCheck(el) { el.classList.toggle("done"); el.querySelector(".check-box").textContent = el.classList.contains("done") ? "✓" : ""; }
+
+    // ── 구조화 리포트 렌더러 ──
+    function renderReport(d, meta) {
+      COPY = [];
+      const secs = [];   // {id, label, html}
+      const P = v => (v == null ? "" : String(v));
+
+      // 1) 채널 분석
+      (d.channels || []).forEach((c, ci) => {
+        const id = ci === 0 ? "sec-analysis" : "sec-analysis-" + ci;
+        const b = c.branding || {};
+        const kw = c.keywords || {};
+        let h = "";
+        h += kv([
+          ["전체 무드", c.identity?.mood], ["세계관", c.identity?.world],
+          ["타겟", c.identity?.target], ["시청 목적", c.identity?.purpose],
+          ["감정 포인트", c.identity?.emotion], ["근거", c.identity?.evidence],
+        ]);
+        // 브랜딩 점수
+        if (b.total != null || b.consistency != null) {
+          const tot = b.total != null ? b.total : (["consistency","differentiation","memorability","scalability","clickability"].reduce((a,k)=>a+(+b[k]||0),0));
+          const tc = tot >= 40 ? "#059669" : tot >= 30 ? "#d97706" : "#dc2626";
+          h += `<div class="rp-block" style="margin-top:14px;"><div class="rp-block-h">🏆 브랜딩 점수</div>
+            <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;">
+              <div style="flex:1;min-width:220px;">
+                ${scoreBar("일관성", b.consistency)}${scoreBar("차별성", b.differentiation)}${scoreBar("기억용이", b.memorability)}${scoreBar("확장성", b.scalability)}${scoreBar("클릭유도", b.clickability)}
+              </div>
+              <div class="sc-total" style="background:${tc};">${tot}<small>/50</small></div>
+            </div>${b.one_liner ? `<div class="one-liner">${esc(b.one_liner)}</div>` : ""}</div>`;
+        }
+        // 상세분석 (접기)
+        let det = "";
+        det += kv([["컬러", c.thumbnail?.color], ["인물", c.thumbnail?.person], ["구도", c.thumbnail?.composition], ["근거", c.thumbnail?.evidence]]);
+        if (c.thumbnail?.estimated) det += `<div style="font-size:11.5px;color:#b45309;margin-top:4px;">※ 썸네일 이미지 미첨부 — 시각 분석은 (추정)</div>`;
+        if (P(c.views)) det += `<div class="rp-block" style="margin-top:12px;"><div class="rp-block-h">③ 조회수 패턴</div><div style="font-size:13px;color:#334155;line-height:1.7;">${esc(c.views)}</div></div>`;
+        const ev = c.evolution || {};
+        if (ev.early || ev.diagnosis) det += `<div class="rp-block"><div class="rp-block-h">④ 썸네일 변화</div>${kv([["초기",ev.early],["중기",ev.mid],["최근",ev.recent],["진단",ev.diagnosis]])}</div>`;
+        det += `<div class="rp-block"><div class="rp-block-h">⑤ 제목 키워드</div>`;
+        if ((kw.repeated||[]).length) det += `<div style="margin-bottom:6px;"><span style="font-size:12px;color:#8a80a5;">반복</span> ${chipList(kw.repeated)}</div>`;
+        if ((kw.emotional||[]).length) det += `<div style="margin-bottom:6px;"><span style="font-size:12px;color:#8a80a5;">감성</span> ${chipList(kw.emotional)}</div>`;
+        det += kv([["장소·시간", kw.place_time], ["장르", (kw.genre||[]).join(", ")], ["문형", kw.pattern], ["제목 구조", kw.structure]]);
+        det += `</div>`;
+        h += `<details style="margin-top:12px;"><summary style="cursor:pointer;font-size:13px;font-weight:700;color:#7c3aed;">🔎 썸네일·조회수·키워드 상세 분석 ${(d.channels||[]).length>1?"("+esc(c.name)+")":""}</summary><div style="margin-top:10px;">${det}</div></details>`;
+
+        secs.push({ id, label: (d.channels||[]).length>1 ? "📊 "+P(c.name) : "📊 채널 분석",
+          html: `<div class="rp-sec" id="${id}"><div class="rp-sec-h">📊 채널 분석 <span class="rp-sec-note">${esc(P(c.name))}</span></div>${h}</div>` });
+      });
+
+      // 융합 (다채널)
+      if (P(d.fusion)) {
+        secs[secs.length-1].html = secs[secs.length-1].html.replace("</div>\n", "");
+      }
+
+      // 2) 신규 컨셉안
+      if ((d.concepts || []).length) {
+        let h = P(d.fusion) ? `<div class="rationale" style="margin-bottom:12px;">🔗 <b>융합 비율</b> — ${esc(d.fusion)}</div>` : "";
+        (d.concepts).forEach(cn => {
+          const mb = cn.moodboard || {};
+          h += `<div class="concept-card">
+            <div class="concept-name">💡 ${esc(cn.name)}</div>
+            <div class="concept-def">${esc(cn.definition)}</div>
+            ${kv([["색감", mb.colors ? mb.colors : ""], ["분위기", mb.atmosphere]])}${mb.colors ? `<div style="margin:6px 0;">${swatches(mb.colors)}</div>` : ""}
+            ${(mb.ref_words||[]).length ? `<div style="margin:8px 0;">${chipList(mb.ref_words)}</div>` : ""}
+            <div class="two-col">
+              <div class="col-box col-keep"><div class="col-h">✓ 유지한 85%</div><ul>${(cn.keep_85||[]).map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>
+              <div class="col-box col-twist"><div class="col-h">✦ 비튼 15%</div><ul>${(cn.twist_15||[]).map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>
+            </div>
+            ${(cn.differentiation||[]).length ? `<div class="rp-block-h" style="margin-top:6px;">차별화 포인트</div><ul style="font-size:12.5px;color:#334155;margin:0;padding-left:18px;line-height:1.6;">${(cn.differentiation||[]).map(x=>`<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+            ${cn.rationale ? `<div class="rationale">🧭 ${esc(cn.rationale)}</div>` : ""}
+          </div>`;
+        });
+        secs.push({ id:"sec-concept", label:"💡 컨셉안",
+          html:`<div class="rp-sec" id="sec-concept"><div class="rp-sec-h">💡 신규 컨셉안</div>${h}</div>` });
+      }
+
+      // 3) 채널 세팅 — 복사 자산
+      const su = d.setup || {};
+      if (Object.keys(su).length) {
+        let h = `<div style="font-size:12px;color:#8a80a5;margin-bottom:12px;">아래 회색 블록은 <b>📋 버튼 한 번</b>이면 그대로 복사돼요 — 유튜브 설정에 붙여넣기만 하세요.</div>`;
+        if ((su.names||[]).length) h += `<div class="rp-block"><div class="rp-block-h">채널 이름 후보 <span style="font-weight:400;color:#a99fc0;">(클릭 복사)</span></div><div class="chips">${su.names.map(ccChip).join("")}</div></div>`;
+        if ((su.handles||[]).length) h += `<div class="rp-block"><div class="rp-block-h">채널 핸들 후보 <span style="font-weight:400;color:#a99fc0;">(클릭 복사)</span></div><div class="chips">${su.handles.map(ccChip).join("")}</div>${su.handle_note?`<div style="font-size:11.5px;color:#b45309;margin-top:6px;">⚠️ ${esc(su.handle_note)}</div>`:""}</div>`;
+        h += copyBlock(su.description, "채널 설명문", true);
+        h += copyBlock(su.keywords, "채널 키워드", true);
+        h += copyBlock(su.title_template, "고정 제목 템플릿");
+        h += copyBlock(su.desc_template, "기본 영상 설명문 템플릿");
+        h += copyBlock(su.tags, "기본 태그");
+        if ((su.hashtags||[]).length) h += copyBlock(su.hashtags.join(" "), "해시태그");
+        secs.push({ id:"sec-setup", label:"⚙️ 채널세팅",
+          html:`<div class="rp-sec" id="sec-setup"><div class="rp-sec-h">⚙️ 유튜브 채널 세팅 <span class="rp-sec-note">복붙용</span></div>${h}</div>` });
+      }
+
+      // 4) 미리보기
+      const pv = d.preview || {};
+      if (pv.profile || pv.banner || pv.thumbnail) {
+        const card = (title, o, rows) => o ? `<div class="mini-card"><h4>${title}</h4>${kv(rows)}</div>` : "";
+        const h = `<div class="mini-grid">
+          ${card("👤 프로필", pv.profile, [["형태",pv.profile?.form],["컬러",pv.profile?.color],["오브젝트",pv.profile?.objects],["분위기",pv.profile?.mood],["피할 것",pv.profile?.avoid]])}
+          ${card("🖼️ 배너", pv.banner, [["배경",pv.banner?.background],["오브젝트",pv.banner?.object],["텍스트",pv.banner?.text],["여백",pv.banner?.margin],["분위기",pv.banner?.mood]])}
+          ${card("🎬 썸네일", pv.thumbnail, [["구도",pv.thumbnail?.composition],["컬러",pv.thumbnail?.color],["규칙",pv.thumbnail?.object_rule],["텍스트",pv.thumbnail?.text],["클릭",pv.thumbnail?.click_point]])}
+        </div>`;
+        secs.push({ id:"sec-preview", label:"🖼️ 미리보기",
+          html:`<div class="rp-sec" id="sec-preview"><div class="rp-sec-h">🖼️ 채널 미리보기 방향</div>${h}</div>` });
+      }
+
+      // 5) 대표 썸네일
+      const ht = d.hero_thumbnail || {};
+      if (ht.concept || ht.image_prompt) {
+        let h = ht.concept ? `<div style="font-size:14px;color:#1e1b2e;font-weight:700;line-height:1.6;margin-bottom:4px;">🎯 ${esc(ht.concept)}</div>` : "";
+        if (ht.reason) h += `<div class="rationale" style="margin-bottom:10px;">${esc(ht.reason)}</div>`;
+        h += kv([["구도",ht.composition],["컬러 코드",ht.color_codes],["폰트",ht.font],["오브젝트 규칙",ht.object_rule],["텍스트 배치",ht.text_placement],["금지 요소",ht.forbidden]]);
+        if (ht.color_codes) h += `<div style="margin:8px 0;">${swatches(ht.color_codes)}</div>`;
+        h += copyBlock(ht.image_prompt, "🖼️ 이미지 생성 프롬프트 (미드저니·DALL·E 등에 붙여넣기)", true);
+        secs.push({ id:"sec-hero", label:"🎯 대표썸네일",
+          html:`<div class="rp-sec" id="sec-hero"><div class="rp-sec-h">🎯 대표 썸네일 안</div>${h}</div>` });
+      }
+
+      // 6) 제목 10개
+      if ((d.titles||[]).length) {
+        const rows = d.titles.map((t,i)=>{ const idx=stash(String(t));
+          return `<div class="title-row"><span class="title-no">${i+1}</span><span class="title-txt">${esc(t)}</span><button class="title-cp" onclick="copyIdx(${idx},this)">복사</button></div>`; }).join("");
+        const allIdx = stash(d.titles.join("\n"));
+        secs.push({ id:"sec-titles", label:"✍️ 제목10",
+          html:`<div class="rp-sec" id="sec-titles"><div class="rp-sec-h">✍️ 신규 제목 ${d.titles.length}개 <button class="rp-copy-all" onclick="copyIdx(${allIdx},this)">📋 전체 복사</button></div>${rows}</div>` });
+      }
+
+      // 7) Suno
+      const s = d.suno || {};
+      if (s.style_prompt || (s.song_pack||[]).length) {
+        let h = "";
+        if (s.song_type) h += `<div style="margin-bottom:8px;"><span class="badge-song">${s.song_type==="lyric"?"🎤 가사곡":"🎹 연주곡"}</span></div>`;
+        if (s.type_reason) h += `<div class="rationale" style="margin-bottom:10px;">${esc(s.type_reason)}</div>`;
+        if (s.concept) h += `<div style="font-size:13px;color:#334155;line-height:1.7;margin-bottom:10px;">${esc(s.concept)}</div>`;
+        h += copyBlock(s.style_prompt, "🎵 Suno 스타일 프롬프트 (Style of Music 에 붙여넣기)", true);
+        if ((s.structure||[]).length) h += `<div class="rp-block"><div class="rp-block-h">곡 구조</div><div class="tl">${s.structure.map(x=>`<div class="tl-item"><span class="tl-sec">${esc(x.section)}</span> <span class="tl-desc">${esc(x.desc)}</span></div>`).join("")}</div></div>`;
+        if (P(s.lyrics)) h += copyBlock(s.lyrics, "🎤 가사 (Suno Custom 가사란에 붙여넣기)", true);
+        if ((s.title_candidates||[]).length) h += `<div class="rp-block"><div class="rp-block-h">곡 제목 후보 <span style="font-weight:400;color:#a99fc0;">(클릭 복사)</span></div><div class="chips">${s.title_candidates.map(ccChip).join("")}</div></div>`;
+        if (s.yt_title_example) h += copyBlock(s.yt_title_example, "유튜브 제목 연결 예시");
+        if ((s.song_pack||[]).length) {
+          h += `<div class="rp-block"><div class="rp-block-h">📀 곡 묶음 ${s.song_pack.length}곡</div>`;
+          h += s.song_pack.map(p=>`<div class="mini-card" style="margin-bottom:8px;"><h4>#${esc(P(p.no))} ${esc(p.title)}</h4>${kv([["무드",p.mood],["스타일",p.style],["연결",p.link]])}</div>`).join("");
+          h += `</div>`;
+        }
+        secs.push({ id:"sec-suno", label:"🎵 Suno",
+          html:`<div class="rp-sec" id="sec-suno"><div class="rp-sec-h">🎵 Suno AI 곡 패키지</div>${h}</div>` });
+      }
+
+      // 8) 체크리스트
+      if ((d.checklist||[]).length) {
+        const items = d.checklist.map(x=>`<div class="check-item" onclick="toggleCheck(this)"><span class="check-box"></span><span class="check-txt">${esc(x)}</span></div>`).join("");
+        secs.push({ id:"sec-check", label:"✅ 체크리스트",
+          html:`<div class="rp-sec" id="sec-check"><div class="rp-sec-h">✅ 다음 실행 체크리스트</div>${items}</div>` });
+      }
+
+      // 헤더 + 네비 + 입력가정
+      const chChips = (meta.channels||[]).map(c=>`<span class="rp-chip">${esc(c.title)} · 구독 ${fmtCompact(c.subscribers)} · 영상 ${c.videos}개${c.demo?" · 데모":""}</span>`).join("");
+      const nav = secs.map(x=>`<span class="rp-pill" onclick="scrollTo('${x.id}')">${x.label}</span>`).join("");
+      const exportIdx = stash(buildExport(d, meta));
+      let assume = "";
+      if ((d.input_assumptions||[]).length) assume = `<div class="rp-assumptions"><ul style="margin:0;padding-left:16px;">${d.input_assumptions.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>`;
+
+      const top = `<div class="rp-top">
+        <div class="rp-top-row"><span class="rp-title">📋 컨셉 리포트</span>
+          <span class="rp-chip ${meta.engine==="demo"?"demo":""}">엔진: ${esc(meta.engine)}</span>${chChips}</div>
+        <div class="rp-nav">${nav}<button class="rp-copy-all" onclick="copyIdx(${exportIdx},this)">📋 전체 복사</button></div>
+      </div>`;
+
+      document.getElementById("resultBox").innerHTML = top + (assume?`<div class="rp-sec">${assume}</div>`:"") + secs.map(x=>x.html).join("");
+      if (meta.engine === "demo") showDemoBanner(true);
+    }
+
+    // 전체 복사용 텍스트 빌더
+    function buildExport(d, meta) {
+      const L = [];
+      L.push("■ 플리 컨셉 리포트 (엔진: " + meta.engine + ")");
+      (d.input_assumptions||[]).forEach(x=>L.push("- " + x));
+      (d.channels||[]).forEach(c=>{
+        L.push("\n【채널 분석】 " + (c.name||""));
+        const id=c.identity||{}; L.push(`무드:${id.mood||""} / 타겟:${id.target||""} / 목적:${id.purpose||""}`);
+        const b=c.branding||{}; if(b.total!=null) L.push(`브랜딩 점수: ${b.total}/50 — ${b.one_liner||""}`);
+      });
+      if (d.fusion) L.push("\n융합: " + d.fusion);
+      (d.concepts||[]).forEach(cn=>{ L.push("\n【컨셉안】 " + cn.name); L.push(cn.definition||""); });
+      const su=d.setup||{};
+      if(Object.keys(su).length){
+        L.push("\n【채널 세팅】");
+        if((su.names||[]).length) L.push("이름: " + su.names.join(" / "));
+        if((su.handles||[]).length) L.push("핸들: " + su.handles.join(" / "));
+        if(su.description) L.push("\n설명문:\n" + su.description);
+        if(su.keywords) L.push("\n키워드:\n" + su.keywords);
+        if(su.title_template) L.push("\n제목 템플릿:\n" + su.title_template);
+        if(su.desc_template) L.push("\n설명 템플릿:\n" + su.desc_template);
+        if(su.tags) L.push("\n태그:\n" + su.tags);
+        if((su.hashtags||[]).length) L.push("\n해시태그: " + su.hashtags.join(" "));
+      }
+      const ht=d.hero_thumbnail||{};
+      if(ht.image_prompt) L.push("\n【대표 썸네일 이미지 프롬프트】\n" + ht.image_prompt);
+      if((d.titles||[]).length) L.push("\n【제목 10】\n" + d.titles.map((t,i)=>(i+1)+". "+t).join("\n"));
+      const s=d.suno||{};
+      if(s.style_prompt) L.push("\n【Suno 스타일】\n" + s.style_prompt);
+      if(s.lyrics) L.push("\n【가사】\n" + s.lyrics);
+      if((s.structure||[]).length) L.push("\n【곡 구조】\n" + s.structure.map(x=>x.section+" "+x.desc).join("\n"));
+      if((d.checklist||[]).length) L.push("\n【체크리스트】\n" + d.checklist.map(x=>"[ ] "+x).join("\n"));
+      return L.join("\n");
+    }
+
+    // ── 마크다운 폴백 (JSON 파싱 실패 시) ──
     function md(src) {
       const lines = (src || "").split("\n");
       let html = "", inTable = false, inList = false;
-      const inline = s => esc(s)
-        .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-        .replace(/`([^`]+)`/g, "<code>$1</code>");
-      const closeAll = () => {
-        if (inTable) { html += "</table>"; inTable = false; }
-        if (inList) { html += "</ul>"; inList = false; }
-      };
+      const inline = s => esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/`([^`]+)`/g, "<code>$1</code>");
+      const closeAll = () => { if (inTable) { html += "</table>"; inTable = false; } if (inList) { html += "</ul>"; inList = false; } };
       for (let raw of lines) {
         const ln = raw.trimEnd();
         if (/^\|.*\|$/.test(ln.trim())) {
           const cells = ln.trim().slice(1, -1).split("|").map(c => c.trim());
-          if (cells.every(c => /^:?-{2,}:?$/.test(c))) continue;   // 구분선
-          if (!inTable) { closeAll(); html += "<table>"; inTable = true;
-            html += "<tr>" + cells.map(c => `<th>${inline(c)}</th>`).join("") + "</tr>";
-          } else {
-            html += "<tr>" + cells.map(c => `<td>${inline(c)}</td>`).join("") + "</tr>";
-          }
+          if (cells.every(c => /^:?-{2,}:?$/.test(c))) continue;
+          if (!inTable) { closeAll(); html += "<table>"; inTable = true; html += "<tr>" + cells.map(c => `<th>${inline(c)}</th>`).join("") + "</tr>"; }
+          else html += "<tr>" + cells.map(c => `<td>${inline(c)}</td>`).join("") + "</tr>";
           continue;
         }
         if (inTable) { html += "</table>"; inTable = false; }
-        if (/^#{1,3}\s/.test(ln)) {
-          closeAll();
-          const lvl = ln.match(/^(#{1,3})/)[1].length;
-          html += `<h${lvl}>${inline(ln.replace(/^#{1,3}\s*/, ""))}</h${lvl}>`;
-        } else if (/^[-*]\s/.test(ln.trim())) {
-          if (!inList) { html += "<ul>"; inList = true; }
-          html += `<li>${inline(ln.trim().replace(/^[-*]\s*/, ""))}</li>`;
-        } else if (/^-{3,}$/.test(ln.trim())) {
-          closeAll(); html += "<hr>";
-        } else if (ln.trim() === "") {
-          closeAll();
-        } else {
-          closeAll(); html += `<p style="margin:5px 0;">${inline(ln)}</p>`;
-        }
+        if (/^#{1,3}\s/.test(ln)) { closeAll(); const lvl = ln.match(/^(#{1,3})/)[1].length; html += `<h${lvl}>${inline(ln.replace(/^#{1,3}\s*/, ""))}</h${lvl}>`; }
+        else if (/^[-*]\s/.test(ln.trim())) { if (!inList) { html += "<ul>"; inList = true; } html += `<li>${inline(ln.trim().replace(/^[-*]\s*/, ""))}</li>`; }
+        else if (/^-{3,}$/.test(ln.trim())) { closeAll(); html += "<hr>"; }
+        else if (ln.trim() === "") closeAll();
+        else { closeAll(); html += `<p style="margin:5px 0;">${inline(ln)}</p>`; }
       }
       closeAll();
       return html;
     }
 
-    let LAST = "";
     document.getElementById("goBtn").onclick = async () => {
       const chans = ["ch1", "ch2", "ch3"].map(id => document.getElementById(id).value.trim()).filter(Boolean);
       if (!chans.length) return toast("채널 URL 을 1개 이상 넣어주세요");
@@ -167,18 +483,17 @@
         const r = await api("/api/concept/analyze", { method: "POST", body: JSON.stringify({
           channels: chans, song_type: state.song_type, num_songs: state.num_songs,
           extra_notes: document.getElementById("notes").value }) });
-        LAST = r.report;
-        const chips = r.channels.map(c =>
-          `<span class="engine-chip">${esc(c.title)} · 구독 ${fmtCompact(c.subscribers)} · 영상 ${c.videos}개${c.demo ? " · 데모" : ""}</span>`).join("");
-        box.innerHTML = `
-          <div class="cm-panel">
-            <div class="cm-h">📋 컨셉 리포트
-              <span class="engine-chip">엔진: ${esc(r.engine)}</span>${chips}
-              <button class="btn-secondary" style="float:right;font-size:12px;" onclick="navigator.clipboard.writeText(LAST).then(()=>toast('📋 리포트 전체 복사'))">📋 전체 복사</button>
-            </div>
-            <div class="report">${md(r.report)}</div>
-          </div>`;
-        if (r.engine === "demo") showDemoBanner(true);
+        const meta = { channels: r.channels, engine: r.engine };
+        if (r.result) {
+          renderReport(r.result, meta);
+        } else {
+          // JSON 파싱 실패 → 마크다운 폴백
+          const chips = (r.channels||[]).map(c => `<span class="rp-chip">${esc(c.title)} · 구독 ${fmtCompact(c.subscribers)}${c.demo?" · 데모":""}</span>`).join("");
+          box.innerHTML = `<div class="rp-sec"><div class="rp-sec-h">📋 컨셉 리포트 <span class="rp-chip">엔진: ${esc(r.engine)}</span>${chips}
+            <button class="rp-copy-all" onclick="navigator.clipboard.writeText(${JSON.stringify(r.markdown||"")}).then(()=>toast('📋 복사'))">📋 전체 복사</button></div>
+            <div class="report">${md(r.markdown || "결과가 비어 있어요.")}</div></div>`;
+          if (r.engine === "demo") showDemoBanner(true);
+        }
       } catch (e) {
         box.innerHTML = `<div class="cm-panel" style="color:#b91c1c;">오류: ${esc(e.message)}</div>`;
       }
