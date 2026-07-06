@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>설정 · RefTracker</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/api.js"></script>
+  <style>
+    .st-panel{background:#fff;border:1px solid #f0ecf7;border-radius:16px;padding:18px 20px;margin-bottom:16px;box-shadow:0 2px 10px rgba(120,60,180,.05);}
+    .st-h{font-size:15px;font-weight:800;margin-bottom:4px;}
+    .st-sub{font-size:12px;color:#8a80a5;margin-bottom:14px;}
+    .conn-row{display:flex;align-items:center;gap:12px;padding:10px 4px;border-bottom:1px dashed #f0ecf7;font-size:14px;}
+    .conn-row:last-child{border-bottom:none;}
+    .conn-icon{font-size:20px;width:30px;text-align:center;}
+    .conn-name{font-weight:700;min-width:120px;}
+    .conn-state{font-size:12px;font-weight:700;padding:4px 12px;border-radius:999px;}
+    .conn-state.ok{background:#dcfce7;color:#166534;}
+    .conn-state.off{background:#fef3c7;color:#92400e;}
+    .conn-how{flex:1;font-size:12px;color:#8a80a5;}
+    .gen-row{display:flex;align-items:center;gap:12px;padding:10px 4px;border-bottom:1px dashed #f0ecf7;font-size:14px;flex-wrap:wrap;}
+    .gen-name{font-weight:700;min-width:130px;}
+    .gen-meta{font-size:12px;color:#8a80a5;flex:1;min-width:180px;}
+    .btn-sm{background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;}
+    .btn-sm:hover{background:#6d28d9;}
+    .btn-sm.busy{opacity:.5;pointer-events:none;}
+    .add-row{display:flex;gap:8px;margin-top:12px;}
+    .add-input{flex:1;border:1px solid #e5d9f5;border-radius:10px;padding:9px 13px;font-size:14px;outline:none;}
+    .note{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;border-radius:10px;padding:10px 14px;font-size:12.5px;line-height:1.7;margin-top:10px;}
+    code{background:#f3f0fa;border-radius:5px;padding:1px 6px;font-size:12px;}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <span class="sidebar-badge">쇼치 강사님 시리즈</span>
+        <div class="sidebar-brand">RefTracker</div>
+        <div class="sidebar-brand-sub">레퍼런스 채널 추적</div>
+      </div>
+      <nav class="nav-section">
+        <a href="trend.html" class="nav-item">🔥 트렌드 피드</a>
+        <a href="global_surge.html" class="nav-item">🌍 글로벌 급등</a>
+        <a href="youtube_discover.html" class="nav-item">🌐 YouTube 발굴</a>
+        <a href="search.html" class="nav-item">🔍 검색</a>
+        <a href="source_finder.html" class="nav-item">🕵️ 원본 소스 찾기</a>
+        <a href="surge_analysis.html" class="nav-item">📊 급등 규칙 분석</a>
+        <a href="keyword_radar.html" class="nav-item">🌡️ 키워드 레이더</a>
+        <a href="scriptwriter.html" class="nav-item">✍️ 대본 작성</a>
+        <a href="channels.html" class="nav-item">📺 레퍼런스 채널</a>
+        <a href="collections.html" class="nav-item">📁 컬렉션</a>
+        <a href="bookmarks.html" class="nav-item">⭐ 북마크</a>
+        <a href="notifications.html" class="nav-item">🔔 알림·작업 기록</a>
+        <a href="settings.html" class="nav-item active">⚙️ 설정</a>
+      </nav>
+      <div class="nav-divider"></div>
+      <nav class="nav-section">
+        <a href="index.html" class="nav-item-secondary"><span>🏠 포털 메인</span><span>›</span></a>
+        <a href="translator.html" class="nav-item-secondary"><span>🌸 일본어 번역봇</span><span>›</span></a>
+        <a href="editor.html" class="nav-item-secondary"><span>✂️ 자동 컷편집</span><span>›</span></a>
+      </nav>
+      <div class="user-card">
+        <div class="avatar-pill">남정</div>
+        <div class="user-card-info">
+          <div class="user-name">박남정</div>
+          <div class="user-email">parkzz5157@gmail.com</div>
+          <button class="logout">로그아웃</button>
+        </div>
+      </div>
+      <div class="version">v0.4.0</div>
+    </aside>
+
+    <main class="main">
+      <span class="badge-dot">설정</span>
+      <h1 class="page-title"><span class="gradient-text">연결·학습</span> 관리</h1>
+      <p class="page-sub">실전 투입 체크리스트 — 연결 상태를 확인하고 카테고리별 학습을 관리합니다</p>
+
+      <div class="st-panel">
+        <div class="st-h">🔌 연결 상태</div>
+        <div class="st-sub">키는 저장소 루트 <code>.env</code> 파일에 넣고 서버를 재시작하면 반영돼요</div>
+        <div id="connBox">확인 중…</div>
+      </div>
+
+      <div class="st-panel">
+        <div class="st-h">📚 카테고리별 학습 관리</div>
+        <div class="st-sub">카테고리마다 코퍼스가 <b>따로</b> 쌓이고, 수집이 끝나면 <b>자동 재학습</b>됩니다 (섞임 없음)</div>
+        <div id="genreBox">확인 중…</div>
+        <div class="add-row">
+          <input class="add-input" id="newGenre" placeholder="새 카테고리 — 예: 플레이리스트, cooking fail, 동물 감동">
+          <button class="btn-sm" onclick="collectGenre(document.getElementById('newGenre').value.trim(), this)">+ 수집 시작</button>
+        </div>
+        <div class="note">🔄 <b>학습 원리</b> — 수집(터진 쇼츠 대본·태그·댓글) → 훅 유형·구조·키워드 통계 자동 갱신 →
+          대본·제목 생성이 그 카테고리 규칙만 사용. 목표 500편, 100편부터 규칙이 안정화됩니다.</div>
+      </div>
+
+      <div class="st-panel">
+        <div class="st-h">💾 데이터 보관</div>
+        <div class="st-sub" style="margin-bottom:8px;">학습 자산이 어디에 쌓이는지</div>
+        <div style="font-size:13px;color:#4b5563;line-height:1.9;">
+          · 코퍼스·규칙·기록: <code>jpshorts/backend/data/</code> (실행하는 PC에 영구 누적)<br>
+          · 카테고리별 규칙: <code>data/hook_rules/{카테고리}.json</code><br>
+          · 내레이션 패키지: <code>data/narration_jobs/</code> · 컷 플랜: <code>data/cut_plans/</code><br>
+          · git 에는 올라가지 않아요(개인 자산) — PC 백업 시 <code>data/</code> 폴더만 복사하면 됩니다.
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    async function loadStatus() {
+      const s = await api("/api/system/status");
+      const row = (icon, name, ok, how) => `
+        <div class="conn-row">
+          <span class="conn-icon">${icon}</span>
+          <span class="conn-name">${name}</span>
+          <span class="conn-state ${ok ? "ok" : "off"}">${ok ? "✓ 연결됨" : "미설정"}</span>
+          <span class="conn-how">${how}</span>
+        </div>`;
+      document.getElementById("connBox").innerHTML =
+        row("🔑", "YouTube API", s.youtube_key, s.youtube_key ? "실데이터 수집 가능" : ".env 에 YOUTUBE_API_KEY= 입력 (console.cloud.google.com 발급)") +
+        row("🤖", "Gemini", s.gemini, s.gemini ? "실제 번역·대본 생성" : ".env 에 GEMINI_API_KEY= 입력 (aistudio.google.com 발급) — 없으면 데모 번역") +
+        row("🎙️", "VOICEVOX", s.voicevox, s.voicevox ? "실제 일본어 음성 합성" : "voicevox.hiroshiba.jp 에서 무료 설치 후 실행 — 없으면 무음 패키지") +
+        row("🎬", "ffmpeg", s.ffmpeg, s.ffmpeg ? "렌더 가능" : "ffmpeg 설치 필요") +
+        row("📦", "작업 자산", true, `내레이션 ${s.narration_jobs}건 · 컷 플랜 ${s.cut_plans}건`);
+      renderGenres(s.corpus || []);
+    }
+
+    function renderGenres(genres) {
+      document.getElementById("genreBox").innerHTML = genres.length ? genres.map(g => `
+        <div class="gen-row">
+          <span class="gen-name">📂 ${esc(g.genre)}</span>
+          <span class="gen-meta">코퍼스 ${g.corpus_count}편 · ${g.rules_learned ? `규칙 학습됨(${g.rules_corpus_count}편 기준)` : "규칙 미학습"} · 시드: ${esc((g.queries || []).slice(0, 2).join(", "))}</span>
+          <button class="btn-sm" onclick="collectGenre('${esc(g.genre)}', this)">🔄 수집+재학습</button>
+        </div>`).join("") : '<div style="color:#a99fc0;font-size:13px;padding:8px 0;">카테고리 없음 — 아래에서 새로 시작하세요</div>';
+    }
+
+    async function collectGenre(genre, btn) {
+      if (!genre) return toast("카테고리 이름을 입력하세요");
+      btn.classList.add("busy"); const orig = btn.textContent; btn.textContent = "수집 중…";
+      try {
+        const r = await api("/api/corpus/collect", { method: "POST", body: JSON.stringify({ genre, target: 100 }) });
+        toast(`✓ ${genre}: ${r.added}편 수집 → 규칙 ${r.rules_updated ? "자동 갱신" : "갱신 실패"} (총 ${r.total}편${r.demo ? " · 데모" : ""})`);
+        loadStatus();
+      } catch (e) { toast("오류: " + e.message); }
+      btn.classList.remove("busy"); btn.textContent = orig;
+    }
+
+    loadStatus();
+  </script>
+</body>
+</html>

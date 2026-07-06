@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>컬렉션 · RefTracker</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/api.js"></script>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <span class="sidebar-badge">쇼치 강사님 시리즈</span>
+        <div class="sidebar-brand">RefTracker</div>
+        <div class="sidebar-brand-sub">레퍼런스 채널 추적</div>
+      </div>
+      <nav class="nav-section">
+        <a href="trend.html" class="nav-item">🔥 트렌드 피드</a>
+        <a href="youtube_discover.html" class="nav-item">🌐 YouTube 발굴</a>
+        <a href="search.html" class="nav-item">🔍 검색</a>
+        <a href="source_finder.html" class="nav-item">🕵️ 원본 소스 찾기</a>
+        <a href="channels.html" class="nav-item">📺 레퍼런스 채널</a>
+        <a href="collections.html" class="nav-item active">📁 컬렉션</a>
+        <a href="bookmarks.html" class="nav-item">⭐ 북마크</a>
+        <a href="notifications.html" class="nav-item">🔔 알림 <span class="nav-badge">3</span></a>
+        <a href="settings.html" class="nav-item">⚙️ 설정</a>
+      </nav>
+      <div class="nav-divider"></div>
+      <nav class="nav-section">
+        <a href="index.html" class="nav-item-secondary"><span>🏠 포털 메인</span><span>›</span></a>
+        <a href="translator.html" class="nav-item-secondary"><span>🌸 일본어 번역봇</span><span>›</span></a>
+        <a href="editor.html" class="nav-item-secondary"><span>✂️ 자동 컷편집</span><span>›</span></a>
+      </nav>
+      <div class="user-card">
+        <div class="avatar-pill">남정</div>
+        <div class="user-card-info">
+          <div class="user-name">박남정</div>
+          <div class="user-email">parkzz5157@gmail.com</div>
+          <button class="logout">로그아웃</button>
+        </div>
+      </div>
+      <div class="version">v0.4.0</div>
+    </aside>
+
+    <main class="main">
+      <div class="page-header-row">
+        <div>
+          <span class="badge-dot">컬렉션</span>
+          <h1 class="page-title">채널 폴더</h1>
+          <p class="page-sub">레퍼런스 채널을 주제별 폴더로 정리 · 클릭하면 폴더 안 채널을 봅니다</p>
+        </div>
+        <div>
+          <button class="btn-primary" id="newBtn">+ 새 폴더</button>
+        </div>
+      </div>
+
+      <div class="card-grid cols-3" id="grid"></div>
+      <div id="empty" style="display:none;text-align:center;color:#8a80a5;padding:56px 16px;line-height:1.7;">
+        📁 <b>아직 폴더가 없어요.</b><br>“+ 새 폴더”로 만들고, 폴더 안에 레퍼런스 채널을 모아 정리하세요.
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const FLAG = c => {
+      // 채널 payload 에 저장된 lang 힌트가 있으면 국기, 없으면 빈 값
+      return "";
+    };
+
+    function folderCard(col) {
+      const previews = (col.channels || []).slice(0, 5).map(ch =>
+        `<div class="channel-avatar" style="background:${avatarColor(ch.title || ch.channel_id)};"></div>`
+      ).join("");
+      const more = col.channel_count > 5 ? `<div class="folder-previews-more">+${col.channel_count - 5}</div>` : "";
+      return `
+        <div class="folder-card" data-id="${esc(col.id)}" style="cursor:pointer;">
+          <div class="folder-card-top">
+            <div class="folder-icon">📁</div>
+            <div class="folder-actions">
+              <span title="이름 바꾸기" data-act="rename">📝</span>
+              <span title="폴더 삭제" data-act="delete">×</span>
+            </div>
+          </div>
+          <div>
+            <div class="folder-name">${esc(col.name)}</div>
+            <div class="folder-meta">${col.channel_count} 채널</div>
+          </div>
+          <div class="folder-previews">${previews || '<span style="color:#b9aed0;font-size:12px;">비어 있음</span>'}${more}</div>
+        </div>`;
+    }
+
+    async function load() {
+      const d = await api("/api/collections");
+      const grid = document.getElementById("grid");
+      const empty = document.getElementById("empty");
+      const cols = d.collections || [];
+      empty.style.display = cols.length ? "none" : "block";
+      grid.innerHTML = cols.map(folderCard).join("");
+    }
+
+    // 폴더 열기 / 편집 / 삭제 (이벤트 위임)
+    document.getElementById("grid").addEventListener("click", async (e) => {
+      const card = e.target.closest(".folder-card");
+      if (!card) return;
+      const id = card.dataset.id;
+      const act = e.target.dataset.act;
+      if (act === "delete") {
+        e.stopPropagation();
+        if (!confirm("이 폴더를 삭제할까요? (안의 채널 정리 정보만 지워지고, 채널 등록 자체는 유지돼요)")) return;
+        await api(`/api/collections/${id}`, { method: "DELETE" });
+        toast("폴더 삭제됨"); load();
+        return;
+      }
+      if (act === "rename") {
+        e.stopPropagation();
+        const name = prompt("폴더 이름", card.querySelector(".folder-name").textContent);
+        if (name && name.trim()) {
+          await api(`/api/collections/${id}`, { method: "PATCH", body: JSON.stringify({ name: name.trim() }) });
+          toast("이름 변경됨"); load();
+        }
+        return;
+      }
+      location.href = `collection_detail.html?id=${encodeURIComponent(id)}`;
+    });
+
+    document.getElementById("newBtn").onclick = async () => {
+      const name = prompt("새 폴더 이름 (예: 고든램지, 샤크탱크, The Dodo)");
+      if (!name || !name.trim()) return;
+      await api("/api/collections", { method: "POST", body: JSON.stringify({ name: name.trim() }) });
+      toast("📁 폴더 생성"); load();
+    };
+
+    load();
+  </script>
+</body>
+</html>

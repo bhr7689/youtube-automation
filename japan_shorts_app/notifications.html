@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>알림·작업 기록 · RefTracker</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/api.js"></script>
+  <style>
+    .nt-panel{background:#fff;border:1px solid #f0ecf7;border-radius:16px;padding:18px 20px;margin-bottom:16px;box-shadow:0 2px 10px rgba(120,60,180,.05);}
+    .nt-h{font-size:15px;font-weight:800;margin-bottom:10px;}
+    .notice{display:flex;gap:10px;align-items:flex-start;border-radius:12px;padding:12px 14px;font-size:13px;line-height:1.7;margin-bottom:8px;}
+    .notice.warn{background:#fef3c7;color:#92400e;border:1px solid #fde68a;}
+    .notice.ok{background:#dcfce7;color:#166534;border:1px solid #bbf7d0;}
+    .notice.info{background:#e0f2fe;color:#075985;border:1px solid #bae6fd;}
+    .job-row{display:flex;align-items:center;gap:12px;padding:10px 4px;border-bottom:1px dashed #f0ecf7;font-size:13px;flex-wrap:wrap;}
+    .job-row:last-child{border-bottom:none;}
+    .job-id{font-weight:700;font-family:monospace;font-size:12px;}
+    .job-meta{color:#8a80a5;flex:1;min-width:140px;}
+    .job-link{color:#7c3aed;font-weight:700;text-decoration:none;font-size:12px;background:#f3e8ff;padding:4px 10px;border-radius:8px;}
+    .job-link:hover{background:#e9d5ff;}
+    .empty{color:#a99fc0;font-size:13px;padding:10px 0;}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <span class="sidebar-badge">쇼치 강사님 시리즈</span>
+        <div class="sidebar-brand">RefTracker</div>
+        <div class="sidebar-brand-sub">레퍼런스 채널 추적</div>
+      </div>
+      <nav class="nav-section">
+        <a href="trend.html" class="nav-item">🔥 트렌드 피드</a>
+        <a href="global_surge.html" class="nav-item">🌍 글로벌 급등</a>
+        <a href="youtube_discover.html" class="nav-item">🌐 YouTube 발굴</a>
+        <a href="search.html" class="nav-item">🔍 검색</a>
+        <a href="source_finder.html" class="nav-item">🕵️ 원본 소스 찾기</a>
+        <a href="surge_analysis.html" class="nav-item">📊 급등 규칙 분석</a>
+        <a href="keyword_radar.html" class="nav-item">🌡️ 키워드 레이더</a>
+        <a href="scriptwriter.html" class="nav-item">✍️ 대본 작성</a>
+        <a href="channels.html" class="nav-item">📺 레퍼런스 채널</a>
+        <a href="collections.html" class="nav-item">📁 컬렉션</a>
+        <a href="bookmarks.html" class="nav-item">⭐ 북마크</a>
+        <a href="notifications.html" class="nav-item active">🔔 알림·작업 기록</a>
+        <a href="settings.html" class="nav-item">⚙️ 설정</a>
+      </nav>
+      <div class="nav-divider"></div>
+      <nav class="nav-section">
+        <a href="index.html" class="nav-item-secondary"><span>🏠 포털 메인</span><span>›</span></a>
+        <a href="translator.html" class="nav-item-secondary"><span>🌸 일본어 번역봇</span><span>›</span></a>
+        <a href="editor.html" class="nav-item-secondary"><span>✂️ 자동 컷편집</span><span>›</span></a>
+      </nav>
+      <div class="user-card">
+        <div class="avatar-pill">남정</div>
+        <div class="user-card-info">
+          <div class="user-name">박남정</div>
+          <div class="user-email">parkzz5157@gmail.com</div>
+          <button class="logout">로그아웃</button>
+        </div>
+      </div>
+      <div class="version">v0.4.0</div>
+    </aside>
+
+    <main class="main">
+      <span class="badge-dot">알림·작업 기록</span>
+      <h1 class="page-title"><span class="gradient-text">시스템 알림</span> · 작업 기록</h1>
+      <p class="page-sub">지금 챙길 것과, 만들어 둔 자산(내레이션·컷 플랜·제목 기록)을 한 곳에서</p>
+
+      <div class="nt-panel">
+        <div class="nt-h">📢 시스템 알림</div>
+        <div id="noticeBox">확인 중…</div>
+      </div>
+
+      <div class="nt-panel">
+        <div class="nt-h">🌸 내레이션 패키지 (번역·TTS 결과)</div>
+        <div id="jobBox" class="empty">불러오는 중…</div>
+      </div>
+
+      <div class="nt-panel">
+        <div class="nt-h">✂️ 컷 플랜</div>
+        <div id="planBox" class="empty">불러오는 중…</div>
+      </div>
+
+      <div class="nt-panel">
+        <div class="nt-h">🏷️ 제목 성과 기록 <span style="font-weight:400;font-size:12px;color:#8a80a5;">— 올린 제목·조회수를 기록하면 다음 키워드 조준의 근거가 됩니다</span></div>
+        <div id="logBox" class="empty">불러오는 중…</div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    function ago(iso) { if (!iso) return ""; const d = (Date.now() - new Date(iso)) / 3600000;
+      return d < 1 ? "방금" : d < 24 ? Math.floor(d) + "시간 전" : Math.floor(d / 24) + "일 전"; }
+    function dur(ms) { const s = Math.round((ms || 0) / 1000); return `${Math.floor(s / 60)}분 ${s % 60}초`; }
+
+    async function load() {
+      // 시스템 알림
+      try {
+        const s = await api("/api/system/status");
+        const n = [];
+        if (!s.youtube_key) n.push(['warn', '🔑', '<b>데모 모드</b> — .env 에 YOUTUBE_API_KEY 를 넣으면 실데이터 수집·학습이 시작돼요. <a href="settings.html">⚙️ 설정에서 확인</a>']);
+        if (!s.gemini) n.push(['info', '🤖', 'Gemini 미설정 — 대본·번역이 예시로 나옵니다. 키를 넣으면 실제 생성으로 바뀌어요.']);
+        if (!s.voicevox) n.push(['info', '🎙️', 'VOICEVOX 꺼짐 — TTS 가 무음(추정 길이)으로 만들어져요. 실행하면 실제 음성이 들어갑니다.']);
+        const total = (s.corpus || []).reduce((a, g) => a + g.corpus_count, 0);
+        n.push(['ok', '📚', `학습 코퍼스 <b>${total}편</b> (${(s.corpus || []).map(g => `${g.genre} ${g.corpus_count}`).join(" · ")}) — 수집할수록 규칙이 정교해집니다.`]);
+        document.getElementById("noticeBox").innerHTML = n.map(([c, i, t]) =>
+          `<div class="notice ${c}"><span>${i}</span><span>${t}</span></div>`).join("");
+      } catch (e) { document.getElementById("noticeBox").innerHTML = '<div class="notice warn">서버 연결 안 됨</div>'; }
+
+      // 내레이션 작업
+      try {
+        const d = await api("/api/tts/jobs");
+        const jobs = d.jobs || [];
+        document.getElementById("jobBox").outerHTML = jobs.length ? `<div>${jobs.slice(0, 10).map(j => `
+          <div class="job-row">
+            <span class="job-id">${esc(j.job_id)}</span>
+            <span class="job-meta">${j.sentence_count}문장 · ${dur(j.total_duration_ms)} · ${esc(j.engine || "")} · ${ago(j.created_at)}</span>
+            <a class="job-link" href="/api/tts/${esc(j.job_id)}/download">⬇️ ZIP</a>
+            <a class="job-link" href="editor.html?job=${esc(j.job_id)}">✂️ 컷편집</a>
+          </div>`).join("")}</div>` : '<div class="empty">아직 없음 — ✍️ 대본 작성 또는 🌸 번역봇에서 만들어져요</div>';
+      } catch (e) {}
+
+      // 컷 플랜
+      try {
+        const d = await api("/api/cut/plans");
+        const plans = d.plans || [];
+        document.getElementById("planBox").outerHTML = plans.length ? `<div>${plans.slice(0, 10).map(p => `
+          <div class="job-row">
+            <span class="job-id">${esc(p.plan_id)}</span>
+            <span class="job-meta">${p.segment_count}세그 · ${dur(p.total_ms)} ${p.loop ? "· 🔁루프" : ""} · ${ago(p.created_at)}</span>
+            <a class="job-link" href="/api/cut/${esc(p.plan_id)}/capcut">🎬 CapCut</a>
+            <a class="job-link" href="/api/cut/${esc(p.plan_id)}/ffmpeg">🔧 ffmpeg</a>
+          </div>`).join("")}</div>` : '<div class="empty">아직 없음 — ✂️ 컷편집에서 플랜을 만들면 여기 쌓여요</div>';
+      } catch (e) {}
+
+      // 제목 성과
+      try {
+        const d = await api("/api/title/logs");
+        const logs = d.logs || [];
+        document.getElementById("logBox").outerHTML = logs.length ? `<div>${logs.slice(0, 15).map(l => `
+          <div class="job-row">
+            <span class="job-meta" style="flex:2;font-weight:600;color:#1a1a2e;">${esc(l.title)}</span>
+            <span class="job-meta">${l.genre ? "📂 " + esc(l.genre) + " · " : ""}조회 ${(l.views || 0).toLocaleString()}</span>
+          </div>`).join("")}</div>` : '<div class="empty">아직 없음 — 영상 올린 뒤 제목·조회수를 기록하면 키워드 조준이 정교해져요</div>';
+      } catch (e) {}
+    }
+    load();
+  </script>
+</body>
+</html>

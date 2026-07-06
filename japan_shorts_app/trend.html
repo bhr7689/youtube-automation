@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>트렌드 피드 · RefTracker</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/api.js"></script>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <span class="sidebar-badge">쇼치 강사님 시리즈</span>
+        <div class="sidebar-brand">RefTracker</div>
+        <div class="sidebar-brand-sub">레퍼런스 채널 추적</div>
+      </div>
+      <nav class="nav-section">
+        <a href="trend.html" class="nav-item active">🔥 트렌드 피드</a>
+        <a href="global_surge.html" class="nav-item">🌍 글로벌 급등</a>
+        <a href="youtube_discover.html" class="nav-item">🌐 YouTube 발굴</a>
+        <a href="search.html" class="nav-item">🔍 검색</a>
+        <a href="source_finder.html" class="nav-item">🕵️ 원본 소스 찾기</a>
+        <a href="surge_analysis.html" class="nav-item">📊 급등 규칙 분석</a>
+        <a href="keyword_radar.html" class="nav-item">🌡️ 키워드 레이더</a>
+        <a href="scriptwriter.html" class="nav-item">✍️ 대본 작성</a>
+        <a href="channels.html" class="nav-item">📺 레퍼런스 채널</a>
+        <a href="collections.html" class="nav-item">📁 컬렉션</a>
+        <a href="bookmarks.html" class="nav-item">⭐ 북마크</a>
+        <a href="notifications.html" class="nav-item">🔔 알림 <span class="nav-badge">3</span></a>
+        <a href="settings.html" class="nav-item">⚙️ 설정</a>
+      </nav>
+      <div class="nav-divider"></div>
+      <nav class="nav-section">
+        <a href="index.html" class="nav-item-secondary"><span>🏠 포털 메인</span><span>›</span></a>
+        <a href="translator.html" class="nav-item-secondary"><span>🌸 일본어 번역봇</span><span>›</span></a>
+        <a href="editor.html" class="nav-item-secondary"><span>✂️ 자동 컷편집</span><span>›</span></a>
+      </nav>
+      <div class="user-card">
+        <div class="avatar-pill">남정</div>
+        <div class="user-card-info">
+          <div class="user-name">박남정</div>
+          <div class="user-email">parkzz5157@gmail.com</div>
+          <button class="logout">로그아웃</button>
+        </div>
+      </div>
+      <div class="version">v0.4.0</div>
+    </aside>
+
+    <main class="main">
+      <div class="page-header-row">
+        <div>
+          <span class="badge-dot">트렌드 피드</span>
+          <h1 class="page-title"><span class="gradient-text">급등 영상</span> 한 번에</h1>
+          <p class="page-sub">등록된 레퍼런스 채널의 평균 대비 폭발한 영상 모음 · 배수 = 조회수 ÷ 채널 평균</p>
+        </div>
+        <div>
+          <button class="btn-secondary" id="csvBtn">📋 CSV</button>
+        </div>
+      </div>
+
+      <div class="filter-block">
+        <div class="filter-row" id="fPeriod">
+          <span class="filter-label">기간</span>
+          <span class="chip" data-v="1">1일</span>
+          <span class="chip" data-v="3">3일</span>
+          <span class="chip selected" data-v="7">1주</span>
+          <span class="chip" data-v="30">1달</span>
+          <span class="chip" data-v="90">3달</span>
+          <span class="chip" data-v="180">6달</span>
+          <span class="chip" data-v="365">1년</span>
+          <span class="chip" data-v="0">전체</span>
+        </div>
+        <div class="filter-row" id="fMult">
+          <span class="filter-label">배수</span>
+          <span class="chip selected" data-v="0">전체</span>
+          <span class="chip" data-v="1">×1↑(평균↑)</span>
+          <span class="chip" data-v="2">×2↑</span>
+          <span class="chip" data-v="3">×3↑</span>
+          <span class="chip" data-v="5">×5↑</span>
+          <span class="chip" data-v="10">×10↑</span>
+          <span class="chip" data-v="30">×30↑</span>
+        </div>
+        <div class="filter-row" id="fViews">
+          <span class="filter-label">조회수</span>
+          <span class="chip selected" data-v="0">전체</span>
+          <span class="chip" data-v="100000">10만↑</span>
+          <span class="chip" data-v="500000">50만↑</span>
+          <span class="chip" data-v="1000000">100만↑</span>
+          <span class="chip" data-v="5000000">500만↑</span>
+          <span class="chip" data-v="10000000">1000만↑</span>
+        </div>
+        <div class="filter-row" id="fType">
+          <span class="filter-label">형식</span>
+          <span class="chip selected" data-v="all">전체</span>
+          <span class="chip" data-v="shorts">숏폼</span>
+          <span class="chip" data-v="long">롱폼</span>
+        </div>
+        <div class="filter-row" id="fSort">
+          <span class="filter-label">정렬</span>
+          <span class="chip selected" data-v="mult">🔥 급등 배수</span>
+          <span class="chip" data-v="views">👁️ 조회수</span>
+          <span class="chip" data-v="date">📰 최신순</span>
+          <span class="chip" data-v="likes">❤️ 좋아요</span>
+          <span class="chip" data-v="comments">💬 댓글</span>
+          <span class="chip" data-v="vph">⚡ 시간당 조회</span>
+        </div>
+        <div class="filter-row" id="fCount">
+          <span class="filter-label">개수</span>
+          <span class="chip selected" data-v="200">200개</span>
+          <span class="chip" data-v="300">300개</span>
+          <span class="chip" data-v="500">500개</span>
+        </div>
+      </div>
+
+      <div class="result-count" id="resultCount">불러오는 중…</div>
+
+      <div class="card-grid" id="grid"></div>
+    </main>
+  </div>
+
+  <script>
+    const state = {
+      period_days: 7, video_type: "all", max_results: 200,   // 서버 파라미터
+      minMult: 0, minViews: 0, sort: "mult",                 // 로컬 필터
+      raw: [],
+    };
+
+    function localView() {
+      let out = state.raw.filter(c =>
+        (!state.minMult || (c.multiplier || 0) >= state.minMult) &&
+        (!state.minViews || (c.views || 0) >= state.minViews)
+      );
+      const s = state.sort;
+      const key = {
+        mult: c => c.multiplier || 0, views: c => c.views || 0,
+        likes: c => c.likes || 0, comments: c => c.comments || 0,
+        vph: c => c.vph || 0, date: c => new Date(c.published_at).getTime() || 0,
+      }[s] || (c => c.views || 0);
+      out.sort((a, b) => key(b) - key(a));
+      return out;
+    }
+
+    function paint() {
+      const cards = localView();
+      renderGrid(document.getElementById("grid"), cards);
+      document.getElementById("resultCount").textContent = `${cards.length}개 영상`;
+    }
+
+    async function load() {
+      document.getElementById("resultCount").textContent = "불러오는 중…";
+      document.getElementById("grid").innerHTML = "";
+      try {
+        const d = await api(`/api/trend?period_days=${state.period_days}&video_type=${state.video_type}&max_results=${state.max_results}`);
+        showDemoBanner(d.demo);
+        state.raw = d.cards || [];
+        if (!state.raw.length && !d.demo && d.channel_count === 0) {
+          document.getElementById("grid").innerHTML =
+            '<div style="grid-column:1/-1;text-align:center;color:#8a80a5;padding:56px 16px;line-height:1.7;">' +
+            '📺 <b>아직 등록된 레퍼런스 채널이 없어요.</b><br>검색·발굴 화면에서 채널을 <b>+ 추가</b>하면 여기에 급등 영상이 모입니다.<br><br>' +
+            '<a class="btn-primary" href="youtube_discover.html" style="text-decoration:none;">🌐 채널 발굴하러 가기</a></div>';
+          document.getElementById("resultCount").textContent = "0개 영상";
+          return;
+        }
+        paint();
+      } catch (e) {
+        document.getElementById("resultCount").textContent = "오류: " + e.message;
+      }
+    }
+
+    // 서버 파라미터 칩 (변경 시 재조회)
+    chipGroup(document.getElementById("fPeriod"), { onChange: c => { state.period_days = +c.dataset.v; load(); } });
+    chipGroup(document.getElementById("fType"),   { onChange: c => { state.video_type = c.dataset.v; load(); } });
+    chipGroup(document.getElementById("fCount"),  { onChange: c => { state.max_results = +c.dataset.v; load(); } });
+    // 로컬 필터 칩 (즉시 적용)
+    chipGroup(document.getElementById("fMult"),  { onChange: c => { state.minMult = +c.dataset.v; paint(); } });
+    chipGroup(document.getElementById("fViews"), { onChange: c => { state.minViews = +c.dataset.v; paint(); } });
+    chipGroup(document.getElementById("fSort"),  { onChange: c => { state.sort = c.dataset.v; paint(); } });
+
+    // CSV 내보내기 (현재 화면 카드)
+    document.getElementById("csvBtn").onclick = () => {
+      const cards = localView();
+      if (!cards.length) { toast("내보낼 영상이 없어요"); return; }
+      const head = ["제목", "채널", "조회수", "배수", "시간당조회", "업로드", "링크"];
+      const rows = cards.map(c => [
+        c.title, c.channel_title, c.views, c.multiplier ?? "", c.vph ?? "",
+        (c.published_at || "").slice(0, 10), `https://youtube.com/watch?v=${c.video_id}`,
+      ]);
+      const csv = [head, ...rows].map(r => r.map(x => `"${String(x).replace(/"/g, '""')}"`).join(",")).join("\n");
+      const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `트렌드_급등영상_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      toast("📋 CSV 내려받기");
+    };
+
+    load();
+  </script>
+</body>
+</html>

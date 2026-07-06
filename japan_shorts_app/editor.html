@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>✂️ 자동 컷편집</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/api.js"></script>
+  <style>
+    .ed-wrap{max-width:1100px;margin:0 auto;padding:24px 28px;}
+    .ed-toolbar{display:flex;align-items:center;gap:14px;padding:12px 24px;background:rgba(255,255,255,.7);border-bottom:1px solid #eee;}
+    .ed-toolbar .t{font-weight:800;font-size:16px;flex:1;}
+    .ed-panel{background:#fff;border:1px solid #f0ecf7;border-radius:16px;padding:18px 20px;margin-bottom:16px;box-shadow:0 2px 10px rgba(120,60,180,.05);}
+    .ed-h{font-size:15px;font-weight:800;margin-bottom:12px;}
+    .ed-row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;}
+    .fld{display:flex;flex-direction:column;gap:5px;}
+    .fld label{font-size:12px;color:#8a80a5;font-weight:600;}
+    .fld input,.fld select{border:1px solid #e5d9f5;border-radius:10px;padding:9px 12px;font-size:14px;background:#fff;min-width:120px;}
+    .timeline{display:flex;height:46px;border-radius:10px;overflow:hidden;border:1px solid #eee;margin:6px 0 12px;}
+    .tl-seg{height:100%;position:relative;min-width:2px;}
+    .stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-bottom:8px;}
+    .stat-tile{background:#faf7ff;border:1px solid #efe6fb;border-radius:12px;padding:11px;text-align:center;}
+    .stat-val{font-size:20px;font-weight:800;color:#7e22ce;}
+    .stat-lbl{font-size:11px;color:#8a80a5;margin-top:2px;}
+    .seg-list{display:flex;flex-direction:column;gap:7px;max-height:420px;overflow:auto;}
+    .seg-item{display:flex;align-items:center;gap:10px;background:#faf9fd;border:1px solid #f0ecf7;border-radius:10px;padding:9px 12px;font-size:13px;}
+    .seg-idx{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;color:#fff;font-weight:800;font-size:12px;flex-shrink:0;}
+    .seg-sub{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .seg-badges{display:flex;gap:5px;flex-shrink:0;}
+    .b{font-size:10px;padding:2px 7px;border-radius:6px;font-weight:700;}
+    .b-zoom{background:#ede9fe;color:#6d28d9;}
+    .b-mir{background:#fce7f3;color:#be185d;}
+    .b-spd{background:#dbeafe;color:#1d4ed8;}
+    .b-src{background:#f1f5f9;color:#475569;font-weight:500;}
+    .rules{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;border-radius:12px;padding:12px 14px;font-size:12.5px;line-height:1.7;margin-top:10px;}
+    .export-btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;}
+    .dl{display:inline-flex;align-items:center;gap:6px;padding:10px 16px;border-radius:10px;font-weight:700;text-decoration:none;font-size:13px;}
+    .dl-cc{background:#ec4899;color:#fff;}
+    .dl-ff{background:#0ea5e9;color:#fff;}
+    .dl-json{background:#7c3aed;color:#fff;}
+    .empty{text-align:center;color:#a99fc0;padding:40px 0;}
+  </style>
+</head>
+<body>
+  <div class="ed-toolbar">
+    <a class="portal-footer-pill" href="index.html">← 포털</a>
+    <div class="t">✂️ 자동 컷편집 <span style="font-weight:400;color:#8a80a5;font-size:13px;">— 롱폼 → 세로 쇼츠 컷 플래너</span></div>
+    <a class="portal-footer-pill" href="translator.html">🌸 번역봇</a>
+    <div class="avatar-pill">남정</div>
+  </div>
+
+  <div class="ed-wrap">
+    <div class="ed-panel">
+      <div class="ed-h">① 재료 선택</div>
+      <div class="ed-row">
+        <div class="fld">
+          <label>🌸 번역봇 작업 (narration job)</label>
+          <select id="job"></select>
+        </div>
+        <div class="fld">
+          <label>원본 영상 길이 (초)</label>
+          <input id="srcDur" type="number" value="600" min="10" step="10">
+        </div>
+        <div class="fld">
+          <label>원본 파일명</label>
+          <input id="srcName" type="text" value="source.mp4">
+        </div>
+        <div class="fld">
+          <label>세그먼트 최소~최대 (초)</label>
+          <div style="display:flex;gap:6px;">
+            <input id="segMin" type="number" value="3" min="1" max="10" step="0.5" style="min-width:70px;">
+            <input id="segMax" type="number" value="5" min="1" max="10" step="0.5" style="min-width:70px;">
+          </div>
+        </div>
+        <button class="btn-primary" id="planBtn" style="height:40px;">🎬 컷 플랜 생성</button>
+      </div>
+      <div class="rules" id="jobHint" style="display:none;"></div>
+    </div>
+
+    <div id="result">
+      <div class="ed-panel empty" id="emptyState">
+        🌸 번역봇에서 저장한 작업을 고르고 <b>“컷 플랜 생성”</b>을 누르면,<br>
+        문장에 맞춰 원본을 3~5초 조각으로 자르고 줌·미러·속도를 다양화한 타임라인이 나옵니다.
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const el = id => document.getElementById(id);
+    const HUES = [265, 330, 200, 40, 150, 350, 220, 20, 175, 300];
+    const hue = n => `hsl(${HUES[n % HUES.length]},70%,60%)`;
+    let PLAN = null;
+
+    async function loadJobs() {
+      const d = await api("/api/cut/jobs");
+      const jobs = d.jobs || [];
+      const sel = el("job");
+      if (!jobs.length) {
+        sel.innerHTML = '<option value="">— 저장된 작업 없음 —</option>';
+        el("jobHint").style.display = "block";
+        el("jobHint").innerHTML = "아직 narration job 이 없어요. 먼저 <a href='translator.html'>🌸 번역봇</a>에서 일본어 대본을 만들고 <b>TTS·저장</b>을 누르세요.";
+        return;
+      }
+      sel.innerHTML = jobs.map(j =>
+        `<option value="${j.job_id}">${j.job_id} · ${j.sentence_count}문장 · ${Math.round((j.total_duration_ms||0)/1000)}초</option>`).join("");
+      // URL ?job= 우선 선택
+      const q = new URLSearchParams(location.search).get("job");
+      if (q && jobs.some(j => j.job_id === q)) sel.value = q;
+    }
+
+    function fmtMs(ms){ const s=Math.round(ms/1000); return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; }
+
+    el("planBtn").onclick = async () => {
+      const job_id = el("job").value;
+      if (!job_id) return toast("번역봇 작업을 먼저 만들어주세요");
+      toast("컷 플랜 생성 중…");
+      try {
+        PLAN = await api("/api/cut/plan", { method: "POST", body: JSON.stringify({
+          job_id, source_duration_sec: +el("srcDur").value, source_name: el("srcName").value,
+          seg_min_s: +el("segMin").value, seg_max_s: +el("segMax").value,
+        })});
+        render(PLAN);
+        toast("✓ 컷 플랜 완성");
+      } catch (e) { toast("오류: " + e.message); }
+    };
+
+    function render(p) {
+      const total = p.total_ms || 1;
+      const tl = p.segments.map(s =>
+        `<div class="tl-seg" style="width:${100*s.dur_ms/total}%;background:${hue(s.sentence_id)};" title="문장 ${s.sentence_id} · ${(s.dur_ms/1000).toFixed(1)}초"></div>`).join("");
+      const nMirror = p.segments.filter(s => s.mirror).length;
+      const list = p.segments.map(s => `
+        <div class="seg-item">
+          <div class="seg-idx" style="background:${hue(s.sentence_id)};">${s.seg_id}</div>
+          <div class="seg-sub" title="${esc(s.subtitle)}">${esc(s.subtitle) || "(무음)"}</div>
+          <div class="seg-badges">
+            <span class="b b-src">원본 ${fmtMs(s.src_start_ms)}~${fmtMs(s.src_end_ms)}</span>
+            <span class="b b-zoom">🔍 ${s.zoom}x</span>
+            ${s.mirror ? '<span class="b b-mir">↔ 미러</span>' : ''}
+            <span class="b b-spd">⏩ ${s.speed}x</span>
+          </div>
+        </div>`).join("");
+
+      el("result").innerHTML = `
+        <div class="ed-panel">
+          <div class="ed-h">② 컷 타임라인 <span style="font-weight:400;color:#8a80a5;font-size:12px;">(색 = 문장 단위)</span></div>
+          <div class="timeline">${tl}</div>
+          <div class="stat-row">
+            <div class="stat-tile"><div class="stat-val">${p.segment_count}</div><div class="stat-lbl">세그먼트</div></div>
+            <div class="stat-tile"><div class="stat-val">${p.sentence_count}</div><div class="stat-lbl">문장</div></div>
+            <div class="stat-tile"><div class="stat-val">${(p.total_ms/1000).toFixed(1)}초</div><div class="stat-lbl">총 길이</div></div>
+            <div class="stat-tile"><div class="stat-val">${nMirror}</div><div class="stat-lbl">미러 컷</div></div>
+            <div class="stat-tile"><div class="stat-val">${p.canvas.w}×${p.canvas.h}</div><div class="stat-lbl">세로 쇼츠</div></div>
+          </div>
+          <div class="rules">🛡️ <b>변형 규칙 적용</b> — 확대(줌 1.1~1.3) · 좌우 반전(일부) ·
+            3~5초 세그먼트 · 동일 원본 5초+ 연속 사용 금지 · 원본 오디오 최소화 + TTS 내레이션 + BGM + 일본어 자막 burn-in</div>
+        </div>
+
+        <div class="ed-panel">
+          <div class="ed-h">③ 내보내기</div>
+          <p style="font-size:13px;color:#8a80a5;margin-bottom:10px;line-height:1.6;">
+            🎬 <b>CapCut 초안(A안)</b> — 변형을 굽지 않고 클립 속성으로 담아 손맛 마무리 가능 ·
+            🔧 <b>ffmpeg 스크립트(B안)</b> — 원본만 있으면 바로 렌더</p>
+          <div class="export-btns">
+            <a class="dl dl-cc" href="/api/cut/${p.plan_id}/capcut?source_name=${encodeURIComponent(el('srcName').value)}">🎬 CapCut 초안 JSON</a>
+            <a class="dl dl-ff" href="/api/cut/${p.plan_id}/ffmpeg?source_name=${encodeURIComponent(el('srcName').value)}">🔧 ffmpeg 렌더 스크립트</a>
+            <a class="dl dl-json" href="/api/tts/${p.job_id}/download">📦 narration ZIP (자막·음성)</a>
+          </div>
+        </div>
+
+        <div class="ed-panel">
+          <div class="ed-h">④ 세그먼트 상세 (${p.segment_count})</div>
+          <div class="seg-list">${list}</div>
+        </div>`;
+    }
+
+    loadJobs();
+  </script>
+</body>
+</html>

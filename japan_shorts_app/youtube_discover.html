@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YouTube 발굴 · RefTracker</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <span class="sidebar-badge">쇼치 강사님 시리즈</span>
+        <div class="sidebar-brand">RefTracker</div>
+        <div class="sidebar-brand-sub">레퍼런스 채널 추적</div>
+      </div>
+      <nav class="nav-section">
+        <a href="trend.html" class="nav-item">🔥 트렌드 피드</a>
+        <a href="youtube_discover.html" class="nav-item active">🌐 YouTube 발굴</a>
+        <a href="search.html" class="nav-item">🔍 검색</a>
+        <a href="source_finder.html" class="nav-item">🕵️ 원본 소스 찾기</a>
+        <a href="channels.html" class="nav-item">📺 레퍼런스 채널</a>
+        <a href="collections.html" class="nav-item">📁 컬렉션</a>
+        <a href="bookmarks.html" class="nav-item">⭐ 북마크</a>
+        <a href="notifications.html" class="nav-item">🔔 알림</a>
+        <a href="settings.html" class="nav-item">⚙️ 설정</a>
+      </nav>
+      <div class="nav-divider"></div>
+      <nav class="nav-section">
+        <a href="index.html" class="nav-item-secondary"><span>🏠 포털 메인</span><span>›</span></a>
+        <a href="translator.html" class="nav-item-secondary"><span>🌸 일본어 번역봇</span><span>›</span></a>
+        <a href="editor.html" class="nav-item-secondary"><span>✂️ 자동 컷편집</span><span>›</span></a>
+      </nav>
+      <div class="user-card">
+        <div class="avatar-pill">남정</div>
+        <div class="user-card-info">
+          <div class="user-name">박남정</div>
+          <div class="user-email">parkzz5157@gmail.com</div>
+          <button class="logout">로그아웃</button>
+        </div>
+      </div>
+      <div class="version">v0.4.0</div>
+    </aside>
+
+    <main class="main">
+      <div class="page-header-row">
+        <div>
+          <span class="badge-dot">YouTube 발굴</span>
+          <h1 class="page-title"><span class="gradient-text">칩 조합</span>으로 채널 발굴</h1>
+          <p class="page-sub">검색어를 몰라도 됩니다 — 장르·상황·감정 칩을 고르면 검색어를 자동 생성해 유튜브를 뒤져옵니다</p>
+        </div>
+      </div>
+
+      <div class="filter-block">
+        <div class="filter-block-title">🎛️ 3축 조합 <span style="color:var(--c-text-light);font-weight:400;">(축당 최대 2개 · 안 골라도 됨)</span></div>
+        <div class="axis-row"><div class="axis-label" id="axGenreLabel">🎵 장르</div><div class="filter-row" id="axGenre" style="margin:0;flex-wrap:wrap;"></div></div>
+        <div class="axis-row"><div class="axis-label" id="axSituLabel">🕒 상황</div><div class="filter-row" id="axSituation" style="margin:0;flex-wrap:wrap;"></div></div>
+        <div class="axis-row"><div class="axis-label" id="axEmoLabel">💗 감정</div><div class="filter-row" id="axEmotion" style="margin:0;flex-wrap:wrap;"></div></div>
+        <div class="filter-row" id="fLangs">
+          <span class="filter-label">🌍 언어</span>
+          <span class="chip selected" data-v="ko">🇰🇷 한국어</span>
+          <span class="chip" data-v="en">🇺🇸 영어</span>
+          <span class="chip" data-v="ja">🇯🇵 일본어</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:6px;">
+          <button class="btn-primary" style="border-radius:12px;" onclick="genQueries()">🎲 조합 검색어 생성</button>
+          <span style="font-size:12px;color:var(--c-text-light);">생성 후 ✕로 빼고 검색 실행</span>
+        </div>
+      </div>
+
+      <div class="query-box" id="qBox">
+        <div class="qtitle">🤖 자동 생성된 검색어 — 이대로 유튜브를 뒤져옵니다</div>
+        <div id="qChips"></div>
+        <div style="margin-top:8px;">
+          <button class="btn-primary" style="border-radius:12px;" onclick="runDiscover()">🚀 이 검색어들로 발굴 시작</button>
+        </div>
+      </div>
+
+      <div class="filter-block">
+        <div class="filter-block-title">결과 내 필터 <span style="color:var(--c-text-light);font-weight:400;">(즉시 적용)</span></div>
+        <div class="filter-row" id="fSort">
+          <span class="filter-label">정렬</span>
+          <span class="chip selected" data-v="mult">🔥 급등 배수</span>
+          <span class="chip" data-v="views">조회수</span>
+          <span class="chip" data-v="date">📰 최신</span>
+        </div>
+        <div class="filter-row" id="fAge">
+          <span class="filter-label">🌱 채널 나이</span>
+          <span class="chip selected" data-v="0">전체</span>
+          <span class="chip" data-v="1">1개월↓</span>
+          <span class="chip" data-v="3">3개월↓</span>
+          <span class="chip" data-v="6">6개월↓</span>
+          <span class="chip" data-v="12">12개월↓</span>
+        </div>
+        <div class="filter-row" id="fType2">
+          <span class="filter-label">형식</span>
+          <span class="chip selected" data-v="all">전체</span>
+          <span class="chip" data-v="shorts">🍿 Shorts</span>
+          <span class="chip" data-v="long">🎬 롱폼</span>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <div class="result-count" id="resultCount">칩을 고르고 조합 검색을 눌러보세요</div>
+        <div class="legend-row">
+          <span class="legend-dot registered">✓ 이미 등록된 채널</span>
+          <span class="legend-dot new-add">+ 새로 추가할 채널</span>
+        </div>
+      </div>
+
+      <div class="card-grid" id="grid"></div>
+    </main>
+  </div>
+
+  <script src="assets/api.js"></script>
+  <script>
+    let RESULTS = [];
+    let TAXONOMY = null;
+
+    /* 축 칩 렌더 (taxonomies.json → 칩) */
+    async function loadTaxonomy() {
+      TAXONOMY = (await api("/api/taxonomy")).categories.music_playlist;
+      const fill = (elId, axis) => {
+        const el = document.getElementById(elId);
+        el.innerHTML = Object.entries(TAXONOMY.axes[axis].tags)
+          .map(([k, t]) => `<span class="chip" data-v="${k}" title="${esc((t.vocab.ko || []).slice(0, 3).join(", "))}">${esc(t.label)}</span>`)
+          .join("");
+        /* 축당 최대 2개 멀티 선택 */
+        el.addEventListener("click", e => {
+          const chip = e.target.closest(".chip");
+          if (!chip) return;
+          if (chip.classList.contains("selected")) chip.classList.remove("selected");
+          else if (el.querySelectorAll(".selected").length < 2) chip.classList.add("selected");
+          else toast("축당 최대 2개까지예요");
+        });
+      };
+      fill("axGenre", "genre");
+      fill("axSituation", "situation");
+      fill("axEmotion", "emotion");
+    }
+
+    function picked(elId) {
+      return [...document.querySelectorAll(`#${elId} .selected`)].map(c => c.dataset.v);
+    }
+
+    async function genQueries() {
+      const body = {
+        genres: picked("axGenre"),
+        situations: picked("axSituation"),
+        emotions: picked("axEmotion"),
+        langs: [...document.querySelectorAll("#fLangs .selected")].map(c => c.dataset.v),
+        limit: 10,
+      };
+      if (!body.genres.length && !body.situations.length && !body.emotions.length) {
+        toast("칩을 하나 이상 골라주세요"); return;
+      }
+      const { queries } = await api("/api/discover/queries", { method: "POST", body: JSON.stringify(body) });
+      const box = document.getElementById("qChips");
+      box.innerHTML = queries.map(q =>
+        `<span class="qchip" data-q="${esc(q)}">🔍 ${esc(q)} <span class="x" onclick="this.parentElement.remove()">✕</span></span>`
+      ).join("");
+      document.getElementById("qBox").classList.add("show");
+    }
+
+    async function runDiscover() {
+      const queries = [...document.querySelectorAll("#qChips .qchip")].map(c => c.dataset.q);
+      if (!queries.length) { toast("검색어가 없어요 — 조합 생성 먼저"); return; }
+      const grid = document.getElementById("grid");
+      grid.innerHTML = `<div class="loading-row"><span class="spinner"></span>${queries.length}개 검색어로 유튜브를 뒤지는 중…</div>`;
+      document.getElementById("resultCount").textContent = "발굴 중…";
+      try {
+        const data = await api("/api/discover/search", {
+          method: "POST",
+          body: JSON.stringify({ queries, video_type: selectedValue(document.getElementById("fType2")) || "all", max_per_query: 15 }),
+        });
+        RESULTS = data.cards;
+        showDemoBanner(data.demo);
+        applyFilters();
+      } catch (e) {
+        grid.innerHTML = `<div class="loading-row">⚠️ ${esc(e.message)}</div>`;
+      }
+    }
+
+    function applyFilters() {
+      const cards = applyLocalFilter(RESULTS, {
+        sort: selectedValue(document.getElementById("fSort")),
+        maxAgeMonths: +(selectedValue(document.getElementById("fAge")) || 0),
+      });
+      renderGrid(document.getElementById("grid"), cards);
+      document.getElementById("resultCount").textContent = `${cards.length}개 표시중 (발굴 ${RESULTS.length}개 중)`;
+    }
+
+    chipGroup(document.getElementById("fLangs"), { multi: true });
+    ["fSort", "fAge"].forEach(id => chipGroup(document.getElementById(id), { onChange: applyFilters }));
+    chipGroup(document.getElementById("fType2"), { onChange: () => RESULTS.length && runDiscover() });
+
+    loadTaxonomy();
+  </script>
+</body>
+</html>
