@@ -280,4 +280,17 @@ python pipeline.py --init                              # 파이프라인 폴더 
   - ⚠️ 웹 컨테이너는 프록시가 유튜브 차단 → 메타·다운로드 실패(정상 동작으로 한계 기록).
     **사용자 PC(일본쇼츠실행.bat)에서 풀가동** (yt-dlp/ffmpeg 로컬 설치 확인됨).
   - ⚠️ 이 컨테이너는 2회 리셋됨 — **커밋·푸시를 검증보다 먼저** 하는 원칙 재확인.
+- [x] 🔑 **설정 화면에서 API 키 직접 저장**(2026-07-06, new-session-rhtlol):
+  비개발자 사장님이 메모장으로 `.env` 편집하는 대신 **설정 → 🔑 연결키 저장**
+  패널에서 YouTube/Gemini/OpenAI 키를 붙여넣고 💾 저장 → 이 PC의 `.env` 에
+  영구 저장 + **서버 재시작 없이 즉시 적용**.
+  - 백엔드(`jpshorts/backend/main.py`): `POST /api/keys/save`(.env upsert — 다른
+    줄 보존, 빈칸은 기존 키 유지해 실수 삭제 방지, 최소 1개 없으면 400) +
+    `os.environ` & `yc.YOUTUBE_API_KEY` 즉시 반영. `GET /api/keys/status` 는
+    마스킹(••••last4)만 반환 — 평문 노출 없음. `ENV_PATH`=저장소 루트 `.env`.
+  - 프론트(`settings.html`): 3개 비밀번호 입력 + 현재 상태 배지(저장됨/미설정) +
+    "입력한 키 보기" 토글. 저장 후 상태·연결배지 자동 새로고침.
+  - 🔒 보안: `.env` 는 `.gitignore` — **절대 커밋/업로드 안 됨**. 키는 사장님
+    PC 에만. 검증: TestClient 8케이스(저장/부분업데이트/빈칸보존/즉시반영/마스킹)
+    + 라이브 HTTP + Playwright 렌더 통과. **default(eqO5N) 머지·푸시 완료**.
 - (작업하며 갱신할 것)
