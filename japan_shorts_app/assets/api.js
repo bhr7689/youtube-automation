@@ -23,6 +23,59 @@ const API_BASE = "";
   (document.head || document.documentElement).appendChild(s);
 })();
 
+/* 📲 PWA — '홈 화면에 추가' 되게 manifest·아이콘·메타를 모든 페이지 head 에 주입 */
+(function injectPWA() {
+  const head = document.head || document.documentElement;
+  const add = (tag, attrs) => {
+    const el = document.createElement(tag);
+    for (const k in attrs) el.setAttribute(k, attrs[k]);
+    head.appendChild(el);
+  };
+  if (!document.querySelector('link[rel="manifest"]'))
+    add("link", { rel: "manifest", href: "manifest.json" });
+  add("meta", { name: "theme-color", content: "#7c3aed" });
+  add("meta", { name: "apple-mobile-web-app-capable", content: "yes" });
+  add("meta", { name: "apple-mobile-web-app-status-bar-style", content: "default" });
+  add("meta", { name: "apple-mobile-web-app-title", content: "일본쇼츠" });
+  add("link", { rel: "apple-touch-icon", href: "assets/icon-180.png" });
+})();
+
+/* 📱 모바일 햄버거 메뉴 — 사이드바가 있는 모든 페이지에 자동 주입 */
+(function injectMobileNav() {
+  function build() {
+    const app = document.querySelector(".app");
+    const sidebar = document.querySelector(".sidebar");
+    if (!app || !sidebar || document.querySelector(".mobile-topbar")) return;
+
+    // 현재 페이지 제목(활성 메뉴 텍스트) 추출
+    const active = sidebar.querySelector(".nav-item.active");
+    const title = active ? active.textContent.trim() : "일본쇼츠";
+
+    const bar = document.createElement("div");
+    bar.className = "mobile-topbar";
+    bar.innerHTML =
+      '<button class="mb-btn" aria-label="메뉴">☰</button>' +
+      '<span class="mb-title">' + title + "</span>";
+    const backdrop = document.createElement("div");
+    backdrop.className = "drawer-backdrop";
+
+    app.parentNode.insertBefore(bar, app);
+    document.body.appendChild(backdrop);
+
+    const toggle = (on) => {
+      sidebar.classList.toggle("open", on);
+      backdrop.classList.toggle("open", on);
+    };
+    bar.querySelector(".mb-btn").onclick = () => toggle(!sidebar.classList.contains("open"));
+    backdrop.onclick = () => toggle(false);
+    sidebar.querySelectorAll("a").forEach(a => a.addEventListener("click", () => toggle(false)));
+  }
+  if (document.readyState === "loading")
+    document.addEventListener("DOMContentLoaded", build);
+  else build();
+})();
+
+
 async function api(path, opts = {}) {
   const res = await fetch(API_BASE + path, {
     headers: { "Content-Type": "application/json" },
