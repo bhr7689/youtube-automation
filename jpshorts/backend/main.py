@@ -336,6 +336,43 @@ def script_structures():
             "angles": sw.ANGLES}
 
 
+# ── 📱 폰 연결 QR + LAN 주소 ────────────────────────────
+
+import socket
+
+
+def _lan_ip() -> str:
+    """이 서버의 사무실 내 IP (라우팅 기준 주 인터페이스). 오프라인이어도 안전."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+    except Exception:
+        ip = "127.0.0.1"
+    finally:
+        s.close()
+    return ip
+
+
+@app.get("/api/connect-info")
+def connect_info():
+    ip = _lan_ip()
+    port = int(os.getenv("PORT", "8787"))
+    url = f"http://{ip}:{port}/"
+    svg = ""
+    try:
+        import qrcode
+        import qrcode.image.svg as svgimg
+        import io as _io
+        img = qrcode.make(url, image_factory=svgimg.SvgPathImage, box_size=9, border=2)
+        buf = _io.BytesIO()
+        img.save(buf)
+        svg = buf.getvalue().decode("utf-8")
+    except Exception:
+        svg = ""
+    return {"url": url, "ip": ip, "port": port, "qr_svg": svg}
+
+
 # ── 🎨 플리 컨셉 제조기 (지침 v1.4 내장) ────────────────
 
 import concept_maker as cm
