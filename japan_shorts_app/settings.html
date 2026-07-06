@@ -5,6 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>설정 · RefTracker</title>
   <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/api.js"></script>
+  <style>
+    .st-panel{background:#fff;border:1px solid #f0ecf7;border-radius:16px;padding:18px 20px;margin-bottom:16px;box-shadow:0 2px 10px rgba(120,60,180,.05);}
+    .st-h{font-size:15px;font-weight:800;margin-bottom:4px;}
+    .st-sub{font-size:12px;color:#8a80a5;margin-bottom:14px;}
+    .conn-row{display:flex;align-items:center;gap:12px;padding:10px 4px;border-bottom:1px dashed #f0ecf7;font-size:14px;}
+    .conn-row:last-child{border-bottom:none;}
+    .conn-icon{font-size:20px;width:30px;text-align:center;}
+    .conn-name{font-weight:700;min-width:120px;}
+    .conn-state{font-size:12px;font-weight:700;padding:4px 12px;border-radius:999px;}
+    .conn-state.ok{background:#dcfce7;color:#166534;}
+    .conn-state.off{background:#fef3c7;color:#92400e;}
+    .conn-how{flex:1;font-size:12px;color:#8a80a5;}
+    .gen-row{display:flex;align-items:center;gap:12px;padding:10px 4px;border-bottom:1px dashed #f0ecf7;font-size:14px;flex-wrap:wrap;}
+    .gen-name{font-weight:700;min-width:130px;}
+    .gen-meta{font-size:12px;color:#8a80a5;flex:1;min-width:180px;}
+    .btn-sm{background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;}
+    .btn-sm:hover{background:#6d28d9;}
+    .btn-sm.busy{opacity:.5;pointer-events:none;}
+    .add-row{display:flex;gap:8px;margin-top:12px;}
+    .add-input{flex:1;border:1px solid #e5d9f5;border-radius:10px;padding:9px 13px;font-size:14px;outline:none;}
+    .note{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;border-radius:10px;padding:10px 14px;font-size:12.5px;line-height:1.7;margin-top:10px;}
+    code{background:#f3f0fa;border-radius:5px;padding:1px 6px;font-size:12px;}
+  </style>
 </head>
 <body>
   <div class="app">
@@ -16,13 +40,17 @@
       </div>
       <nav class="nav-section">
         <a href="trend.html" class="nav-item">🔥 트렌드 피드</a>
+        <a href="global_surge.html" class="nav-item">🌍 글로벌 급등</a>
         <a href="youtube_discover.html" class="nav-item">🌐 YouTube 발굴</a>
         <a href="search.html" class="nav-item">🔍 검색</a>
         <a href="source_finder.html" class="nav-item">🕵️ 원본 소스 찾기</a>
+        <a href="surge_analysis.html" class="nav-item">📊 급등 규칙 분석</a>
+        <a href="keyword_radar.html" class="nav-item">🌡️ 키워드 레이더</a>
+        <a href="scriptwriter.html" class="nav-item">✍️ 대본 작성</a>
         <a href="channels.html" class="nav-item">📺 레퍼런스 채널</a>
         <a href="collections.html" class="nav-item">📁 컬렉션</a>
         <a href="bookmarks.html" class="nav-item">⭐ 북마크</a>
-        <a href="notifications.html" class="nav-item">🔔 알림 <span class="nav-badge">3</span></a>
+        <a href="notifications.html" class="nav-item">🔔 알림·작업 기록</a>
         <a href="settings.html" class="nav-item active">⚙️ 설정</a>
       </nav>
       <div class="nav-divider"></div>
@@ -39,167 +67,85 @@
           <button class="logout">로그아웃</button>
         </div>
       </div>
-      <div class="version">v0.3.0</div>
+      <div class="version">v0.4.0</div>
     </aside>
 
     <main class="main">
-      <div class="page-header-row">
-        <div>
-          <span class="badge-dot">설정</span>
-          <h1 class="page-title"><span class="gradient-text">알림 기준</span> 설정</h1>
-          <p class="page-sub">레퍼런스 채널 영상이 어떤 조건일 때 알림 받을지 정해두세요. 조건 충족 시 바로바로 알림이 와요.</p>
-        </div>
+      <span class="badge-dot">설정</span>
+      <h1 class="page-title"><span class="gradient-text">연결·학습</span> 관리</h1>
+      <p class="page-sub">실전 투입 체크리스트 — 연결 상태를 확인하고 카테고리별 학습을 관리합니다</p>
+
+      <div class="st-panel">
+        <div class="st-h">🔌 연결 상태</div>
+        <div class="st-sub">키는 저장소 루트 <code>.env</code> 파일에 넣고 서버를 재시작하면 반영돼요</div>
+        <div id="connBox">확인 중…</div>
       </div>
 
-      <!-- 1. 조회수 임계값 -->
-      <div class="settings-section">
-        <div class="settings-section-title">🔔 조회수 임계값</div>
-        <div class="settings-section-desc">이 조회수를 <strong>넘는 순간</strong> 알림이 와요. 한 번만 알림 (이후 더 늘어도 같은 영상은 다시 안 옴).</div>
-        <div class="settings-chip-row">
-          <span class="chip">10만 ↑</span>
-          <span class="chip">20만 ↑</span>
-          <span class="chip selected">50만 ↑</span>
-          <span class="chip">100만 ↑</span>
-          <span class="chip">500만 ↑</span>
-          <span class="chip">1000만 ↑</span>
-          <span class="chip">직접 입력</span>
+      <div class="st-panel">
+        <div class="st-h">📚 카테고리별 학습 관리</div>
+        <div class="st-sub">카테고리마다 코퍼스가 <b>따로</b> 쌓이고, 수집이 끝나면 <b>자동 재학습</b>됩니다 (섞임 없음)</div>
+        <div id="genreBox">확인 중…</div>
+        <div class="add-row">
+          <input class="add-input" id="newGenre" placeholder="새 카테고리 — 예: 플레이리스트, cooking fail, 동물 감동">
+          <button class="btn-sm" onclick="collectGenre(document.getElementById('newGenre').value.trim(), this)">+ 수집 시작</button>
         </div>
+        <div class="note">🔄 <b>학습 원리</b> — 수집(터진 쇼츠 대본·태그·댓글) → 훅 유형·구조·키워드 통계 자동 갱신 →
+          대본·제목 생성이 그 카테고리 규칙만 사용. 목표 500편, 100편부터 규칙이 안정화됩니다.</div>
       </div>
 
-      <!-- 2. 떡상 배수 -->
-      <div class="settings-section">
-        <div class="settings-section-title">🚀 떡상 배수 (옵션)</div>
-        <div class="settings-section-desc">조회수 + <strong>이 배수</strong>도 함께 넘어야 알림. 평균 대비 진짜 폭발한 것만 걸러줘요. (안 쓰려면 "사용 안 함")</div>
-        <div class="settings-chip-row">
-          <span class="chip">사용 안 함</span>
-          <span class="chip">×2 ↑</span>
-          <span class="chip selected">×3 ↑</span>
-          <span class="chip">×5 ↑</span>
-          <span class="chip">×10 ↑</span>
-          <span class="chip">×30 ↑</span>
+      <div class="st-panel">
+        <div class="st-h">💾 데이터 보관</div>
+        <div class="st-sub" style="margin-bottom:8px;">학습 자산이 어디에 쌓이는지</div>
+        <div style="font-size:13px;color:#4b5563;line-height:1.9;">
+          · 코퍼스·규칙·기록: <code>jpshorts/backend/data/</code> (실행하는 PC에 영구 누적)<br>
+          · 카테고리별 규칙: <code>data/hook_rules/{카테고리}.json</code><br>
+          · 내레이션 패키지: <code>data/narration_jobs/</code> · 컷 플랜: <code>data/cut_plans/</code><br>
+          · git 에는 올라가지 않아요(개인 자산) — PC 백업 시 <code>data/</code> 폴더만 복사하면 됩니다.
         </div>
-      </div>
-
-      <!-- 3. 시간당 조회 -->
-      <div class="settings-section">
-        <div class="settings-section-title">⚡ 시간당 조회 임계값 (옵션)</div>
-        <div class="settings-section-desc">최근 1시간에 이 만큼씩 조회수가 늘어나면 알림. 떡상의 <strong>초기 신호</strong>를 잡고 싶을 때.</div>
-        <div class="settings-chip-row">
-          <span class="chip selected">사용 안 함</span>
-          <span class="chip">1만/시 ↑</span>
-          <span class="chip">3만/시 ↑</span>
-          <span class="chip">5만/시 ↑</span>
-          <span class="chip">10만/시 ↑</span>
-        </div>
-      </div>
-
-      <!-- 4. 알림 대상 -->
-      <div class="settings-section">
-        <div class="settings-section-title">📁 알림 받을 채널 범위</div>
-        <div class="settings-section-desc">전체 레퍼런스 채널 22개에서 알림 받을지, 특정 컬렉션 폴더만 받을지.</div>
-        <div class="settings-chip-row">
-          <span class="chip selected">전체 (22 채널)</span>
-          <span class="chip">📁 고든램지</span>
-          <span class="chip">📁 샤크탱크</span>
-          <span class="chip">📁 헬스키친</span>
-          <span class="chip">📁 BGT</span>
-          <span class="chip">📁 AGT</span>
-          <span class="chip">+ 폴더 선택</span>
-        </div>
-      </div>
-
-      <!-- 5. 알림 방법 -->
-      <div class="settings-section">
-        <div class="settings-section-title">📱 알림 받는 방법</div>
-        <div class="settings-section-desc">알림이 어디로 올지 정합니다. <strong>외부 채널(카톡·문자)은 연결 한 번이면 끝</strong> — 그 후로는 사장님 손전화로 바로 알림이 옵니다.</div>
-
-        <div class="settings-subhead">앱 안 / 이메일</div>
-        <div class="settings-toggle-row">
-          <div class="settings-toggle-info">
-            <div class="settings-toggle-label">🔔 앱 안 알림</div>
-            <div class="settings-toggle-sub">RefTracker 화면 안 빨간 뱃지로 표시</div>
-          </div>
-          <div class="toggle on"></div>
-        </div>
-        <div class="settings-toggle-row">
-          <div class="settings-toggle-info">
-            <div class="settings-toggle-label">📧 이메일</div>
-            <div class="settings-toggle-sub">parkzz5157@gmail.com 으로 발송</div>
-          </div>
-          <div class="toggle on"></div>
-        </div>
-
-        <div class="settings-subhead">🔗 외부 채널 연결 — 진짜 카톡/문자로 받기</div>
-
-        <!-- 카카오톡 (연결됨 예시) -->
-        <div class="connect-card connected">
-          <div class="connect-icon kakao">💬</div>
-          <div class="connect-info">
-            <div class="connect-name">카카오톡 알림톡 <span class="connect-status connected">✓ 연결됨</span></div>
-            <div class="connect-desc">+82-10-****-5157 · 알림톡 비즈니스 채널로 발송 · 무료</div>
-          </div>
-          <button class="btn-disconnect">연결 해제</button>
-        </div>
-
-        <!-- SMS (연결 안 됨 + 폼) -->
-        <div class="connect-card">
-          <div class="connect-icon sms">📱</div>
-          <div class="connect-info">
-            <div class="connect-name">SMS 문자 알림 <span class="connect-status not-connected">● 연결 안 됨</span></div>
-            <div class="connect-desc">조회수 임계값 돌파 시 즉시 문자 · 건당 약 5원 (사장님 요금)</div>
-          </div>
-          <button class="btn-connect">+ 연결하기</button>
-        </div>
-        <div class="connect-form">
-          <input type="tel" placeholder="010-XXXX-XXXX 휴대폰 번호 입력" />
-          <button>인증번호 받기</button>
-        </div>
-        <div class="connect-form-hint">번호 입력 → 인증번호 받기 → 받은 6자리 문자 입력 → 완료</div>
-
-        <!-- 텔레그램 -->
-        <div class="connect-card">
-          <div class="connect-icon telegram">✈️</div>
-          <div class="connect-info">
-            <div class="connect-name">텔레그램 봇 <span class="connect-status not-connected">● 연결 안 됨</span></div>
-            <div class="connect-desc">@RefTrackerBot 친구 추가 → /start 명령 → 무료, 무제한</div>
-          </div>
-          <button class="btn-connect">봇 친구 추가</button>
-        </div>
-
-        <!-- 모바일 푸시 -->
-        <div class="connect-card">
-          <div class="connect-icon pwa">📲</div>
-          <div class="connect-info">
-            <div class="connect-name">모바일 푸시 (PWA) <span class="connect-status not-connected">● 연결 안 됨</span></div>
-            <div class="connect-desc">RefTracker를 홈 화면에 추가 → 푸시 권한 허용 → 무료</div>
-          </div>
-          <button class="btn-connect">PWA 설치 가이드</button>
-        </div>
-
-        <div style="margin-top:14px;padding:12px 14px;background:rgba(139,92,246,0.06);border-radius:10px;font-size:12px;color:var(--c-text-muted);">
-          💡 <strong>발송 우선순위</strong>: 카톡 → 문자 → 텔레그램 → 푸시 → 앱 안 (앞의 채널 실패 시 다음으로 자동 폴백)
-        </div>
-      </div>
-
-      <!-- 6. 조용한 시간 -->
-      <div class="settings-section">
-        <div class="settings-section-title">🌙 조용한 시간</div>
-        <div class="settings-section-desc">이 시간 동안은 알림 안 와요. 자고 있을 때 깨우지 않게.</div>
-        <div class="settings-chip-row">
-          <span class="chip">꺼짐</span>
-          <span class="chip selected">22시 ~ 7시</span>
-          <span class="chip">자정 ~ 7시</span>
-          <span class="chip">23시 ~ 8시</span>
-          <span class="chip">직접 설정</span>
-        </div>
-      </div>
-
-      <!-- 저장 -->
-      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px;">
-        <button class="btn-secondary">기본값으로</button>
-        <button class="btn-primary">변경 사항 저장</button>
       </div>
     </main>
   </div>
+
+  <script>
+    async function loadStatus() {
+      const s = await api("/api/system/status");
+      const row = (icon, name, ok, how) => `
+        <div class="conn-row">
+          <span class="conn-icon">${icon}</span>
+          <span class="conn-name">${name}</span>
+          <span class="conn-state ${ok ? "ok" : "off"}">${ok ? "✓ 연결됨" : "미설정"}</span>
+          <span class="conn-how">${how}</span>
+        </div>`;
+      document.getElementById("connBox").innerHTML =
+        row("🔑", "YouTube API", s.youtube_key, s.youtube_key ? "실데이터 수집 가능" : ".env 에 YOUTUBE_API_KEY= 입력 (console.cloud.google.com 발급)") +
+        row("🤖", "Gemini", s.gemini, s.gemini ? "실제 번역·대본 생성" : ".env 에 GEMINI_API_KEY= 입력 (aistudio.google.com 발급) — 없으면 데모 번역") +
+        row("🎙️", "VOICEVOX", s.voicevox, s.voicevox ? "실제 일본어 음성 합성" : "voicevox.hiroshiba.jp 에서 무료 설치 후 실행 — 없으면 무음 패키지") +
+        row("🎬", "ffmpeg", s.ffmpeg, s.ffmpeg ? "렌더 가능" : "ffmpeg 설치 필요") +
+        row("📦", "작업 자산", true, `내레이션 ${s.narration_jobs}건 · 컷 플랜 ${s.cut_plans}건`);
+      renderGenres(s.corpus || []);
+    }
+
+    function renderGenres(genres) {
+      document.getElementById("genreBox").innerHTML = genres.length ? genres.map(g => `
+        <div class="gen-row">
+          <span class="gen-name">📂 ${esc(g.genre)}</span>
+          <span class="gen-meta">코퍼스 ${g.corpus_count}편 · ${g.rules_learned ? `규칙 학습됨(${g.rules_corpus_count}편 기준)` : "규칙 미학습"} · 시드: ${esc((g.queries || []).slice(0, 2).join(", "))}</span>
+          <button class="btn-sm" onclick="collectGenre('${esc(g.genre)}', this)">🔄 수집+재학습</button>
+        </div>`).join("") : '<div style="color:#a99fc0;font-size:13px;padding:8px 0;">카테고리 없음 — 아래에서 새로 시작하세요</div>';
+    }
+
+    async function collectGenre(genre, btn) {
+      if (!genre) return toast("카테고리 이름을 입력하세요");
+      btn.classList.add("busy"); const orig = btn.textContent; btn.textContent = "수집 중…";
+      try {
+        const r = await api("/api/corpus/collect", { method: "POST", body: JSON.stringify({ genre, target: 100 }) });
+        toast(`✓ ${genre}: ${r.added}편 수집 → 규칙 ${r.rules_updated ? "자동 갱신" : "갱신 실패"} (총 ${r.total}편${r.demo ? " · 데모" : ""})`);
+        loadStatus();
+      } catch (e) { toast("오류: " + e.message); }
+      btn.classList.remove("busy"); btn.textContent = orig;
+    }
+
+    loadStatus();
+  </script>
 </body>
 </html>

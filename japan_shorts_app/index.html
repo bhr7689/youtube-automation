@@ -5,57 +5,103 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>일본쇼츠 자동 프로그램</title>
   <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/api.js"></script>
+  <style>
+    body{background:linear-gradient(135deg,#f4ecff 0%,#fdeef6 46%,#ffeede 100%);min-height:100vh;}
+    .pt-wrap{max-width:1080px;margin:0 auto;padding:36px 24px 48px;}
+    .pt-hero{text-align:center;margin-bottom:34px;}
+    .pt-badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#7e22ce;background:rgba(255,255,255,.75);padding:5px 14px;border-radius:999px;margin-bottom:14px;}
+    .pt-title{font-size:44px;font-weight:800;letter-spacing:-.02em;background:linear-gradient(90deg,#7c3aed,#ec4899);-webkit-background-clip:text;background-clip:text;color:transparent;}
+    .pt-sub{color:#6b7280;margin-top:10px;line-height:1.7;}
+    .tool-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-bottom:26px;}
+    @media(max-width:820px){.tool-grid{grid-template-columns:1fr;}}
+    .tool-card{background:rgba(255,255,255,.85);border:1px solid rgba(255,255,255,.7);border-radius:20px;padding:26px 24px;text-decoration:none;color:inherit;box-shadow:0 6px 20px rgba(120,60,180,.08);transition:transform .15s,box-shadow .15s;display:block;}
+    .tool-card:hover{transform:translateY(-4px);box-shadow:0 16px 34px rgba(120,60,180,.16);}
+    .tool-icon{font-size:34px;margin-bottom:12px;}
+    .tool-name{font-size:18px;font-weight:800;margin-bottom:6px;}
+    .tool-desc{font-size:13px;color:#8a80a5;line-height:1.7;min-height:60px;}
+    .tool-go{color:#7c3aed;font-weight:700;font-size:13px;margin-top:10px;display:inline-block;}
+    .flow-panel{background:rgba(255,255,255,.7);border:1px solid rgba(255,255,255,.7);border-radius:18px;padding:18px 22px;margin-bottom:26px;}
+    .flow-h{font-size:14px;font-weight:800;margin-bottom:12px;}
+    .flow-steps{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:13px;}
+    .flow-step{background:#fff;border:1px solid #efe6fb;border-radius:999px;padding:7px 14px;font-weight:600;color:#4c1d95;text-decoration:none;}
+    .flow-step:hover{background:#f3e8ff;}
+    .flow-arrow{color:#c4b5fd;font-weight:800;}
+    .status-row{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;}
+    .st-chip{font-size:12px;font-weight:700;padding:6px 14px;border-radius:999px;background:#fff;border:1px solid #efe6fb;color:#64748b;}
+    .st-chip.ok{background:#dcfce7;color:#166534;border-color:#bbf7d0;}
+    .st-chip.off{background:#fef3c7;color:#92400e;border-color:#fde68a;}
+    .pt-foot{display:flex;justify-content:center;gap:10px;margin-top:26px;flex-wrap:wrap;}
+  </style>
 </head>
 <body>
-  <div class="portal">
-    <div class="portal-topbar">
-      <div class="portal-user">
-        <div class="avatar-pill">남정</div>
-        <span style="font-size:13px;font-weight:500;">박남정</span>
+  <div class="pt-wrap">
+    <div class="pt-hero">
+      <div class="pt-badge"><span style="width:6px;height:6px;background:#e11d68;border-radius:50%;display:inline-block;"></span> 쇼치 강사님 시리즈</div>
+      <div class="pt-title">일본쇼츠 자동 프로그램</div>
+      <p class="pt-sub">레퍼런스 탐색부터 시선 비틀기 대본, 일본어 번역·TTS, 자동 컷편집까지<br>한 번 로그인으로 세 가지 도구를 모두 사용하세요.</p>
+    </div>
+
+    <div class="tool-grid">
+      <a class="tool-card" href="trend.html">
+        <div class="tool-icon">📺</div>
+        <div class="tool-name">레퍼런스 트래커</div>
+        <div class="tool-desc">유튜브 채널 등록, 트렌딩·글로벌 급등 분석, 키워드 레이더, 컬렉션 정리, 검색까지.</div>
+        <span class="tool-go">시작하기 →</span>
+      </a>
+      <a class="tool-card" href="translator.html">
+        <div class="tool-icon">🌸</div>
+        <div class="tool-name">일본어 번역봇</div>
+        <div class="tool-desc">영어/한국어 대본을 일본어 쇼츠로 자동 변환 + 문장별 TTS 패키지(자막·음성·manifest).</div>
+        <span class="tool-go">시작하기 →</span>
+      </a>
+      <a class="tool-card" href="editor.html">
+        <div class="tool-icon">✂️</div>
+        <div class="tool-name">자동 컷편집</div>
+        <div class="tool-desc">롱폼 영상에서 쇼츠 대본에 맞춰 자동 컷편집 — 앵커 매칭·루프 컷·SFX 플랜·CapCut/ffmpeg.</div>
+        <span class="tool-go">시작하기 →</span>
+      </a>
+    </div>
+
+    <div class="flow-panel">
+      <div class="flow-h">🏭 대본 공장 — 터진 영상에서 업로드까지 한 흐름</div>
+      <div class="flow-steps">
+        <a class="flow-step" href="global_surge.html">🌍 급등 발굴</a><span class="flow-arrow">→</span>
+        <a class="flow-step" href="source_finder.html">🕵️ 원본 찾기</a><span class="flow-arrow">→</span>
+        <a class="flow-step" href="scriptwriter.html">✍️ 시선 비틀기 대본</a><span class="flow-arrow">→</span>
+        <a class="flow-step" href="keyword_radar.html">🌡️ 키워드·제목</a><span class="flow-arrow">→</span>
+        <a class="flow-step" href="translator.html">🌸 일본어 TTS</a><span class="flow-arrow">→</span>
+        <a class="flow-step" href="editor.html">✂️ 컷편집</a>
       </div>
     </div>
 
-    <div class="portal-center">
-      <span class="badge-dot">쇼치 강사 시리즈</span>
+    <div class="status-row" id="statusRow">상태 확인 중…</div>
 
-      <h1 class="portal-title">
-        <span class="gradient-text">일본쇼츠</span> 자동 프로그램
-      </h1>
-
-      <p class="portal-sub">
-        레퍼런스 탐색부터 일본어 번역, 자동 컷편집까지<br>
-        한 번 로그인으로 세 가지 도구를 모두 사용하세요.
-      </p>
-
-      <div class="portal-cards">
-        <a href="search.html" class="portal-card">
-          <div class="portal-card-icon">📺</div>
-          <div class="portal-card-title">레퍼런스 트래커</div>
-          <div class="portal-card-desc">유튜브 채널 등록, 트렌딩 분석, 컬렉션 정리, 검색까지.</div>
-          <div class="portal-card-cta">시작하기 →</div>
-        </a>
-
-        <a href="translator.html" class="portal-card">
-          <div class="portal-card-icon">🌸</div>
-          <div class="portal-card-title">일본어 번역봇</div>
-          <div class="portal-card-desc">영어/한국어 대본을 일본어 쇼츠로 자동 변환 + TTS.</div>
-          <div class="portal-card-cta">시작하기 →</div>
-        </a>
-
-        <a href="editor.html" class="portal-card">
-          <div class="portal-card-icon">✂️</div>
-          <div class="portal-card-title">자동 컷편집</div>
-          <div class="portal-card-desc">롱폼 영상에서 쇼츠 대본에 맞춰 자동 컷편집.</div>
-          <div class="portal-card-cta">시작하기 →</div>
-        </a>
-      </div>
-
-      <div class="portal-footer">
-        <span class="portal-footer-pill">🔒 Google OAuth</span>
-        <span class="portal-footer-pill">🛡️ 개인 데이터 보호</span>
-        <span class="portal-footer-pill">⚡ 한 번 로그인 = 모두 사용</span>
-      </div>
+    <div class="pt-foot">
+      <span class="st-chip">🔐 Google OAuth</span>
+      <span class="st-chip">🛡️ 개인 데이터 보호</span>
+      <span class="st-chip">🚀 한 번 로그인 = 모두 사용</span>
     </div>
   </div>
+
+  <script>
+    (async function () {
+      try {
+        const s = await api("/api/system/status");
+        const total = (s.corpus || []).reduce((a, g) => a + g.corpus_count, 0);
+        const chip = (ok, on, off) => `<span class="st-chip ${ok ? "ok" : "off"}">${ok ? on : off}</span>`;
+        document.getElementById("statusRow").innerHTML =
+          chip(s.youtube_key, "🔑 YouTube 실데이터", "🔑 YouTube 데모 모드") +
+          chip(s.gemini, "🤖 Gemini 연결됨", "🤖 Gemini 미설정") +
+          chip(s.voicevox, "🎙️ VOICEVOX 가동", "🎙️ VOICEVOX 꺼짐") +
+          chip(s.ffmpeg, "🎬 ffmpeg OK", "🎬 ffmpeg 없음") +
+          `<span class="st-chip ok">📚 학습 코퍼스 ${total}편</span>` +
+          `<a class="st-chip" href="settings.html" style="text-decoration:none;">⚙️ 설정에서 관리 →</a>`;
+      } catch (e) {
+        document.getElementById("statusRow").innerHTML =
+          '<span class="st-chip off">서버 연결 안 됨 — 일본쇼츠실행.bat 로 서버를 켜주세요</span>';
+      }
+    })();
+  </script>
 </body>
 </html>
