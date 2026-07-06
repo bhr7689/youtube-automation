@@ -84,6 +84,17 @@ jpshorts/backend/
   · 신규 모듈: `cutplanner.py` (플랜·CapCut draft 스켈레톤·ffmpeg 스크립트 생성)
   · 실제 렌더는 사용자 PC(CapCut 또는 ffmpeg). yt-dlp 원본 다운로드는 다음 단계.
 
+### 🧠 대본 공장 (2026-07-05~06 확정 워크플로)
+- ✅ `scriptwriter.html` — ✍️ 대본 작성 UI: 터진 숏폼+원본 롱폼 → 카테고리 규칙 →
+  훅 7종(구조 미리보기·🎲분포 가중 자동) → 게이트(유사도·훅-구조·앵커) →
+  제목 후보(채점)+해시태그 → 🌸 내레이션 패키지 원클릭 → ✂️ 컷편집.
+  모든 영상 카드에 ✍️ 대본 액션.
+- 백엔드: script_corpus(카테고리별 수집→자동 재학습, by_hook 통계),
+  scriptwriter(STRUCTURES 훅→구조 7종, 시선비틀기 4앵글, 앵커, 게이트),
+  title_engine(3층 키워드·채점·성과로그), keyword_radar(상승·히트·계절),
+  cutplanner(⚓앵커 매칭·🔁루프 컷·🔊SFX 플랜), renderer(실렌더 검증됨).
+- 학습 데이터는 실행 PC의 data/ 에 카테고리별로 누적(hook_rules/{genre}.json).
+
 ## 🔗 전체 파이프라인 (3도구 연결 완료)
 발굴(RefTracker) → 자막/대본 → 🌸 번역봇(일본어+TTS 패키지) → ✂️ 컷편집(컷 플랜+내보내기)
 → CapCut/ffmpeg 렌더 → 업로드
