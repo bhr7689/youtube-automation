@@ -354,12 +354,29 @@ def _lan_ip() -> str:
     return ip
 
 
-@app.get("/api/connect-info")
-def connect_info():
-    ip = _lan_ip()
-    port = int(os.getenv("PORT", "8787"))
-    url = f"http://{ip}:{port}/"
-    svg = ""
+def _all_ipv4() -> list[str]:
+    """이 서버에 붙은 IPv4 전부(로컬 제외) — LAN·Tailscale 등 구분용."""
+    ips = set()
+    try:
+        for res in socket.getaddrinfo(socket.gethostname(), None):
+            if res[0] == socket.AF_INET:
+                ips.add(res[4][0])
+    except Exception:
+        pass
+    ips.add(_lan_ip())
+    return [i for i in ips if not i.startswith("127.")]
+
+
+def _is_tailscale(ip: str) -> bool:
+    # Tailscale CGNAT 대역 100.64.0.0/10 (둘째 옥텟 64~127)
+    try:
+        a, b = ip.split(".")[:2]
+        return a == "100" and 64 <= int(b) <= 127
+    except Exception:
+        return False
+
+
+def _qr_svg(url: str) -> str:
     try:
         import qrcode
         import qrcode.image.svg as svgimg
@@ -367,10 +384,28 @@ def connect_info():
         img = qrcode.make(url, image_factory=svgimg.SvgPathImage, box_size=9, border=2)
         buf = _io.BytesIO()
         img.save(buf)
-        svg = buf.getvalue().decode("utf-8")
+        return buf.getvalue().decode("utf-8")
     except Exception:
-        svg = ""
-    return {"url": url, "ip": ip, "port": port, "qr_svg": svg}
+        return ""
+
+
+@app.get("/api/connect-info")
+def connect_info():
+    port = int(os.getenv("PORT", "8787"))
+    lan = _lan_ip()
+    tail = next((i for i in _all_ipv4() if _is_tailscale(i)), "")
+    lan_url = f"http://{lan}:{port}/"
+    tail_url = f"http://{tail}:{port}/" if tail else ""
+    # 어디서나 접속(Tailscale)이 있으면 그걸 우선 홈화면 주소로.
+    best = tail_url or lan_url
+    return {
+        "url": lan_url, "ip": lan, "port": port,
+        "lan_url": lan_url,
+        "tailscale_url": tail_url,     # 있으면 외출 중에도 접속 가능
+        "best_url": best,
+        "qr_svg": _qr_svg(best),       # QR = 어디서나 주소 우선
+        "has_remote": bool(tail_url),
+    }
 
 
 # ── 🎨 플리 컨셉 제조기 (지침 v1.4 내장) ────────────────
