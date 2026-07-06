@@ -720,6 +720,98 @@ def sf_file(job_id: str, name: str):
     return FileResponse(path)
 
 
+# ── 🔑 API 키 저장 (설정 화면에서 직접) ──────────────────
+# 키는 이 PC의 .env 파일에만 저장됩니다(.gitignore 처리 → 절대 업로드 안 됨).
+# 저장 즉시 os.environ + youtube_client 모듈에 반영 → 서버 재시작 불필요.
+
+ENV_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", ".env"
+)
+_ENV_HEADER = (
+    "# 일본쇼츠 자동 프로그램 — API 키\n"
+    "# 이 파일은 이 컴퓨터에만 저장되며 절대 공유·업로드되지 않습니다.\n"
+)
+
+
+def _write_env(updates: dict[str, str]) -> None:
+    """기존 .env 의 다른 줄(주석·다른 변수)은 보존하며 지정 키만 upsert."""
+    lines: list[str] = []
+    if os.path.isfile(ENV_PATH):
+        with open(ENV_PATH, "r", encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    seen: set[str] = set()
+    out: list[str] = []
+    for ln in lines:
+        s = ln.strip()
+        if s and not s.startswith("#") and "=" in s:
+            k = s.split("=", 1)[0].strip()
+            if k in updates:
+                out.append(f"{k}={updates[k]}")
+                seen.add(k)
+                continue
+        out.append(ln)
+    for k, v in updates.items():
+        if k not in seen:
+            out.append(f"{k}={v}")
+    text = "\n".join(out).rstrip("\n") + "\n"
+    if not os.path.isfile(ENV_PATH):
+        text = _ENV_HEADER + text
+    tmp = ENV_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(text)
+    os.replace(tmp, ENV_PATH)
+
+
+def _mask(v: str) -> str:
+    v = (v or "").strip()
+    if not v:
+        return ""
+    if len(v) <= 4:
+        return "•" * len(v)
+    return "••••" + v[-4:]
+
+
+def _keys_status_payload() -> dict:
+    return {
+        "youtube": {"set": yc.has_key(),
+                    "mask": _mask(os.environ.get("YOUTUBE_API_KEY", ""))},
+        "gemini": {"set": tr.has_gemini(),
+                   "mask": _mask(os.environ.get("GEMINI_API_KEY", ""))},
+        "openai": {"set": bool(os.environ.get("OPENAI_API_KEY", "").strip()),
+                   "mask": _mask(os.environ.get("OPENAI_API_KEY", ""))},
+        "env_exists": os.path.isfile(ENV_PATH),
+    }
+
+
+class KeysReq(BaseModel):
+    youtube: str | None = None
+    gemini: str | None = None
+    openai: str | None = None
+
+
+@app.post("/api/keys/save")
+def keys_save(req: KeysReq):
+    mapping = {
+        "YOUTUBE_API_KEY": req.youtube,
+        "GEMINI_API_KEY": req.gemini,
+        "OPENAI_API_KEY": req.openai,
+    }
+    # 빈칸은 "변경 안 함" — 기존 키를 실수로 지우지 않도록
+    updates = {k: v.strip() for k, v in mapping.items() if v is not None and v.strip()}
+    if not updates:
+        raise HTTPException(400, "입력된 키가 없어요. 최소 한 개는 넣어주세요.")
+    _write_env(updates)
+    for k, v in updates.items():       # 즉시 적용 (서버 재시작 불필요)
+        os.environ[k] = v
+    yc.YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "").strip()
+    return {"ok": True, "saved": list(updates.keys()), **_keys_status_payload()}
+
+
+@app.get("/api/keys/status")
+def keys_status():
+    return _keys_status_payload()
+
+
 # ── 정적 UI (japan_shorts_app) — 같은 포트에서 서빙 ─────
 _UI_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "japan_shorts_app"
