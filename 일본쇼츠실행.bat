@@ -1,9 +1,9 @@
 @echo off
 chcp 65001 >nul
-title 일본쇼츠 자동 프로그램
+title 일본쇼츠 자동 프로그램 (서버)
 
 echo ============================================
-echo  🎌 일본쇼츠 자동 프로그램
+echo  🎌 일본쇼츠 자동 프로그램  [서버 모드]
 echo  📺 레퍼런스 트래커 + 🌸 번역봇 + ✂️ 컷편집
 echo ============================================
 echo.
@@ -11,7 +11,7 @@ echo.
 :: 이 배치 파일이 있는 폴더로 이동
 cd /d "%~dp0"
 
-:: [1/4] 최신 버전 받아오기 (japan_shorts 개발 브랜치)
+:: [1/4] 최신 버전 받아오기
 echo [1/4] 최신 버전 받는 중...
 git fetch origin claude/new-session-rhtlol >nul 2>&1
 if errorlevel 1 (
@@ -34,17 +34,28 @@ if not exist "jpshorts\backend\main.py" (
 echo [2/4] 필요한 부품 설치 중...
 pip install -r jpshorts\backend\requirements.txt --quiet
 
-:: [3/4] 브라우저 자동 열기
-echo [3/4] 브라우저 열기 (3초 후)...
+:: [3/4] 사무실 다른 PC 접속 주소 확인
+set LAN_IP=
+for /f %%i in ('powershell -NoProfile -Command "(Get-NetIPAddress -AddressFamily IPv4 ^| Where-Object {$_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254*'} ^| Select-Object -First 1).IPAddress" 2^>nul') do set LAN_IP=%%i
+
+echo [3/4] 접속 주소
+echo.
+echo   ┌─────────────────────────────────────────────┐
+echo   │  이 컴퓨터:     http://localhost:8787
+if defined LAN_IP echo   │  다른 PC 에서:  http://%LAN_IP%:8787
+if defined LAN_IP echo   │                 (다른 PC의 '일본쇼츠_접속.bat' 에 %LAN_IP% 입력)
+echo   └─────────────────────────────────────────────┘
+echo.
+echo   ⚠️ 처음 실행 시 Windows 방화벽 창이 뜨면 [액세스 허용] 을 눌러주세요.
+echo   💾 학습 데이터는 이 서버 컴퓨터에만 쌓입니다 (3대가 공유).
+echo.
+
+:: 브라우저 자동 열기
 start "" cmd /c "timeout /t 3 /nobreak >nul && start http://localhost:8787/"
 
-:: [4/4] 서버 시작 (포트 8787) — UI + API 통합
-echo [4/4] 서버 시작 (포트 8787)
+:: [4/4] 서버 시작 (포트 8787, 사무실 내 다른 PC 접속 허용)
+echo [4/4] 서버 시작 - 종료하려면 이 창을 닫거나 Ctrl+C
 echo.
-echo  💡 .env 파일에 YOUTUBE_API_KEY 가 있으면 실제 유튜브 검색,
-echo     없으면 데모 데이터로 작동해요.
-echo  종료하려면 이 창을 닫거나 Ctrl+C 를 누르세요.
-echo.
-python -m uvicorn main:app --port 8787 --app-dir jpshorts\backend
+python -m uvicorn main:app --host 0.0.0.0 --port 8787 --app-dir jpshorts\backend
 
 pause
