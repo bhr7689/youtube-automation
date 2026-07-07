@@ -189,6 +189,49 @@ def _llm(prompt: str) -> str | None:
     return _openai(prompt) or translator._gemini(prompt, temperature=0.7)
 
 
+# ── 👁 GPT Vision: 인기 썸네일을 '직접 보고' 벤치마킹 ────
+VISION_PROMPT = """너는 유튜브 썸네일 디자인 분석가다. 아래는 한 채널의 '인기 상위' 썸네일들이다
+(조회수 순). 이미지들을 실제로 보고, 이 채널의 성공한 썸네일들이 공유하는 시각 공식을
+한국어로 간결하게 정리하라. 추측하지 말고 실제로 보이는 것만. 항목:
+1. 공통 컬러 팔레트 — 지배 색 3~5개(가능하면 #hex 근사값)와 명도·채도 경향
+2. 구도 — 클로즈업/와이드, 주 피사체 위치, 심도, 여백
+3. 반복 오브젝트·소재 — 실제로 보이는 사물/배경/상징
+4. 인물·얼굴 — 유무, 표정·감정, 크기
+5. 텍스트 오버레이 — 유무, 위치, 폰트 톤, 크기, 색(없으면 '없음')
+6. 전체 무드 — 한 줄
+7. 벤치마킹 요약 — "이 채널 썸네일이 먹히는 이유" 2~3줄, 그리고 신규 채널이 지켜야 할
+   85% 요소와 바꿔볼 15% 요소를 각각 콕 집어서.
+표 없이 '- ' 불릿으로만. 간결하게."""
+
+
+def analyze_thumbnails_vision(thumb_urls: list[str],
+                              titles: list[str] | None = None) -> str | None:
+    """OpenAI GPT-4o Vision 으로 실제 썸네일 이미지를 보고 공통 시각 패턴 추출.
+    키 없거나 http 이미지 없으면 None(→ 텍스트 추정 경로로 폴백)."""
+    key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not key:
+        return None
+    urls = [u for u in (thumb_urls or []) if isinstance(u, str) and u.startswith("http")][:9]
+    if not urls:
+        return None
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=key)
+        content: list = [{"type": "text", "text": VISION_PROMPT}]
+        for idx, u in enumerate(urls):
+            if titles and idx < len(titles):
+                content.append({"type": "text", "text": f"#{idx + 1} 제목: {titles[idx]}"})
+            content.append({"type": "image_url",
+                            "image_url": {"url": u, "detail": "low"}})
+        r = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": content}],
+            temperature=0.4, max_tokens=900)
+        return (r.choices[0].message.content or "").strip() or None
+    except Exception:
+        return None
+
+
 def _engine_name() -> str:
     if os.environ.get("OPENAI_API_KEY", "").strip():
         return "openai"
@@ -411,6 +454,19 @@ def generate_report(channel_urls: list[str], song_type: str = "auto",
         errs = [c["error"] for c in collected if c.get("error")]
         return {"error": " / ".join(errs) or "채널 URL 을 넣어주세요."}
 
+    # 🖼️ 인기순 상위 9개 썸네일 (벤치마킹 — 메인 채널 실데이터) — LLM 전에 먼저 계산
+    main = channels[0]
+    tops = sorted(main.get("videos", []), key=lambda v: v.get("views", 0),
+                  reverse=True)[:9]
+    thumbnails = [{"rank": i + 1, "title": v.get("title", ""),
+                   "views": v.get("views", 0), "published": v.get("published", ""),
+                   "thumb": v.get("thumb", ""), "video_id": v.get("video_id", "")}
+                  for i, v in enumerate(tops)]
+
+    # 👁 GPT Vision 실측: 인기 9개 썸네일을 실제로 '보고' 공통 시각 패턴 추출
+    vision = analyze_thumbnails_vision(
+        [t["thumb"] for t in thumbnails], [t["title"] for t in thumbnails])
+
     data_block = ""
     for i, c in enumerate(channels, 1):
         vids = "\n".join(
@@ -426,13 +482,24 @@ def generate_report(channel_urls: list[str], song_type: str = "auto",
     songs_line = (f"곡 묶음 {num_songs}곡을 suno.song_pack 에 {num_songs}개 채워라."
                   if num_songs > 1 else "곡 1곡 패키지(structure/가사)를 제공하라.")
 
+    if vision:      # 실측 시각 분석이 있으면 근거로 주입 (추정 아님)
+        thumb_note = (
+            "\n[👁 썸네일 실측 시각 분석 — GPT Vision 이 인기 상위 9개 썸네일을 직접 보고 추출]\n"
+            + vision +
+            "\n위 시각 분석은 이미지를 실제로 본 결과다. thumbnail(②)·썸네일 대표안·image_prompt 를"
+            " 이 실측 근거로 작성하고, thumbnail.estimated=false 로 둔다. image_prompt 는 이 공통"
+            " 컬러·구도·오브젝트를 85% 유지하고 15%만 변형해 신규 썸네일을 묘사하라.")
+    else:
+        thumb_note = ("\n[주의] 썸네일 이미지 미첨부 — thumbnail.estimated=true 로 두고 시각/조회"
+                      " 근거는 제목·업로드 흐름 기반 추정으로 표기.")
+
     prompt = (
         SPEC + "\n\n" + JSON_OUTPUT +
         "\n\n[입력 데이터 — YouTube API 실측]\n" + data_block +
         ("\n[사용자 추가 메모]\n" + extra_notes + "\n" if extra_notes.strip() else "") +
-        f"\n[곡 유형] {song_line}\n[곡 수] {songs_line}\n"
-        "\n[주의] 썸네일 이미지 미첨부 — thumbnail.estimated=true 로 두고 시각/조회 근거는"
-        " 제목·업로드 흐름 기반 추정으로 표기. 위 JSON 스키마 하나만 순수 JSON으로 출력하라."
+        f"\n[곡 유형] {song_line}\n[곡 수] {songs_line}\n" +
+        thumb_note +
+        "\n위 JSON 스키마 하나만 순수 JSON으로 출력하라."
     )
     out = _llm(prompt)
     engine = _engine_name()
@@ -446,25 +513,22 @@ def generate_report(channel_urls: list[str], song_type: str = "auto",
             result = _demo_result(channels[0])
             engine = "demo"
 
-    # 🖼️ 인기순 상위 9개 썸네일 (벤치마킹 — 메인 채널 실데이터)
-    main = channels[0]
-    tops = sorted(main.get("videos", []), key=lambda v: v.get("views", 0),
-                  reverse=True)[:9]
-    thumbnails = [{"rank": i + 1, "title": v.get("title", ""),
-                   "views": v.get("views", 0), "published": v.get("published", ""),
-                   "thumb": v.get("thumb", ""), "video_id": v.get("video_id", "")}
-                  for i, v in enumerate(tops)]
-
-    # 미드저니 프롬프트 자동 생성(LLM 형식 의존 제거)
     if isinstance(result, dict):
+        # 미드저니 프롬프트 자동 생성(LLM 형식 의존 제거)
         ht = result.get("hero_thumbnail")
         if isinstance(ht, dict) and ht.get("image_prompt"):
             ht["midjourney_prompt"] = _midjourney(ht["image_prompt"])
+        # 실측 분석을 썼으면 estimated=false 확정
+        if vision:
+            for ch in result.get("channels", []):
+                if isinstance(ch.get("thumbnail"), dict):
+                    ch["thumbnail"]["estimated"] = False
 
     return {
         "result": result,          # 구조화 객체(성공 시) — 프론트가 카드로 렌더
         "markdown": markdown,      # 파싱 실패 시 원문(프론트가 마크다운 폴백 렌더)
         "thumbnails": thumbnails,  # 인기순 9개 썸네일(벤치마킹 그리드)
+        "vision": vision,          # 👁 GPT Vision 실측 분석 텍스트(없으면 None)
         "channels": [{"title": c["title"], "subscribers": c["subscribers"],
                       "videos": len(c["videos"]), "demo": c.get("demo", False)}
                      for c in channels],

@@ -145,6 +145,16 @@
     .btn-gen:hover{opacity:.92;}
     .btn-gen:disabled{opacity:.5;cursor:default;}
 
+    /* 👁 GPT Vision 실측 분석 박스 */
+    .vision-box{margin-top:13px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:12px;padding:13px 16px;}
+    .vision-h{font-size:13px;font-weight:800;color:#5b21b6;margin-bottom:7px;}
+    .vision-sub{font-weight:400;color:#8a80a5;font-size:11.5px;}
+    .vision-body{font-size:12.5px;color:#4b5563;line-height:1.75;}
+    .vision-body p{margin:3px 0;}
+    .vision-body ul{padding-left:18px;margin:5px 0;}
+    .vision-body li{margin:2px 0;}
+    .vision-body strong{color:#5b21b6;}
+
     /* 마크다운 폴백 */
     .report{font-size:14px;line-height:1.75;color:#334155;}
     .report h1{font-size:20px;font-weight:800;margin:18px 0 10px;color:#1e1b2e;}
@@ -286,10 +296,16 @@
             `<span class="bt-rank">#${t.rank}</span><span class="bt-views">👁 ${fmtCompact(t.views)}</span>` +
             `<div class="bt-meta"><div class="bt-title">${esc(t.title)}</div><div class="bt-date">${esc(t.published || "")}</div></div>${close}`;
         }).join("");
+        const visionBox = meta.vision ? `<div class="vision-box">
+            <div class="vision-h">👁 GPT Vision 실측 분석 <span class="vision-sub">— 위 ${thumbs.length}개 썸네일을 실제로 '보고' 뽑은 공통 시각 공식</span></div>
+            <div class="vision-body">${md(meta.vision)}</div></div>` : "";
+        const eyeBadge = meta.vision
+          ? `<span class="rp-chip" style="background:#dcfce7;color:#166534;">👁 이미지 실측</span>`
+          : `<span class="rp-chip demo">📝 제목·흐름 추정 (OpenAI 키 넣으면 이미지 실측)</span>`;
         benchSec = { id: "sec-bench", label: "🖼️ 벤치마킹",
-          html: `<div class="rp-sec" id="sec-bench"><div class="rp-sec-h">🖼️ 벤치마킹 — 인기 썸네일 ${thumbs.length}개 <span class="rp-sec-note">조회수 순 · 클릭하면 원본 열림</span></div>
-            <div style="font-size:12px;color:#8a80a5;margin-bottom:11px;">이 썸네일들의 <b>공통 컬러·구도·오브젝트</b>를 분석해 아래 컨셉(유지 85% / 비틀 15%)과 대표 썸네일을 만들었어요.</div>
-            <div class="bt-grid">${tiles}</div></div>` };
+          html: `<div class="rp-sec" id="sec-bench"><div class="rp-sec-h">🖼️ 벤치마킹 — 인기 썸네일 ${thumbs.length}개 ${eyeBadge}</div>
+            <div style="font-size:12px;color:#8a80a5;margin-bottom:11px;">조회수 순 · 클릭하면 원본. 이 썸네일들의 <b>공통 컬러·구도·오브젝트</b>를 분석해 아래 컨셉(유지 85% / 비틀 15%)과 대표 썸네일을 만들었어요.</div>
+            <div class="bt-grid">${tiles}</div>${visionBox}</div>` };
       }
 
       // 1) 채널 분석
@@ -558,7 +574,7 @@
         const r = await api("/api/concept/analyze", { method: "POST", body: JSON.stringify({
           channels: chans, song_type: state.song_type, num_songs: state.num_songs,
           extra_notes: document.getElementById("notes").value }) });
-        const meta = { channels: r.channels, engine: r.engine, thumbnails: r.thumbnails || [] };
+        const meta = { channels: r.channels, engine: r.engine, thumbnails: r.thumbnails || [], vision: r.vision || "" };
         if (r.result) {
           renderReport(r.result, meta);
         } else {
