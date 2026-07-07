@@ -407,4 +407,19 @@ python pipeline.py --init                              # 파이프라인 폴더 
   - 검증: Playwright — 세트카드10·그리기버튼10·문구10·details10·복사블록2/세트·
     네비 "🎬 세트10", JS오류 0. 데모 10세트 전체 작성. **default(eqO5N) 머지·푸시
     완료**. ⚠️ 실제 이미지 생성(문구 새김 품질)은 사장님 PC에서 확인.
+- [x] 🎯 **이미지 생성 레퍼런스 무드 이식**(2026-07-07, new-session-rhtlol):
+  사장님: 로고·배너·썸네일 감성이 벤치마킹 채널과 1%도 안 맞음(ChatGPT 직접은 찰떡).
+  - 원인: ChatGPT 앱은 생성 시 모델이 레퍼런스 이미지를 **직접 봄**. 우리는
+    [이미지→Vision 텍스트 요약→텍스트만으로 생성] — 텍스트 병목에서 감성 소실.
+  - 수정: `generate_thumbnail_image(refs)` — 레퍼런스(업로드 캡처/유튜브 썸네일)를
+    **`images.edit(gpt-image-1)` 에 직접 투입** + `_MOOD_TRANSFER` 지시(무드·색보정·
+    조명·필름 질감 흡수 85%, 구도·오브젝트 복제 금지, 새 장면 15%). 체인:
+    edit(quality high)→edit(재시도)→generate(high)→dall-e-3. `_ref_to_file()`
+    (data URL 디코드/http 다운로드/SVG 제외/포인터 리셋).
+  - `main.py` ThumbGenReq.refs(≤8) · 프론트 REF_THUMBS 전역(래스터만) — 세트·로고·
+    배너 모든 생성에 자동 첨부, "🎯 레퍼런스 N장 무드 반영" 배지.
+  - `jpshorts/backend/requirements.txt` 에 `openai>=1.76.0` 추가(bat 이 설치).
+  - 검증: mock(edit 파일2·무드지시·quality high·edit실패→gen 폴백·refs없음→gen) +
+    Playwright E2E(캡처 업로드→세트 그리기 클릭→refs 2장 전송·무드배지). JS오류 0.
+    **default(eqO5N) 머지·푸시 완료**. ⚠️ 실감성 확인은 사장님 PC에서.
 - (작업하며 갱신할 것)
