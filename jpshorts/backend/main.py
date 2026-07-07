@@ -441,12 +441,14 @@ def concept_status():
 
 class ThumbGenReq(BaseModel):
     prompt: str
+    size: str = "1536x1024"      # 1536x1024(썸네일·배너) | 1024x1024(로고)
 
 
 @app.post("/api/concept/thumbnail")
 def concept_thumbnail(req: ThumbGenReq):
-    """🖼️ 이미지 프롬프트 → GPT(OpenAI) 썸네일 이미지 생성(미리보기)."""
-    r = cm.generate_thumbnail_image(req.prompt)
+    """🖼️ 이미지 프롬프트 → GPT(OpenAI) 이미지 생성(썸네일·로고·배너 미리보기)."""
+    size = req.size if req.size in ("1536x1024", "1024x1024", "1024x1536") else "1536x1024"
+    r = cm.generate_thumbnail_image(req.prompt, size=size)
     if not r.get("ok"):
         from fastapi import HTTPException as _HE
         raise _HE(400, r.get("error", "이미지 생성 실패"))

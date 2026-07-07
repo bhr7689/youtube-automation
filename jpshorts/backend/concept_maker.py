@@ -138,8 +138,8 @@ JSON_OUTPUT = """[출력 형식 — 매우 중요]
     "hashtags":["#해시태그 3~7개"]
   },
   "preview": {
-    "profile":{"form":"형태","color":"컬러","objects":"상징 오브젝트","mood":"분위기","avoid":"피해야 할 요소"},
-    "banner":{"background":"배경","object":"메인 오브젝트","text":"텍스트 배치","margin":"여백","mood":"분위기"},
+    "profile":{"form":"형태","color":"컬러","objects":"상징 오브젝트","mood":"분위기","avoid":"피해야 할 요소","image_prompt":"신규 채널 **로고/프로필 아이콘** 영어 이미지 프롬프트 — 원형 아이콘용 심플한 심볼, 신규 컨셉의 시그니처 오브젝트 반영, 레퍼런스 복제 금지, 깔끔한 배경, 정사각형"},
+    "banner":{"background":"배경","object":"메인 오브젝트","text":"텍스트 배치","margin":"여백","mood":"분위기","image_prompt":"신규 채널 **배너(채널아트)** 영어 이미지 프롬프트 — 와이드 파노라마 구도, 가운데에 채널명 얹을 여백, 신규 컨셉 무드·색감, 레퍼런스 복제 금지, 사람 없음"},
     "thumbnail":{"composition":"구도","color":"컬러 비율","object_rule":"인물·오브젝트 규칙","text":"텍스트 위치","click_point":"클릭 포인트"}
   },
   "hero_thumbnail": {
@@ -168,25 +168,31 @@ JSON_OUTPUT = """[출력 형식 — 매우 중요]
 
 # ── LLM 디스패처: Gemini 우선 → OpenAI(키 있으면) ──────
 
-def _openai(prompt: str) -> str | None:
+def _openai(prompt: str, json_mode: bool = False) -> str | None:
     key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not key:
         return None
     try:
         from openai import OpenAI
         client = OpenAI(api_key=key)
-        r = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.7)
+        kwargs = dict(model="gpt-4o",
+                      messages=[{"role": "user", "content": prompt}],
+                      temperature=0.7)
+        if json_mode:                       # 유효한 JSON 강제 (파싱 실패 방지)
+            kwargs["response_format"] = {"type": "json_object"}
+            kwargs["max_tokens"] = 8000     # 리포트 길어도 잘리지 않게
+        r = client.chat.completions.create(**kwargs)
         return (r.choices[0].message.content or "").strip()
     except Exception:
         return None
 
 
-def _llm(prompt: str) -> str | None:
+def _llm(prompt: str, json_mode: bool = False) -> str | None:
     # 플리 컨셉 작업은 GPT(OpenAI) 우선 — 사용자가 GPT 연결. 없으면 Gemini 폴백.
-    return _openai(prompt) or translator._gemini(prompt, temperature=0.7)
+    out = _openai(prompt, json_mode=json_mode)
+    if out:
+        return out
+    return translator._gemini(prompt, temperature=0.7, json_mode=json_mode)
 
 
 # ── 👁 GPT Vision: 인기 썸네일을 '직접 보고' 벤치마킹 ────
@@ -445,13 +451,36 @@ def _parse_json(text: str) -> dict | None:
         t = re.sub(r"^```[a-zA-Z]*\s*", "", t)
         t = re.sub(r"\s*```$", "", t).strip()
     i, j = t.find("{"), t.rfind("}")              # 첫 { ~ 마지막 }
-    if i == -1 or j == -1 or j <= i:
+    if i == -1:
         return None
-    try:
-        obj = json.loads(t[i:j + 1])
-        return obj if isinstance(obj, dict) else None
-    except Exception:
-        return None
+    frag = t[i:j + 1] if j > i else t[i:]
+    # 여러 방어 시도: 원문 → 후행 콤마 제거 → 중괄호 균형 복구(잘림 대비)
+    for cand in (frag, _strip_trailing_commas(frag), _balance_braces(frag)):
+        if not cand:
+            continue
+        try:
+            obj = json.loads(cand)
+            if isinstance(obj, dict):
+                return obj
+        except Exception:
+            continue
+    return None
+
+
+def _strip_trailing_commas(s: str) -> str:
+    return re.sub(r",(\s*[}\]])", r"\1", s)
+
+
+def _balance_braces(s: str) -> str:
+    """잘린 JSON 대비 — 열린 문자열/괄호를 닫아 파싱 가능성을 높인다."""
+    s = _strip_trailing_commas(s.rstrip().rstrip(","))
+    # 문자열이 열린 채 끝났으면 닫기 (이스케이프 아닌 " 개수 홀수)
+    if len(re.findall(r'(?<!\\)"', s)) % 2 == 1:
+        s += '"'
+    opens = s.count("{") - s.count("}")
+    closes = s.count("[") - s.count("]")
+    s += "]" * max(0, closes) + "}" * max(0, opens)
+    return _strip_trailing_commas(s)
 
 
 # ── 리포트 생성 ─────────────────────────────────────────
@@ -537,7 +566,7 @@ def generate_report(channel_urls: list[str], song_type: str = "auto",
         thumb_note +
         "\n위 JSON 스키마 하나만 순수 JSON으로 출력하라."
     )
-    out = _llm(prompt)
+    out = _llm(prompt, json_mode=True)
     engine = _engine_name()
 
     result = _parse_json(out) if out else None
@@ -636,10 +665,12 @@ def _demo_result(ch: dict) -> dict:
         "preview": {
             "profile": {"form": "원형 로고 안 스탠드 불빛+책", "color": "딥그린+앰버",
                         "objects": "책, 스탠드, 작은 창", "mood": "따뜻하고 조용한 밤",
-                        "avoid": "원본과 같은 커피잔 로고, 과도한 네온"},
+                        "avoid": "원본과 같은 커피잔 로고, 과도한 네온",
+                        "image_prompt": "A minimal circular channel logo icon of an open book under a small warm stand lamp, deep green and amber palette, cozy flat illustration, clean dark background, centered symbol, square"},
             "banner": {"background": "밤의 서점 창가, 멀리 빗줄기", "object": "책장과 스탠드 불빛",
                        "text": "중앙보다 약간 왼쪽, 작게", "margin": "상·좌우 넓은 여백",
-                       "mood": "고요·안식"},
+                       "mood": "고요·안식",
+                       "image_prompt": "A wide panoramic YouTube channel banner of a cozy midnight bookstore with tall bookshelves and warm stand lamps, soft rain on windows, deep green and amber cinematic mood, empty space in the center for a channel title, no people, wide"},
             "thumbnail": {"composition": "전경 책+스탠드, 후경 흐린 창가", "color": "딥그린 60% 앰버 30% 크림 10%",
                           "object_rule": "인물 없음, 책·불빛 중심", "text": "좌하단 2~4단어",
                           "click_point": "'들어가 앉고 싶은 밤 서점' 느낌"},

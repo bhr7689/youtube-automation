@@ -25,7 +25,8 @@ def has_gemini() -> bool:
     return bool(os.environ.get("GEMINI_API_KEY", "").strip())
 
 
-def _gemini(prompt: str, temperature: float = 0.7) -> str | None:
+def _gemini(prompt: str, temperature: float = 0.7,
+            json_mode: bool = False) -> str | None:
     key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not key:
         return None
@@ -33,8 +34,10 @@ def _gemini(prompt: str, temperature: float = 0.7) -> str | None:
         import google.generativeai as genai
         genai.configure(api_key=key)
         model = genai.GenerativeModel("gemini-2.0-flash")
-        resp = model.generate_content(
-            prompt, generation_config={"temperature": temperature})
+        cfg = {"temperature": temperature}
+        if json_mode:                       # 유효한 JSON 강제 (파싱 실패 방지)
+            cfg["response_mime_type"] = "application/json"
+        resp = model.generate_content(prompt, generation_config=cfg)
         return (resp.text or "").strip()
     except Exception:
         return None
