@@ -146,7 +146,7 @@ JSON_OUTPUT = """[출력 형식 — 매우 중요]
     "concept":"대표 썸네일 콘셉트","reason":"선정 이유",
     "composition":"구도","color_codes":"컬러 코드(#hex 포함)","font":"폰트 톤",
     "object_rule":"인물·오브젝트 규칙","text_placement":"텍스트 배치","forbidden":"금지 요소",
-    "image_prompt":"이미지 생성 프롬프트(영어 서술형, 미드저니/DALL·E 공용. 인기 9개 썸네일의 공통 컬러·구도·오브젝트를 벤치마킹해 85% 유지 15% 변형을 반영. --ar 같은 파라미터는 붙이지 마라 — 시스템이 자동 추가)"
+    "image_prompt":"신규 채널의 **새 대표 썸네일 1장**을 그리는 영어 서술형 프롬프트. 인기 썸네일의 무드·색감 계열·구도 '느낌'만 85% 참고하고, 주인공 오브젝트·장면은 신규 컨셉(concepts)의 15% 시그니처 변형(새 상징 오브젝트·새 컬러 포인트)으로 **교체**해 레퍼런스 어느 것과도 구별되는 완전히 새로운 장면을 묘사. 특정 레퍼런스 썸네일 복제·모사 금지. --ar 등 파라미터는 붙이지 마라(시스템 자동 추가)"
   },
   "titles": ["신규 제목 10개(원본 복제 금지, 감성문장+검색키워드 조합)"],
   "suno": {
@@ -303,6 +303,10 @@ def generate_thumbnail_image(prompt: str, size: str = "1536x1024") -> dict:
     p = _clean_img_prompt(prompt)
     if not p:
         return {"ok": False, "error": "이미지 프롬프트가 비어 있어요."}
+    # 레퍼런스 복제 방지 — 스타일만 참고한 '새로운 원본 썸네일'로 유도
+    p = ("Create an original, brand-new YouTube thumbnail. Use the following as style "
+         "inspiration only — do NOT copy or reproduce any existing/reference thumbnail; "
+         "invent a fresh scene. " + p)
     try:
         from openai import OpenAI
         client = OpenAI(api_key=key)
@@ -510,11 +514,17 @@ def generate_report(channel_urls: list[str], song_type: str = "auto",
             f"\n[👁 썸네일 실측 시각 분석 — GPT Vision 이 {src} 이미지를 직접 보고 추출]\n"
             + vision +
             "\n위 시각 분석은 이미지를 실제로 본 결과다. thumbnail(②)·썸네일 대표안·image_prompt 를"
-            " 이 실측 근거로 작성하고, thumbnail.estimated=false 로 둔다. image_prompt 는 이 공통"
-            " 컬러·구도·오브젝트를 85% 유지하고 15%만 변형해 신규 썸네일을 묘사하라.")
+            " 이 실측 근거로 작성하고, thumbnail.estimated=false 로 둔다."
+            "\n★가장 중요★ image_prompt 는 레퍼런스 썸네일을 '똑같이' 그리는 게 절대 아니다."
+            " 공통 무드·색감 계열·구도 '느낌'만 85% 참고하고, 주인공 오브젝트·장면은 신규"
+            " 컨셉안(concepts)의 15% 시그니처 변형(새 상징 오브젝트·새 컬러 포인트)으로 **교체**해서,"
+            " 어떤 레퍼런스와도 확실히 구별되는 **완전히 새로운 썸네일 한 장면**을 묘사하라."
+            " 특정 레퍼런스의 구도·오브젝트를 그대로 복제하면 실패다.")
     else:
         thumb_note = ("\n[주의] 썸네일 이미지 미첨부 — thumbnail.estimated=true 로 두고 시각/조회"
-                      " 근거는 제목·업로드 흐름 기반 추정으로 표기.")
+                      " 근거는 제목·업로드 흐름 기반 추정으로 표기."
+                      "\nimage_prompt 는 레퍼런스 복제가 아니라 신규 컨셉안의 시그니처 변형을"
+                      " 주인공으로 한 새로운 썸네일 장면을 묘사하라.")
     if titles_list:
         thumb_note += ("\n[제목 근거] 위 '인기 상승 제목'의 반복 키워드·문형·감정 훅을 keywords·"
                        "titles·concepts 설계의 최우선 근거로 삼아라.")

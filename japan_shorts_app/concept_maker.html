@@ -501,9 +501,9 @@
         // 🎨 GPT 미리보기 (이미지 실제 생성)
         if (ht.image_prompt) {
           const gi = stash(ht.image_prompt);
-          h += `<div class="rp-block-h" style="margin-top:14px;">🎨 GPT 썸네일 미리보기</div>
-            <button class="btn-gen" onclick="genThumb(${gi},this)">🎨 이 컨셉으로 썸네일 그려서 미리보기</button>
-            <div class="gen-note">OpenAI(GPT) 키가 설정돼 있어야 해요 (설정 → 🔑 연결키 저장). 미드저니로 뽑으려면 아래 <b>미드저니 프롬프트</b>를 복사하세요.</div>
+          h += `<div class="rp-block-h" style="margin-top:14px;">🎨 GPT 썸네일 미리보기 <span style="font-weight:400;color:#8a80a5;font-size:11.5px;">— 캡처를 베끼지 않고 새 컨셉으로 그려요</span></div>
+            <button class="btn-gen" onclick="genThumb(${gi},this)">🎨 이 컨셉으로 <b>새</b> 썸네일 그려서 미리보기</button>
+            <div class="gen-note">참고 이미지를 <b>그대로 복제하지 않고</b>, 무드·색감은 살리되 신규 컨셉의 시그니처로 <b>새롭게</b> 그려요. OpenAI(GPT) 키 필요(설정 → 🔑 연결키 저장). 미드저니로 뽑으려면 아래 <b>미드저니 프롬프트</b> 복사.</div>
             <div id="genThumbBox" style="margin-top:10px;"></div>`;
         }
         if (ht.midjourney_prompt) h += copyBlock(ht.midjourney_prompt, "🖌️ 미드저니 프롬프트 (Midjourney 에 그대로 붙여넣기)", true);
