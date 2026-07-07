@@ -10,14 +10,18 @@ GPT 버전보다 나은 점: 채널 URL 만 넣으면 YouTube Data API 로 제�
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
+import time
+import urllib.parse
 
 import translator
 import youtube_client as yc
 
 MAX_VIDEOS = 30
+THUMBS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "concept_thumbs")
 
 # ── 지침 v1.4 (시스템 프롬프트로 내장 — 핵심 전문 유지) ──
 SPEC = """너는 "플리컨셉제조기"다. 유튜브 플레이리스트 채널의 제목 리스트·조회수·업로드
@@ -142,7 +146,7 @@ JSON_OUTPUT = """[출력 형식 — 매우 중요]
     "concept":"대표 썸네일 콘셉트","reason":"선정 이유",
     "composition":"구도","color_codes":"컬러 코드(#hex 포함)","font":"폰트 톤",
     "object_rule":"인물·오브젝트 규칙","text_placement":"텍스트 배치","forbidden":"금지 요소",
-    "image_prompt":"이미지 생성 프롬프트(영어, 16:9 명시, 복붙용)"
+    "image_prompt":"이미지 생성 프롬프트(영어 서술형, 미드저니/DALL·E 공용. 인기 9개 썸네일의 공통 컬러·구도·오브젝트를 벤치마킹해 85% 유지 15% 변형을 반영. --ar 같은 파라미터는 붙이지 마라 — 시스템이 자동 추가)"
   },
   "titles": ["신규 제목 10개(원본 복제 금지, 감성문장+검색키워드 조합)"],
   "suno": {
@@ -172,7 +176,7 @@ def _openai(prompt: str) -> str | None:
         from openai import OpenAI
         client = OpenAI(api_key=key)
         r = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7)
         return (r.choices[0].message.content or "").strip()
@@ -181,12 +185,96 @@ def _openai(prompt: str) -> str | None:
 
 
 def _llm(prompt: str) -> str | None:
-    return translator._gemini(prompt, temperature=0.7) or _openai(prompt)
+    # 플리 컨셉 작업은 GPT(OpenAI) 우선 — 사용자가 GPT 연결. 없으면 Gemini 폴백.
+    return _openai(prompt) or translator._gemini(prompt, temperature=0.7)
+
+
+def _engine_name() -> str:
+    if os.environ.get("OPENAI_API_KEY", "").strip():
+        return "openai"
+    if translator.has_gemini():
+        return "gemini"
+    return "demo"
 
 
 def llm_status() -> dict:
     return {"gemini": translator.has_gemini(),
             "openai": bool(os.environ.get("OPENAI_API_KEY", "").strip())}
+
+
+# ── 미드저니 프롬프트 / 이미지 프롬프트 정리 ────────────
+def _clean_img_prompt(p: str) -> str:
+    """미드저니 파라미터(--ar 16:9 --v 6 …)를 제거한 순수 서술형 프롬프트."""
+    p = (p or "").strip()
+    i = p.find(" --")               # MJ 파라미터는 항상 ' --' 로 시작하는 후행 블록
+    if i != -1:
+        p = p[:i]
+    return p.strip()
+
+
+def _midjourney(prompt: str) -> str:
+    """서술형 프롬프트 → 미드저니용(16:9, v6, style raw) 프롬프트."""
+    p = _clean_img_prompt(prompt).rstrip(" .,")
+    if not p:
+        return ""
+    return f"{p} --ar 16:9 --style raw --v 6"
+
+
+# ── 데모 썸네일(그라디언트 SVG data URI) ────────────────
+_DEMO_THUMB_COLORS = [
+    ("#1F3D2B", "#E0A458"), ("#2b2d42", "#8d99ae"), ("#3a0ca3", "#f72585"),
+    ("#264653", "#2a9d8f"), ("#6a040f", "#e85d04"), ("#03045e", "#48cae4"),
+    ("#432818", "#bb9457"), ("#354f52", "#84a98c"), ("#4a4e69", "#c9ada7"),
+]
+
+
+def _demo_thumb(i: int) -> str:
+    c1, c2 = _DEMO_THUMB_COLORS[i % len(_DEMO_THUMB_COLORS)]
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270">'
+        f'<defs><linearGradient id="g{i}" x1="0" y1="0" x2="1" y2="1">'
+        f'<stop offset="0" stop-color="{c1}"/><stop offset="1" stop-color="{c2}"/>'
+        f'</linearGradient></defs><rect width="480" height="270" fill="url(#g{i})"/>'
+        f'<circle cx="240" cy="118" r="46" fill="#ffffff" opacity="0.16"/>'
+        f'<text x="240" y="136" font-family="sans-serif" font-size="46" fill="#ffffff" '
+        f'opacity="0.92" font-weight="bold" text-anchor="middle">#{i + 1}</text>'
+        f'<text x="240" y="230" font-family="sans-serif" font-size="20" fill="#ffffff" '
+        f'opacity="0.6" text-anchor="middle">DEMO THUMB</text></svg>'
+    )
+    return "data:image/svg+xml;utf8," + urllib.parse.quote(svg)
+
+
+# ── 🖼️ GPT 썸네일 이미지 생성 (미리보기) ────────────────
+def generate_thumbnail_image(prompt: str, size: str = "1536x1024") -> dict:
+    key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not key:
+        return {"ok": False, "error": "OpenAI(GPT) 키가 필요해요. 설정 → 🔑 연결키 저장에서 OpenAI 키를 넣어주세요. "
+                "(미드저니를 쓰신다면 아래 미드저니 프롬프트를 복사해 붙여넣으세요.)"}
+    p = _clean_img_prompt(prompt)
+    if not p:
+        return {"ok": False, "error": "이미지 프롬프트가 비어 있어요."}
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=key)
+        b64, model = None, ""
+        try:                       # 1) 최신 gpt-image-1
+            r = client.images.generate(model="gpt-image-1", prompt=p, size=size, n=1)
+            b64, model = r.data[0].b64_json, "gpt-image-1"
+        except Exception:          # 2) dall-e-3 폴백
+            ds = "1792x1024" if size.startswith("1536") else "1024x1024"
+            r = client.images.generate(model="dall-e-3", prompt=p, size=ds, n=1,
+                                       response_format="b64_json")
+            b64, model = r.data[0].b64_json, "dall-e-3"
+        if not b64:
+            return {"ok": False, "error": "이미지 생성 응답이 비어 있어요."}
+        os.makedirs(THUMBS_DIR, exist_ok=True)
+        name = f"thumb_{int(time.time())}.png"
+        with open(os.path.join(THUMBS_DIR, name), "wb") as f:
+            f.write(base64.b64decode(b64))
+        return {"ok": True, "data_url": "data:image/png;base64," + b64,
+                "file": name, "model": model}
+    except Exception as e:
+        return {"ok": False, "error": f"이미지 생성 실패: {e}"}
 
 
 # ── 채널 데이터 자동 수집 (URL 만 넣으면 실데이터) ──────
@@ -242,10 +330,18 @@ def collect_channel(url: str, max_videos: int = MAX_VIDEOS) -> dict:
                                       id=",".join(ids)).execute()
                 for v in vr.get("items", []):
                     sn, st = v["snippet"], v.get("statistics", {})
+                    th = sn.get("thumbnails", {})
+                    thumb = ""
+                    for q in ("maxres", "standard", "high", "medium", "default"):
+                        if th.get(q, {}).get("url"):
+                            thumb = th[q]["url"]
+                            break
                     videos.append({
                         "title": sn["title"],
                         "views": int(st.get("viewCount", 0)),
                         "published": sn["publishedAt"][:10],
+                        "thumb": thumb,
+                        "video_id": v.get("id", ""),
                     })
         st = ch.get("statistics", {})
         return {
@@ -271,14 +367,16 @@ def _demo_channel(url: str) -> dict:
         ("잠들기 전 30분 | 느린 재즈 발라드", 680_000, "2026-05-24"),
         ("창밖에 눈이 내리면 | 겨울밤 재즈", 3_400_000, "2026-01-18"),
         ("혼자 있는 밤, 위스키 한 잔과 재즈", 1_020_000, "2026-05-10"),
+        ("가을비 내리는 오후, 카페 창가 재즈 🍂", 1_180_000, "2026-04-19"),
     ]
     return {
         "url": url or "(데모 채널)",
         "title": "새벽카페 재즈 (데모)",
         "description": "새벽 감성 재즈·로파이 플레이리스트 채널 (데모 데이터)",
         "subscribers": 87_000, "video_count": 142,
-        "videos": [{"title": t, "views": v, "published": d}
-                   for t, v, d in titles],
+        "videos": [{"title": t, "views": v, "published": d,
+                    "thumb": _demo_thumb(i), "video_id": ""}
+                   for i, (t, v, d) in enumerate(titles)],
         "demo": True,
     }
 
@@ -336,8 +434,7 @@ def generate_report(channel_urls: list[str], song_type: str = "auto",
         " 제목·업로드 흐름 기반 추정으로 표기. 위 JSON 스키마 하나만 순수 JSON으로 출력하라."
     )
     out = _llm(prompt)
-    engine = ("gemini" if translator.has_gemini() else
-              "openai" if os.environ.get("OPENAI_API_KEY", "").strip() else "demo")
+    engine = _engine_name()
 
     result = _parse_json(out) if out else None
     markdown = None
@@ -348,9 +445,25 @@ def generate_report(channel_urls: list[str], song_type: str = "auto",
             result = _demo_result(channels[0])
             engine = "demo"
 
+    # 🖼️ 인기순 상위 9개 썸네일 (벤치마킹 — 메인 채널 실데이터)
+    main = channels[0]
+    tops = sorted(main.get("videos", []), key=lambda v: v.get("views", 0),
+                  reverse=True)[:9]
+    thumbnails = [{"rank": i + 1, "title": v.get("title", ""),
+                   "views": v.get("views", 0), "published": v.get("published", ""),
+                   "thumb": v.get("thumb", ""), "video_id": v.get("video_id", "")}
+                  for i, v in enumerate(tops)]
+
+    # 미드저니 프롬프트 자동 생성(LLM 형식 의존 제거)
+    if isinstance(result, dict):
+        ht = result.get("hero_thumbnail")
+        if isinstance(ht, dict) and ht.get("image_prompt"):
+            ht["midjourney_prompt"] = _midjourney(ht["image_prompt"])
+
     return {
         "result": result,          # 구조화 객체(성공 시) — 프론트가 카드로 렌더
         "markdown": markdown,      # 파싱 실패 시 원문(프론트가 마크다운 폴백 렌더)
+        "thumbnails": thumbnails,  # 인기순 9개 썸네일(벤치마킹 그리드)
         "channels": [{"title": c["title"], "subscribers": c["subscribers"],
                       "videos": len(c["videos"]), "demo": c.get("demo", False)}
                      for c in channels],

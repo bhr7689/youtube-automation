@@ -121,6 +121,30 @@
 
     .badge-song{font-size:12px;font-weight:800;padding:5px 13px;border-radius:999px;background:#ede9fe;color:#6d28d9;}
 
+    /* 벤치마킹 썸네일 그리드 */
+    .bt-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+    @media(max-width:640px){.bt-grid{grid-template-columns:repeat(2,1fr);}}
+    .bt{position:relative;border-radius:11px;overflow:hidden;border:1px solid #ece6f7;background:#0b0b12;text-decoration:none;color:inherit;display:block;transition:transform .12s;}
+    .bt:hover{transform:translateY(-2px);}
+    .bt-img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block;background:#1a1730;}
+    .bt-rank{position:absolute;top:6px;left:6px;background:rgba(124,58,237,.94);color:#fff;font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px;}
+    .bt-views{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.66);color:#fff;font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;}
+    .bt-meta{padding:8px 10px;background:#fff;}
+    .bt-title{font-size:11.5px;color:#1e1b2e;line-height:1.45;font-weight:600;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:32px;}
+    .bt-date{font-size:10.5px;color:#a99fc0;margin-top:3px;}
+
+    /* GPT 생성 이미지 미리보기 */
+    .gen-wrap{margin-top:6px;}
+    .gen-img{max-width:100%;border-radius:12px;border:1px solid #ede9fe;box-shadow:0 4px 16px rgba(120,60,180,.12);display:block;}
+    .gen-actions{display:flex;gap:8px;align-items:center;margin-top:9px;flex-wrap:wrap;}
+    .gen-dl{font-size:12.5px;font-weight:700;padding:8px 15px;border-radius:9px;background:#7c3aed;color:#fff;text-decoration:none;}
+    .gen-dl:hover{background:#6d28d9;}
+    .gen-re{font-size:12.5px;font-weight:700;padding:8px 15px;border-radius:9px;background:#fff;border:1px solid #e5d9f5;color:#7e22ce;cursor:pointer;}
+    .gen-note{font-size:11.5px;color:#8a80a5;margin-top:6px;line-height:1.6;}
+    .btn-gen{font-size:14px;font-weight:800;padding:11px 22px;border-radius:11px;border:none;cursor:pointer;color:#fff;background:linear-gradient(90deg,#7c3aed,#ec4899);}
+    .btn-gen:hover{opacity:.92;}
+    .btn-gen:disabled{opacity:.5;cursor:default;}
+
     /* 마크다운 폴백 */
     .report{font-size:14px;line-height:1.75;color:#334155;}
     .report h1{font-size:20px;font-weight:800;margin:18px 0 10px;color:#1e1b2e;}
@@ -248,7 +272,25 @@
     function renderReport(d, meta) {
       COPY = [];
       const secs = [];   // {id, label, html}
+      let benchSec = null;
       const P = v => (v == null ? "" : String(v));
+
+      // 0) 🖼️ 벤치마킹 — 인기순 썸네일 그리드 (이 도구의 핵심)
+      const thumbs = meta.thumbnails || [];
+      if (thumbs.length) {
+        const tiles = thumbs.map(t => {
+          const link = t.video_id ? `https://youtube.com/watch?v=${t.video_id}` : "";
+          const open = link ? `<a class="bt" href="${link}" target="_blank" rel="noopener">` : `<div class="bt">`;
+          const close = link ? `</a>` : `</div>`;
+          return `${open}<img class="bt-img" src="${esc(t.thumb)}" loading="lazy" alt="">` +
+            `<span class="bt-rank">#${t.rank}</span><span class="bt-views">👁 ${fmtCompact(t.views)}</span>` +
+            `<div class="bt-meta"><div class="bt-title">${esc(t.title)}</div><div class="bt-date">${esc(t.published || "")}</div></div>${close}`;
+        }).join("");
+        benchSec = { id: "sec-bench", label: "🖼️ 벤치마킹",
+          html: `<div class="rp-sec" id="sec-bench"><div class="rp-sec-h">🖼️ 벤치마킹 — 인기 썸네일 ${thumbs.length}개 <span class="rp-sec-note">조회수 순 · 클릭하면 원본 열림</span></div>
+            <div style="font-size:12px;color:#8a80a5;margin-bottom:11px;">이 썸네일들의 <b>공통 컬러·구도·오브젝트</b>를 분석해 아래 컨셉(유지 85% / 비틀 15%)과 대표 썸네일을 만들었어요.</div>
+            <div class="bt-grid">${tiles}</div></div>` };
+      }
 
       // 1) 채널 분석
       (d.channels || []).forEach((c, ci) => {
@@ -354,9 +396,18 @@
         if (ht.reason) h += `<div class="rationale" style="margin-bottom:10px;">${esc(ht.reason)}</div>`;
         h += kv([["구도",ht.composition],["컬러 코드",ht.color_codes],["폰트",ht.font],["오브젝트 규칙",ht.object_rule],["텍스트 배치",ht.text_placement],["금지 요소",ht.forbidden]]);
         if (ht.color_codes) h += `<div style="margin:8px 0;">${swatches(ht.color_codes)}</div>`;
-        h += copyBlock(ht.image_prompt, "🖼️ 이미지 생성 프롬프트 (미드저니·DALL·E 등에 붙여넣기)", true);
+        // 🎨 GPT 미리보기 (이미지 실제 생성)
+        if (ht.image_prompt) {
+          const gi = stash(ht.image_prompt);
+          h += `<div class="rp-block-h" style="margin-top:14px;">🎨 GPT 썸네일 미리보기</div>
+            <button class="btn-gen" onclick="genThumb(${gi},this)">🎨 이 컨셉으로 썸네일 그려서 미리보기</button>
+            <div class="gen-note">OpenAI(GPT) 키가 설정돼 있어야 해요 (설정 → 🔑 연결키 저장). 미드저니로 뽑으려면 아래 <b>미드저니 프롬프트</b>를 복사하세요.</div>
+            <div id="genThumbBox" style="margin-top:10px;"></div>`;
+        }
+        if (ht.midjourney_prompt) h += copyBlock(ht.midjourney_prompt, "🖌️ 미드저니 프롬프트 (Midjourney 에 그대로 붙여넣기)", true);
+        h += copyBlock(ht.image_prompt, "🖼️ 이미지 프롬프트 (DALL·E·기타 툴용 · 파라미터 없음)");
         secs.push({ id:"sec-hero", label:"🎯 대표썸네일",
-          html:`<div class="rp-sec" id="sec-hero"><div class="rp-sec-h">🎯 대표 썸네일 안</div>${h}</div>` });
+          html:`<div class="rp-sec" id="sec-hero"><div class="rp-sec-h">🎯 대표 썸네일 안 <span class="rp-sec-note">벤치마킹 → 컨셉 → 이미지</span></div>${h}</div>` });
       }
 
       // 6) 제목 10개
@@ -396,6 +447,9 @@
           html:`<div class="rp-sec" id="sec-check"><div class="rp-sec-h">✅ 다음 실행 체크리스트</div>${items}</div>` });
       }
 
+      // 벤치마킹 섹션을 최상단으로
+      if (benchSec) secs.unshift(benchSec);
+
       // 헤더 + 네비 + 입력가정
       const chChips = (meta.channels||[]).map(c=>`<span class="rp-chip">${esc(c.title)} · 구독 ${fmtCompact(c.subscribers)} · 영상 ${c.videos}개${c.demo?" · 데모":""}</span>`).join("");
       const nav = secs.map(x=>`<span class="rp-pill" onclick="scrollTo('${x.id}')">${x.label}</span>`).join("");
@@ -411,6 +465,27 @@
 
       document.getElementById("resultBox").innerHTML = top + (assume?`<div class="rp-sec">${assume}</div>`:"") + secs.map(x=>x.html).join("");
       if (meta.engine === "demo") showDemoBanner(true);
+    }
+
+    // 🎨 GPT 썸네일 이미지 생성 + 미리보기
+    async function genThumb(promptIdx, btn) {
+      const prompt = (COPY[promptIdx] || "").trim();
+      if (!prompt) return toast("이미지 프롬프트가 비어 있어요");
+      const box = document.getElementById("genThumbBox");
+      btn.disabled = true; const o = btn.textContent; btn.textContent = "🎨 그리는 중… (20~40초)";
+      box.innerHTML = '<div class="spin">🎨 GPT가 썸네일을 그리는 중이에요… 잠시만요 (20~40초)</div>';
+      try {
+        const r = await api("/api/concept/thumbnail", { method: "POST", body: JSON.stringify({ prompt }) });
+        box.innerHTML = `<div class="gen-wrap"><img class="gen-img" src="${r.data_url}" alt="생성된 썸네일">
+          <div class="gen-actions">
+            <a class="gen-dl" href="${r.data_url}" download="thumbnail.png">⬇️ 이미지 다운로드</a>
+            <button class="gen-re" onclick="genThumb(${promptIdx},this)">🔄 다시 그리기</button>
+            <span class="rp-chip">모델: ${esc(r.model || "")}</span></div></div>`;
+        toast("✅ 썸네일 미리보기 완성");
+      } catch (e) {
+        box.innerHTML = `<div style="color:#b91c1c;font-size:13px;line-height:1.65;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:10px 13px;">⚠️ ${esc(e.message)}</div>`;
+      }
+      btn.disabled = false; btn.textContent = o;
     }
 
     // 전체 복사용 텍스트 빌더
@@ -483,7 +558,7 @@
         const r = await api("/api/concept/analyze", { method: "POST", body: JSON.stringify({
           channels: chans, song_type: state.song_type, num_songs: state.num_songs,
           extra_notes: document.getElementById("notes").value }) });
-        const meta = { channels: r.channels, engine: r.engine };
+        const meta = { channels: r.channels, engine: r.engine, thumbnails: r.thumbnails || [] };
         if (r.result) {
           renderReport(r.result, meta);
         } else {
