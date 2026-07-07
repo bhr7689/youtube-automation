@@ -148,7 +148,11 @@ JSON_OUTPUT = """[출력 형식 — 매우 중요]
     "object_rule":"인물·오브젝트 규칙","text_placement":"텍스트 배치","forbidden":"금지 요소",
     "image_prompt":"신규 채널의 **새 대표 썸네일 1장**을 그리는 영어 서술형 프롬프트. 인기 썸네일의 무드·색감 계열·구도 '느낌'만 85% 참고하고, 주인공 오브젝트·장면은 신규 컨셉(concepts)의 15% 시그니처 변형으로 **교체**해 레퍼런스 어느 것과도 구별되는 완전히 새로운 장면을 묘사. 특정 레퍼런스 복제·모사 금지. **프로 사진 수준으로 구체적으로**: 전경/중경/배경 배치, 광원과 시간대(예: warm golden-hour sunlight through leaves), 렌즈 느낌(shallow depth of field, 35mm), 질감, 컬러 팔레트(#hex), 'cinematic professional photography, photorealistic, ultra-detailed' 류 화질 묘사를 반드시 포함. --ar 등 파라미터는 붙이지 마라(시스템 자동 추가)"
   },
-  "titles": ["신규 제목 10개(원본 복제 금지, 감성문장+검색키워드 조합)"],
+  "title_sets": [{
+    "title":"영상 제목(신규 채널 문형, 원본 복제 금지)",
+    "thumb_text":"썸네일 이미지 위에 얹을 한글 문구 — 제목의 핵심을 1~2줄로 짧게(줄바꿈은 \\n). 유튜브 썸네일 텍스트처럼 간결하게",
+    "image_prompt":"이 제목의 장면을 그리는 영어 프롬프트 — 제목이 말하는 계절·시간대·장소·상황이 이미지에 그대로 보여야 한다(제목과 이미지가 한 세트). 무드·색감은 벤치마킹 85% 유지+신규 시그니처 15%. 전경/중경/배경, 광원·시간대, 렌즈 느낌, #hex 팔레트, cinematic professional photography 포함. 문구가 들어갈 여백 위치 명시. 레퍼런스 복제 금지"
+  }],
   "suno": {
     "song_type":"instrumental 또는 lyric",
     "type_reason":"'채널 성격상 이번 곡은 [연주곡/가사곡]으로 설계했습니다' + 이유",
@@ -163,7 +167,11 @@ JSON_OUTPUT = """[출력 형식 — 매우 중요]
   "checklist": ["다음 실행 체크리스트 4~6개(실행 동사로)"]
 }
 
-곡 수가 2개 이상이면 suno.song_pack 을 그 개수만큼 채운다(각 {"no":1,"title":"곡 제목","mood":"무드","style":"Suno 스타일 요약","link":"연결할 썸네일·영상 제목"}), 이때 structure/lyrics 는 대표 1곡 기준으로만 채운다. 곡 수가 1이면 song_pack=[] 로 둔다."""
+곡 수가 2개 이상이면 suno.song_pack 을 그 개수만큼 채운다(각 {"no":1,"title":"곡 제목","mood":"무드","style":"Suno 스타일 요약","link":"연결할 썸네일·영상 제목"}), 이때 structure/lyrics 는 대표 1곡 기준으로만 채운다. 곡 수가 1이면 song_pack=[] 로 둔다.
+
+title_sets 는 반드시 10개. 제목과 썸네일이 **한 세트**다 — 시청자가 썸네일만 봐도 제목이
+읽히고, 제목만 봐도 썸네일 장면이 그려져야 한다. 10세트는 계절·시간대·상황(아침/저녁/
+비/눈/카페/산책 등)을 다양하게 분산시키되 채널 무드는 하나로 통일한다."""
 
 
 # ── LLM 디스패처: Gemini 우선 → OpenAI(키 있으면) ──────
@@ -274,6 +282,19 @@ def _midjourney(prompt: str) -> str:
     if not p:
         return ""
     return f"{p} --ar 16:9 --style raw --v 6"
+
+
+def _overlay_prompt(scene: str, text: str) -> str:
+    """장면 프롬프트 + 한글 문구 오버레이 지시 → GPT 이미지용 풀 프롬프트."""
+    base = _clean_img_prompt(scene)
+    t = (text or "").strip().replace('"', "'")
+    if not t:
+        return base
+    return (base +
+            f' Overlay the exact Korean text "{t}" on the image — elegant thin white '
+            "font with a subtle soft shadow, small-to-medium size, placed in the "
+            "natural empty area of the composition, tasteful like a premium music "
+            "playlist thumbnail. Render the Korean characters accurately, exactly as written.")
 
 
 # ── 데모 썸네일(그라디언트 SVG data URI) ────────────────
@@ -594,6 +615,17 @@ def generate_report(channel_urls: list[str], song_type: str = "auto",
         ht = result.get("hero_thumbnail")
         if isinstance(ht, dict) and ht.get("image_prompt"):
             ht["midjourney_prompt"] = _midjourney(ht["image_prompt"])
+        # 🎬 썸네일+제목 세트: 세트별 풀 프롬프트(문구 오버레이) + 미드저니 프롬프트
+        ts = result.get("title_sets")
+        if isinstance(ts, list):
+            for s in ts:
+                if isinstance(s, dict) and s.get("image_prompt"):
+                    s["full_image_prompt"] = _overlay_prompt(
+                        s["image_prompt"], s.get("thumb_text", ""))
+                    s["midjourney_prompt"] = _midjourney(s["image_prompt"])
+            if not result.get("titles"):     # 전체복사·구버전 호환용 제목 리스트 파생
+                result["titles"] = [s.get("title", "") for s in ts
+                                    if isinstance(s, dict) and s.get("title")]
         # 실측 분석을 썼으면 estimated=false 확정
         if vision:
             for ch in result.get("channels", []):
@@ -695,17 +727,37 @@ def _demo_result(ch: dict) -> dict:
             "forbidden": "원본 로고 복제, 커피잔 동일 구도, 랜덤 텍스트, 과도한 네온",
             "image_prompt": "A cozy midnight bookstore, an open book under a warm stand lamp in the foreground, soft rain streaks on a window in the blurred background, deep green and amber color palette, calm and intimate late-night mood, cinematic realistic photography, shallow depth of field, no people, no text, no logos, relaxing jazz playlist thumbnail, 16:9",
         },
-        "titles": [
-            "🌙 새벽 3시의 책방 | 잠들기 전 듣는 심야 재즈 #01",
-            "비 오는 밤, 오래된 서점에서 | 잔잔한 재즈 피아노 #02",
-            "혼자 있는 밤을 위한 재즈 | 독서와 위로 #03",
-            "스탠드 불빛 아래, 느린 재즈 발라드 #04",
-            "창밖엔 비, 책방엔 재즈 | 심야 감성 BGM #05",
-            "잠 안 오는 밤 | 마음이 풀리는 로파이 재즈 #06",
-            "책 한 권, 재즈 한 곡 | 조용한 밤의 서점 #07",
-            "새벽 감성 재즈 | 집중과 휴식 사이 #08",
-            "오늘 하루를 내려놓는 밤 | 느린 재즈 #09",
-            "여기 잠깐 앉았다 가세요 | 심야 서점 재즈 #10",
+        "title_sets": [
+            {"title": "🌙 새벽 3시의 책방 | 잠들기 전 듣는 심야 재즈 #01",
+             "thumb_text": "새벽 3시의 책방\n잠들기 전 듣는 재즈",
+             "image_prompt": "A cozy midnight bookstore at 3am, warm stand lamp glowing over an open book in the foreground, tall dark bookshelves behind, deep green #1F3D2B and amber #E0A458 palette, cinematic professional photography, shallow depth of field, empty upper-left area for text, no people"},
+            {"title": "비 오는 밤, 오래된 서점에서 | 잔잔한 재즈 피아노 #02",
+             "thumb_text": "비 오는 밤,\n오래된 서점에서",
+             "image_prompt": "Rain streaking down an old bookstore window at night, warm interior light reflecting on wet glass, blurred bookshelves inside, moody deep green and amber tones, cinematic realistic photography, soft bokeh, empty center-left area for text, no people"},
+            {"title": "혼자 있는 밤을 위한 재즈 | 독서와 위로 #03",
+             "thumb_text": "혼자 있는 밤을 위한\n독서와 재즈",
+             "image_prompt": "A single armchair beside a small reading lamp in a quiet bookstore corner at night, an open book resting on the seat, warm amber pool of light in deep green shadows, cinematic photography, shallow depth of field, empty upper area for text, no people"},
+            {"title": "스탠드 불빛 아래, 느린 재즈 발라드 #04",
+             "thumb_text": "스탠드 불빛 아래,\n느린 재즈",
+             "image_prompt": "Close-up of a warm brass stand lamp illuminating stacked vintage books, dust motes floating in the light beam, dark green background fading to black, cinematic professional photography, macro lens feel, empty right side for text, no people"},
+            {"title": "창밖엔 비, 책방엔 재즈 | 심야 감성 BGM #05",
+             "thumb_text": "창밖엔 비,\n책방엔 재즈",
+             "image_prompt": "View from inside a bookstore looking out a rain-covered window at blurred city lights at night, window-side reading nook with a small book stack, deep green and amber palette, cinematic photography, empty upper-left for text, no people"},
+            {"title": "잠 안 오는 밤 | 마음이 풀리는 로파이 재즈 #06",
+             "thumb_text": "잠 안 오는 밤,\n마음이 풀리는 재즈",
+             "image_prompt": "A dim cozy bookstore aisle at late night, one warm hanging bulb, soft shadows between shelves, calm and intimate mood, deep green tones with warm amber accent, cinematic realistic photography, empty center area for text, no people"},
+            {"title": "책 한 권, 재즈 한 곡 | 조용한 밤의 서점 #07",
+             "thumb_text": "책 한 권,\n재즈 한 곡",
+             "image_prompt": "A single open book under lamplight on a wooden reading table, reading glasses beside it, quiet bookstore blurred in background, warm amber on deep green, cinematic professional photography, shallow depth of field, empty upper-right for text, no people"},
+            {"title": "새벽 감성 재즈 | 집중과 휴식 사이 #08",
+             "thumb_text": "집중과 휴식 사이,\n새벽 재즈",
+             "image_prompt": "A tidy bookstore work desk before dawn, notebook and fountain pen under a focused lamp, first blue light of dawn in the window contrasted with warm interior amber, deep green walls, cinematic photography, empty left side for text, no people"},
+            {"title": "오늘 하루를 내려놓는 밤 | 느린 재즈 #09",
+             "thumb_text": "오늘 하루를\n내려놓는 밤",
+             "image_prompt": "A coat hung by the bookstore door at night, warm light spilling from deeper inside between shelves, feeling of arriving and exhaling after a long day, deep green and amber cinematic tones, professional photography, empty upper area for text, no people"},
+            {"title": "여기 잠깐 앉았다 가세요 | 심야 서점 재즈 #10",
+             "thumb_text": "여기 잠깐\n앉았다 가세요",
+             "image_prompt": "A small inviting bench with a cushion inside a midnight bookstore, warm lamp above it like an invitation, books stacked beside, deep green and amber cinematic palette, professional photography, gentle vignette, empty center-top for text, no people"},
         ],
         "suno": {
             "song_type": "instrumental",

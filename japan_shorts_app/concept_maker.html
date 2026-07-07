@@ -157,6 +157,17 @@
     .btn-gen:hover{opacity:.92;}
     .btn-gen:disabled{opacity:.5;cursor:default;}
 
+    /* 🎬 썸네일+제목 세트 카드 */
+    .set-card{display:flex;gap:14px;border:1px solid #ede9fe;border-radius:13px;padding:12px;margin-bottom:12px;background:#fff;}
+    .set-imgcol{width:280px;flex:0 0 auto;}
+    .set-slot{aspect-ratio:16/9;border-radius:10px;background:#faf7ff;border:1.5px dashed #ddd6fe;display:flex;align-items:center;justify-content:center;}
+    .set-body{flex:1;min-width:0;}
+    .set-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+    .set-title{font-weight:700;font-size:13.5px;color:#1e1b2e;flex:1;min-width:0;line-height:1.5;}
+    .set-overlay{font-size:12px;color:#6d28d9;background:#faf7ff;border:1px solid #f0ecf7;border-radius:8px;padding:6px 10px;margin:8px 0;line-height:1.6;}
+    .set-det summary{cursor:pointer;font-size:12px;font-weight:700;color:#7c3aed;margin:6px 0 4px;}
+    @media(max-width:720px){.set-card{flex-direction:column;}.set-imgcol{width:100%;}}
+
     /* 👁 GPT Vision 실측 분석 박스 */
     .vision-box{margin-top:13px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:12px;padding:13px 16px;}
     .vision-h{font-size:13px;font-weight:800;color:#5b21b6;margin-bottom:7px;}
@@ -526,8 +537,31 @@
           html:`<div class="rp-sec" id="sec-hero"><div class="rp-sec-h">🎯 대표 썸네일 안 <span class="rp-sec-note">벤치마킹 → 컨셉 → 이미지</span></div>${h}</div>` });
       }
 
-      // 6) 제목 10개
-      if ((d.titles||[]).length) {
+      // 6) 🎬 썸네일+제목 세트 (제목과 이미지가 한 몸) — 없으면 구형 제목 리스트
+      const sets = d.title_sets || [];
+      if (sets.length) {
+        const cards = sets.map((s, i) => {
+          const ti = stash(s.title || "");
+          const fi = stash(s.full_image_prompt || s.image_prompt || "");
+          let det = copyBlock(s.full_image_prompt || s.image_prompt, "🖼️ 이미지 프롬프트 (문구 오버레이 포함 · GPT용)");
+          if (s.midjourney_prompt) det += copyBlock(s.midjourney_prompt, "🖌️ 미드저니 프롬프트 (장면만 — 한글 문구는 캡컷 등에서 얹기)");
+          return `<div class="set-card">
+            <div class="set-imgcol" id="setBox${i}">
+              <div class="set-slot"><button class="btn-gen" style="font-size:12.5px;padding:9px 16px;" onclick="genImage(${fi},'setBox${i}',this,'1536x1024','세트${i + 1} 썸네일')">🎨 그리기</button></div>
+            </div>
+            <div class="set-body">
+              <div class="set-head"><span class="title-no">${i + 1}</span>
+                <span class="set-title">${esc(s.title || "")}</span>
+                <button class="title-cp" onclick="copyIdx(${ti},this)">제목 복사</button></div>
+              ${s.thumb_text ? `<div class="set-overlay">🔤 이미지 위 문구: <b>${esc(s.thumb_text).replace(/\n/g, " / ")}</b> <span style="color:#a99fc0;">(그릴 때 이미지에 함께 새겨져요)</span></div>` : ""}
+              <details class="set-det"><summary>프롬프트 보기·복사</summary>${det}</details>
+            </div></div>`;
+        }).join("");
+        const allIdx = stash(sets.map((s, i) => `${i + 1}. ${s.title || ""}${s.thumb_text ? `\n   썸네일 문구: ${(s.thumb_text || "").replace(/\n/g, " / ")}` : ""}`).join("\n"));
+        secs.push({ id:"sec-sets", label:"🎬 세트10",
+          html:`<div class="rp-sec" id="sec-sets"><div class="rp-sec-h">🎬 썸네일+제목 세트 ${sets.length}개 <span class="rp-sec-note">제목이 곧 썸네일 장면 — 문구까지 이미지에 새겨서 그려요</span> <button class="rp-copy-all" onclick="copyIdx(${allIdx},this)">📋 제목·문구 전체 복사</button></div>
+            <div style="font-size:11.5px;color:#8a80a5;margin-bottom:11px;">각 세트의 🎨 그리기를 누르면 <b>그 제목의 장면 + 한글 문구</b>가 함께 들어간 썸네일을 최고화질로 그려요. 장당 비용이 있으니 마음에 드는 세트부터.</div>${cards}</div>` });
+      } else if ((d.titles||[]).length) {
         const rows = d.titles.map((t,i)=>{ const idx=stash(String(t));
           return `<div class="title-row"><span class="title-no">${i+1}</span><span class="title-txt">${esc(t)}</span><button class="title-cp" onclick="copyIdx(${idx},this)">복사</button></div>`; }).join("");
         const allIdx = stash(d.titles.join("\n"));
@@ -631,7 +665,8 @@
       }
       const ht=d.hero_thumbnail||{};
       if(ht.image_prompt) L.push("\n【대표 썸네일 이미지 프롬프트】\n" + ht.image_prompt);
-      if((d.titles||[]).length) L.push("\n【제목 10】\n" + d.titles.map((t,i)=>(i+1)+". "+t).join("\n"));
+      if((d.title_sets||[]).length) L.push("\n【썸네일+제목 세트】\n" + d.title_sets.map((s,i)=>`${i+1}. ${s.title||""}${s.thumb_text?`\n   썸네일 문구: ${(s.thumb_text||"").replace(/\n/g," / ")}`:""}`).join("\n"));
+      else if((d.titles||[]).length) L.push("\n【제목 10】\n" + d.titles.map((t,i)=>(i+1)+". "+t).join("\n"));
       const s=d.suno||{};
       if(s.style_prompt) L.push("\n【Suno 스타일】\n" + s.style_prompt);
       if(s.lyrics) L.push("\n【가사】\n" + s.lyrics);
