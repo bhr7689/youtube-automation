@@ -478,17 +478,31 @@
           html:`<div class="rp-sec" id="sec-setup"><div class="rp-sec-h">⚙️ 유튜브 채널 세팅 <span class="rp-sec-note">복붙용</span></div>${h}</div>` });
       }
 
-      // 4) 미리보기
+      // 4) 미리보기 (+ 로고·배너 GPT 생성)
       const pv = d.preview || {};
       if (pv.profile || pv.banner || pv.thumbnail) {
         const card = (title, o, rows) => o ? `<div class="mini-card"><h4>${title}</h4>${kv(rows)}</div>` : "";
-        const h = `<div class="mini-grid">
+        let h = `<div class="mini-grid">
           ${card("👤 프로필", pv.profile, [["형태",pv.profile?.form],["컬러",pv.profile?.color],["오브젝트",pv.profile?.objects],["분위기",pv.profile?.mood],["피할 것",pv.profile?.avoid]])}
           ${card("🖼️ 배너", pv.banner, [["배경",pv.banner?.background],["오브젝트",pv.banner?.object],["텍스트",pv.banner?.text],["여백",pv.banner?.margin],["분위기",pv.banner?.mood]])}
           ${card("🎬 썸네일", pv.thumbnail, [["구도",pv.thumbnail?.composition],["컬러",pv.thumbnail?.color],["규칙",pv.thumbnail?.object_rule],["텍스트",pv.thumbnail?.text],["클릭",pv.thumbnail?.click_point]])}
         </div>`;
+        // 🎨 새 로고 그리기
+        if (pv.profile && pv.profile.image_prompt) {
+          const li = stash(pv.profile.image_prompt);
+          h += `<div class="rp-block" style="margin-top:14px;"><div class="rp-block-h">🎨 새 채널 로고 미리보기 <span style="font-weight:400;color:#8a80a5;font-size:11.5px;">— 새 컨셉의 시그니처로</span></div>
+            <button class="btn-gen" onclick="genImage(${li},'genLogoBox',this,'1024x1024','로고')">🎨 새 로고 그려서 미리보기</button>
+            <div id="genLogoBox" style="margin-top:10px;"></div></div>`;
+        }
+        // 🎨 새 배너 그리기
+        if (pv.banner && pv.banner.image_prompt) {
+          const bi = stash(pv.banner.image_prompt);
+          h += `<div class="rp-block"><div class="rp-block-h">🎨 새 채널 배너 미리보기 <span style="font-weight:400;color:#8a80a5;font-size:11.5px;">— 인기 컨셉 참고, 새 장면으로</span></div>
+            <button class="btn-gen" onclick="genImage(${bi},'genBannerBox',this,'1536x1024','배너')">🎨 새 배너 그려서 미리보기</button>
+            <div id="genBannerBox" style="margin-top:10px;"></div></div>`;
+        }
         secs.push({ id:"sec-preview", label:"🖼️ 미리보기",
-          html:`<div class="rp-sec" id="sec-preview"><div class="rp-sec-h">🖼️ 채널 미리보기 방향</div>${h}</div>` });
+          html:`<div class="rp-sec" id="sec-preview"><div class="rp-sec-h">🖼️ 채널 미리보기 방향 <span class="rp-sec-note">로고·배너도 GPT로 그려봐요</span></div>${h}</div>` });
       }
 
       // 5) 대표 썸네일
@@ -502,7 +516,7 @@
         if (ht.image_prompt) {
           const gi = stash(ht.image_prompt);
           h += `<div class="rp-block-h" style="margin-top:14px;">🎨 GPT 썸네일 미리보기 <span style="font-weight:400;color:#8a80a5;font-size:11.5px;">— 캡처를 베끼지 않고 새 컨셉으로 그려요</span></div>
-            <button class="btn-gen" onclick="genThumb(${gi},this)">🎨 이 컨셉으로 <b>새</b> 썸네일 그려서 미리보기</button>
+            <button class="btn-gen" onclick="genImage(${gi},'genThumbBox',this,'1536x1024','썸네일')">🎨 이 컨셉으로 <b>새</b> 썸네일 그려서 미리보기</button>
             <div class="gen-note">참고 이미지를 <b>그대로 복제하지 않고</b>, 무드·색감은 살리되 신규 컨셉의 시그니처로 <b>새롭게</b> 그려요. OpenAI(GPT) 키 필요(설정 → 🔑 연결키 저장). 미드저니로 뽑으려면 아래 <b>미드저니 프롬프트</b> 복사.</div>
             <div id="genThumbBox" style="margin-top:10px;"></div>`;
         }
@@ -569,21 +583,22 @@
       if (meta.engine === "demo") showDemoBanner(true);
     }
 
-    // 🎨 GPT 썸네일 이미지 생성 + 미리보기
-    async function genThumb(promptIdx, btn) {
+    // 🎨 GPT 이미지 생성 + 미리보기 (썸네일·로고·배너 공용)
+    async function genImage(promptIdx, boxId, btn, size, label) {
       const prompt = (COPY[promptIdx] || "").trim();
       if (!prompt) return toast("이미지 프롬프트가 비어 있어요");
-      const box = document.getElementById("genThumbBox");
+      label = label || "이미지";
+      const box = document.getElementById(boxId);
       btn.disabled = true; const o = btn.textContent; btn.textContent = "🎨 그리는 중… (20~40초)";
-      box.innerHTML = '<div class="spin">🎨 GPT가 썸네일을 그리는 중이에요… 잠시만요 (20~40초)</div>';
+      box.innerHTML = `<div class="spin">🎨 GPT가 ${esc(label)}를 새 컨셉으로 그리는 중… (20~40초)</div>`;
       try {
-        const r = await api("/api/concept/thumbnail", { method: "POST", body: JSON.stringify({ prompt }) });
-        box.innerHTML = `<div class="gen-wrap"><img class="gen-img" src="${r.data_url}" alt="생성된 썸네일">
+        const r = await api("/api/concept/thumbnail", { method: "POST", body: JSON.stringify({ prompt, size: size || "1536x1024" }) });
+        box.innerHTML = `<div class="gen-wrap"><img class="gen-img" src="${r.data_url}" alt="생성된 ${esc(label)}">
           <div class="gen-actions">
-            <a class="gen-dl" href="${r.data_url}" download="thumbnail.png">⬇️ 이미지 다운로드</a>
-            <button class="gen-re" onclick="genThumb(${promptIdx},this)">🔄 다시 그리기</button>
+            <a class="gen-dl" href="${r.data_url}" download="${esc(label)}.png">⬇️ ${esc(label)} 다운로드</a>
+            <button class="gen-re" onclick="genImage(${promptIdx},'${boxId}',this,'${size || "1536x1024"}','${esc(label)}')">🔄 다시 그리기</button>
             <span class="rp-chip">모델: ${esc(r.model || "")}</span></div></div>`;
-        toast("✅ 썸네일 미리보기 완성");
+        toast(`✅ ${label} 미리보기 완성`);
       } catch (e) {
         box.innerHTML = `<div style="color:#b91c1c;font-size:13px;line-height:1.65;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:10px 13px;">⚠️ ${esc(e.message)}</div>`;
       }
@@ -667,8 +682,17 @@
           extra_notes: document.getElementById("notes").value,
           images: UPLOADS, titles: popTitles }) });
         const meta = { channels: r.channels, engine: r.engine, thumbnails: r.thumbnails || [], vision: r.vision || "", thumb_source: r.thumb_source || "" };
-        if (r.result) {
-          renderReport(r.result, meta);
+        let result = r.result;
+        // 안전망: 백엔드가 파싱 못 했지만 사실 JSON이면 여기서 파싱해 카드로 렌더
+        if (!result && r.markdown) {
+          try {
+            const t = r.markdown.trim().replace(/^```[a-z]*\s*/i, "").replace(/\s*```$/, "");
+            const s = t.indexOf("{"), e = t.lastIndexOf("}");
+            if (s !== -1 && e > s) { const o = JSON.parse(t.slice(s, e + 1)); if (o && typeof o === "object") result = o; }
+          } catch (_) {}
+        }
+        if (result) {
+          renderReport(result, meta);
         } else {
           // JSON 파싱 실패 → 마크다운 폴백
           const chips = (r.channels||[]).map(c => `<span class="rp-chip">${esc(c.title)} · 구독 ${fmtCompact(c.subscribers)}${c.demo?" · 데모":""}</span>`).join("");
