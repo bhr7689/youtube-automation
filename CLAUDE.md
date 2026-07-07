@@ -349,4 +349,20 @@ python pipeline.py --init                              # 파이프라인 폴더 
   - 검증: 무키 폴백(vision=None, estimated=true 유지) + mock vision(estimated=false
     전환·응답 노출) + Playwright(vision-box 1·실측배지·불릿7, JS오류 0). **default
     (eqO5N) 머지·푸시 완료**. ⚠️ 실제 Vision 분석은 사장님 PC(OpenAI 키)에서 작동.
+- [x] 📎 **썸네일 캡처 직접 업로드 + 인기 제목 붙여넣기**(2026-07-07, new-session-rhtlol):
+  사장님이 "정밀도가 떨어진다 → 인기도순 이미지·제목을 캡처해 붙여넣겠다". URL
+  자동수집 대신 **사용자가 선별한 실제 이미지**를 GPT가 직접 보게 함.
+  - `concept_maker.py`: `generate_report(images, titles_text)` 확장. 업로드 캡처가
+    있으면 벤치마킹 그리드·Vision 대상을 그 이미지로(선별=정밀), 붙여넣은 제목은
+    반복 키워드·문형·감정 훅의 **최우선 근거**로 프롬프트 주입. `_is_image_ref()`
+    가 base64 data(png/jpeg/webp/gif) 허용 → Vision 이 업로드 이미지 직접 봄.
+    채널 없이 이미지·제목만으로도 동작. 응답에 `thumb_source`(upload/youtube/none).
+  - `main.py`: `ConceptReq.images/titles` 추가, 검증 완화(셋 중 하나).
+  - `concept_maker.html`: 🖼️ 업로드존(클릭·드래그·**Ctrl+V 붙여넣기**) — 클라
+    다운스케일(≤900px JPEG) 후 전송, 인기도 순서 보존·미리보기·개별삭제(최대 9).
+    📝 인기 상승 제목 textarea. 벤치마킹 헤더가 "내가 올린 캡처 N장 · 👁 이미지
+    실측(내 캡처)"로 전환, 조회수 0이면 배지 숨김.
+  - 검증: 실제 파일 업로드 Playwright — 미리보기 2·요청 이미지 2(JPEG data URL·
+    다운스케일)·제목 전달·헤더 "내 캡처" 전환·조회수배지 0, JS오류 0. TestClient
+    images/titles-only·무입력 400 확인. **default(eqO5N) 머지·푸시 완료**.
 - (작업하며 갱신할 것)
