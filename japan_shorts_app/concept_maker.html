@@ -324,6 +324,12 @@
     (function bindUpload() {
       const dz = document.getElementById("dropZone");
       const inp = document.getElementById("imgInput");
+      // 📱 폰(터치)에선 드래그·Ctrl+V 대신 '탭해서 갤러리 선택' 안내로 교체
+      const touch = window.matchMedia("(pointer: coarse)").matches || "ontouchstart" in window;
+      if (touch) {
+        const inner = dz.querySelector(".dz-inner");
+        if (inner) inner.innerHTML = "📱 <b>탭</b>해서 사진(갤러리)에서 캡처 선택<br><span style=\"font-size:11.5px;\">인기도 높은 순서대로 골라주세요 (최대 9장)</span>";
+      }
       dz.onclick = () => inp.click();
       inp.onchange = () => { addFiles([...inp.files]); inp.value = ""; };
       dz.addEventListener("dragover", e => { e.preventDefault(); dz.classList.add("drag"); });
