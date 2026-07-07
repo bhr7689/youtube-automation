@@ -391,4 +391,20 @@ python pipeline.py --init                              # 파이프라인 폴더 
     #hex·cinematic photorealistic 필수). 프론트 "✨ 최고화질(high)·모델" 배지.
   - mock 검증: gpt-image-1 quality=high·suffix·가드 / dall-e-3 hd·vivid·1792x1024.
     **default(eqO5N) 머지·푸시 완료**. ⚠️ 실제 화질 확인은 사장님 PC에서.
+- [x] 🎬 **썸네일+제목 한 세트 10개**(2026-07-07, new-session-rhtlol):
+  사장님: "제목이 썸네일 이미지에 담겨 있다 — 따로따로가 아니라 한 세트로 10개"
+  (Season Walk Pop 예시: 제목 ↔ 장면 ↔ 이미지 위 한글 문구가 한 몸).
+  - 스키마: `titles` → `title_sets` ×10 [{title, thumb_text(이미지에 얹을 한글
+    문구 1~2줄), image_prompt(그 제목의 계절·시간대·상황이 그대로 보이는 장면)}].
+    "제목만 봐도 장면이 그려지고 썸네일만 봐도 제목이 읽혀야" + 계절·시간대 분산.
+  - 후처리(`generate_report`): 세트별 `full_image_prompt` = 장면 + **한글 문구
+    오버레이 지시**(`_overlay_prompt` — GPT가 문구를 이미지에 새김) +
+    `midjourney_prompt`(장면만 — 한글은 캡컷에서). titles 자동 파생(호환).
+  - 프론트: 🎬 세트 카드 ×10 — 좌측 16:9 슬롯 세트별 "🎨 그리기"(그 장면+문구
+    새겨진 썸네일 최고화질 생성·인라인 미리보기·다운로드·재생성), 제목 복사,
+    문구 표시, 프롬프트 접기(GPT용/미드저니용), 제목·문구 전체복사. 구형
+    titles 폴백·모바일 스택 유지.
+  - 검증: Playwright — 세트카드10·그리기버튼10·문구10·details10·복사블록2/세트·
+    네비 "🎬 세트10", JS오류 0. 데모 10세트 전체 작성. **default(eqO5N) 머지·푸시
+    완료**. ⚠️ 실제 이미지 생성(문구 새김 품질)은 사장님 PC에서 확인.
 - (작업하며 갱신할 것)
