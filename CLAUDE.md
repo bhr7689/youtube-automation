@@ -381,4 +381,14 @@ python pipeline.py --init                              # 파이프라인 폴더 
   - 검증: 데모 렌더 — 날 JSON 미표시(버그 해소)·카드 10섹션·로고/배너/썸네일 버튼·
     genLogoBox/genBannerBox, JS오류 0. OpenAI mock 으로 json_object+max_tokens 확인.
     _parse_json 후행콤마·잘림 복구 통과. **default(eqO5N) 머지·푸시 완료**.
+- [x] ✨ **이미지 생성 최고 화질 격상**(2026-07-07, new-session-rhtlol):
+  사장님: 생성 이미지가 ChatGPT 결과 대비 화질·색상·선명도 저품질.
+  - 원인: OpenAI 이미지 API `quality` 미지정 → 기본(저품질) 등급 생성.
+  - 수정(`generate_thumbnail_image`): gpt-image-1 `quality="high"`(ChatGPT 앱 동급),
+    dall-e-3 폴백 `quality="hd"`+`style="vivid"`. 프롬프트에 화질 부스터 suffix
+    (masterpiece·ultra-detailed·tack-sharp·no noise — 사진·로고 공용). 응답에
+    quality 필드. JSON 스키마 image_prompt 지시 강화(전경/중경/배경·광원·렌즈·
+    #hex·cinematic photorealistic 필수). 프론트 "✨ 최고화질(high)·모델" 배지.
+  - mock 검증: gpt-image-1 quality=high·suffix·가드 / dall-e-3 hd·vivid·1792x1024.
+    **default(eqO5N) 머지·푸시 완료**. ⚠️ 실제 화질 확인은 사장님 PC에서.
 - (작업하며 갱신할 것)
