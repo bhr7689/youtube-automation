@@ -211,7 +211,7 @@ def analyze_thumbnails_vision(thumb_urls: list[str],
     key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not key:
         return None
-    urls = [u for u in (thumb_urls or []) if isinstance(u, str) and u.startswith("http")][:9]
+    urls = [u for u in (thumb_urls or []) if _is_image_ref(u)][:9]
     if not urls:
         return None
     try:
@@ -246,6 +246,12 @@ def llm_status() -> dict:
 
 
 # ── 미드저니 프롬프트 / 이미지 프롬프트 정리 ────────────
+def _is_image_ref(u: str) -> bool:
+    """Vision 이 볼 수 있는 이미지 참조인가 — http(s) URL 또는 base64 data(png/jpeg/webp/gif)."""
+    return isinstance(u, str) and (
+        u.startswith("http") or bool(re.match(r"data:image/(png|jpe?g|webp|gif)", u, re.I)))
+
+
 def _clean_img_prompt(p: str) -> str:
     """미드저니 파라미터(--ar 16:9 --v 6 …)를 제거한 순수 서술형 프롬프트."""
     p = (p or "").strip()
@@ -447,23 +453,34 @@ def _parse_json(text: str) -> dict | None:
 # ── 리포트 생성 ─────────────────────────────────────────
 
 def generate_report(channel_urls: list[str], song_type: str = "auto",
-                    num_songs: int = 1, extra_notes: str = "") -> dict:
+                    num_songs: int = 1, extra_notes: str = "",
+                    images: list[str] | None = None, titles_text: str = "") -> dict:
+    images = [i for i in (images or []) if _is_image_ref(i)][:9]
+    titles_list = [t.strip() for t in (titles_text or "").splitlines() if t.strip()][:20]
+
     collected = [collect_channel(u) for u in channel_urls if u.strip()]
     channels = [c for c in collected if not c.get("error")]
-    if not channels:
-        errs = [c["error"] for c in collected if c.get("error")]
-        return {"error": " / ".join(errs) or "채널 URL 을 넣어주세요."}
+    errs = [c["error"] for c in collected if c.get("error")]
+    if not channels and not images and not titles_list:
+        return {"error": " / ".join(errs) or "채널 URL·썸네일 캡처·제목 중 하나는 넣어주세요."}
 
-    # 🖼️ 인기순 상위 9개 썸네일 (벤치마킹 — 메인 채널 실데이터) — LLM 전에 먼저 계산
-    main = channels[0]
-    tops = sorted(main.get("videos", []), key=lambda v: v.get("views", 0),
-                  reverse=True)[:9]
-    thumbnails = [{"rank": i + 1, "title": v.get("title", ""),
-                   "views": v.get("views", 0), "published": v.get("published", ""),
-                   "thumb": v.get("thumb", ""), "video_id": v.get("video_id", "")}
-                  for i, v in enumerate(tops)]
+    # 🖼️ 벤치마킹 썸네일 결정 — 업로드 캡처가 있으면 그것을(사용자 선별=정밀), 없으면 인기순 9개
+    used_images = bool(images)
+    if used_images:
+        thumbnails = [{"rank": k + 1,
+                       "title": (titles_list[k] if k < len(titles_list) else ""),
+                       "views": 0, "published": "", "thumb": img, "video_id": ""}
+                      for k, img in enumerate(images)]
+    else:
+        main = channels[0] if channels else {}
+        tops = sorted(main.get("videos", []), key=lambda v: v.get("views", 0),
+                      reverse=True)[:9]
+        thumbnails = [{"rank": i + 1, "title": v.get("title", ""),
+                       "views": v.get("views", 0), "published": v.get("published", ""),
+                       "thumb": v.get("thumb", ""), "video_id": v.get("video_id", "")}
+                      for i, v in enumerate(tops)]
 
-    # 👁 GPT Vision 실측: 인기 9개 썸네일을 실제로 '보고' 공통 시각 패턴 추출
+    # 👁 GPT Vision 실측: 썸네일 이미지를 실제로 '보고' 공통 시각 패턴 추출
     vision = analyze_thumbnails_vision(
         [t["thumb"] for t in thumbnails], [t["title"] for t in thumbnails])
 
@@ -476,6 +493,11 @@ def generate_report(channel_urls: list[str], song_type: str = "auto",
             f"\n[채널 {i}] {c['title']} (구독자 {c['subscribers']:,} · "
             f"총 영상 {c['video_count']}개)\n채널 설명: {c['description']}\n"
             f"최근 영상 {len(c['videos'])}개 (제목·조회수·날짜 = 실데이터):\n{vids}\n")
+    if titles_list:
+        data_block += ("\n[인기 상승 제목 — 사용자가 직접 선별해 붙여넣음(핵심 근거)]\n"
+                       + "\n".join(f"  - {t}" for t in titles_list) + "\n")
+    if not data_block.strip():
+        data_block = "(채널 데이터 없음 — 첨부된 썸네일 이미지 실측 분석을 근거로 설계)"
 
     song_line = {"lyric": "가사곡으로 제작", "instrumental": "연주곡으로 제작",
                  "auto": "채널 성격에 따라 가사곡/연주곡 자동 판단"}.get(song_type, "자동 판단")
@@ -483,8 +505,9 @@ def generate_report(channel_urls: list[str], song_type: str = "auto",
                   if num_songs > 1 else "곡 1곡 패키지(structure/가사)를 제공하라.")
 
     if vision:      # 실측 시각 분석이 있으면 근거로 주입 (추정 아님)
+        src = "사용자가 캡처해 올린 인기 썸네일" if used_images else "인기 상위 9개 썸네일"
         thumb_note = (
-            "\n[👁 썸네일 실측 시각 분석 — GPT Vision 이 인기 상위 9개 썸네일을 직접 보고 추출]\n"
+            f"\n[👁 썸네일 실측 시각 분석 — GPT Vision 이 {src} 이미지를 직접 보고 추출]\n"
             + vision +
             "\n위 시각 분석은 이미지를 실제로 본 결과다. thumbnail(②)·썸네일 대표안·image_prompt 를"
             " 이 실측 근거로 작성하고, thumbnail.estimated=false 로 둔다. image_prompt 는 이 공통"
@@ -492,6 +515,9 @@ def generate_report(channel_urls: list[str], song_type: str = "auto",
     else:
         thumb_note = ("\n[주의] 썸네일 이미지 미첨부 — thumbnail.estimated=true 로 두고 시각/조회"
                       " 근거는 제목·업로드 흐름 기반 추정으로 표기.")
+    if titles_list:
+        thumb_note += ("\n[제목 근거] 위 '인기 상승 제목'의 반복 키워드·문형·감정 훅을 keywords·"
+                       "titles·concepts 설계의 최우선 근거로 삼아라.")
 
     prompt = (
         SPEC + "\n\n" + JSON_OUTPUT +
@@ -510,7 +536,9 @@ def generate_report(channel_urls: list[str], song_type: str = "auto",
         if out:                    # LLM은 응답했지만 JSON 파싱 실패 → 원문 마크다운 폴백
             markdown = out
         else:                      # LLM 키 없음 → 구조화 데모(화면 전체 컴포넌트 시연)
-            result = _demo_result(channels[0])
+            base = channels[0] if channels else {"title": "캡처 분석", "subscribers": 0,
+                                                 "video_count": 0, "videos": []}
+            result = _demo_result(base)
             engine = "demo"
 
     if isinstance(result, dict):
@@ -527,8 +555,10 @@ def generate_report(channel_urls: list[str], song_type: str = "auto",
     return {
         "result": result,          # 구조화 객체(성공 시) — 프론트가 카드로 렌더
         "markdown": markdown,      # 파싱 실패 시 원문(프론트가 마크다운 폴백 렌더)
-        "thumbnails": thumbnails,  # 인기순 9개 썸네일(벤치마킹 그리드)
+        "thumbnails": thumbnails,  # 벤치마킹 그리드(업로드 캡처 또는 인기순 9개)
         "vision": vision,          # 👁 GPT Vision 실측 분석 텍스트(없으면 None)
+        "thumb_source": ("upload" if used_images else
+                         "youtube" if channels else "none"),
         "channels": [{"title": c["title"], "subscribers": c["subscribers"],
                       "videos": len(c["videos"]), "demo": c.get("demo", False)}
                      for c in channels],
