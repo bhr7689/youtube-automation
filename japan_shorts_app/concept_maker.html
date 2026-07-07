@@ -597,7 +597,7 @@
           <div class="gen-actions">
             <a class="gen-dl" href="${r.data_url}" download="${esc(label)}.png">⬇️ ${esc(label)} 다운로드</a>
             <button class="gen-re" onclick="genImage(${promptIdx},'${boxId}',this,'${size || "1536x1024"}','${esc(label)}')">🔄 다시 그리기</button>
-            <span class="rp-chip">모델: ${esc(r.model || "")}</span></div></div>`;
+            <span class="rp-chip" style="background:#dcfce7;color:#166534;">✨ 최고화질(${esc(r.quality || "high")}) · ${esc(r.model || "")}</span></div></div>`;
         toast(`✅ ${label} 미리보기 완성`);
       } catch (e) {
         box.innerHTML = `<div style="color:#b91c1c;font-size:13px;line-height:1.65;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:10px 13px;">⚠️ ${esc(e.message)}</div>`;
