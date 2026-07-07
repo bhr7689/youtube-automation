@@ -214,7 +214,8 @@ def _clean_img_prompt(p: str) -> str:
 
 def _midjourney(prompt: str) -> str:
     """서술형 프롬프트 → 미드저니용(16:9, v6, style raw) 프롬프트."""
-    p = _clean_img_prompt(prompt).rstrip(" .,")
+    p = _clean_img_prompt(prompt)
+    p = re.sub(r"[,;]?\s*\d{1,2}:\d{1,2}\s*$", "", p).strip().rstrip(" .,")  # 후행 비율 제거
     if not p:
         return ""
     return f"{p} --ar 16:9 --style raw --v 6"
