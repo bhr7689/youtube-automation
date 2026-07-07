@@ -82,18 +82,9 @@
 
     <div class="status-row" id="statusRow">상태 확인 중…</div>
 
-    <div class="flow-panel" id="phonePanel" style="display:none;">
-      <div class="flow-h">📱 폰에서 앱처럼 쓰기 <span style="font-weight:400;color:#8a80a5;font-size:12px;">— QR은 처음 한 번만, 그다음은 홈화면 아이콘 한 번 탭</span></div>
-      <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap;">
-        <div id="qrBox" style="width:150px;height:150px;background:#fff;border-radius:14px;padding:8px;box-shadow:0 2px 10px rgba(120,60,180,.1);"></div>
-        <div style="flex:1;min-width:240px;font-size:13.5px;line-height:1.9;color:#4b5563;">
-          <b>1.</b> 폰 카메라로 왼쪽 QR 스캔 → 브라우저에서 열림<br>
-          <b>2.</b> 브라우저 메뉴에서 <b>“홈 화면에 추가”</b> 탭
-          <span style="color:#8a80a5;">(아이폰: 공유 <span style="font-size:15px;">⬆️</span> → 홈 화면에 추가 / 안드로이드: ⋮ → 홈 화면에 추가)</span><br>
-          <b>3.</b> 이제 홈화면 <b>🎌 아이콘 한 번 탭</b>으로 열려요 (QR 다시 안 찍음)<br>
-          <div id="netInfo" style="margin-top:10px;"></div>
-        </div>
-      </div>
+    <div class="flow-panel" id="phonePanel">
+      <div class="flow-h">📱 폰에서 앱처럼 쓰기 <span style="font-weight:400;color:#8a80a5;font-size:12px;">— QR 스캔 또는 주소를 카톡으로 보내기 → “홈 화면에 추가”면 🎌 아이콘 생겨요</span></div>
+      <div id="phoneBody" style="font-size:13.5px;color:#4b5563;line-height:1.7;">📱 폰 연결 정보 확인 중…</div>
     </div>
 
     <div class="pt-foot">
@@ -120,32 +111,72 @@
         document.getElementById("statusRow").innerHTML =
           '<span class="st-chip off">서버 연결 안 됨 — 일본쇼츠실행.bat 로 서버를 켜주세요</span>';
       }
-      // 📱 폰 연결 QR + 사무실전용/어디서나 안내
+      // 📱 폰 연결 — 항상 표시 (QR + 주소 + 복사/공유). 조건 안 맞아도 안내는 나옴.
+      const body = document.getElementById("phoneBody");
       try {
         const c = await api("/api/connect-info");
-        if (c.qr_svg && !/^(127\.|localhost)/.test(c.ip)) {
-          document.getElementById("qrBox").innerHTML = c.qr_svg;
-          const q = document.getElementById("qrBox").querySelector("svg");
-          if (q) { q.setAttribute("width", "100%"); q.setAttribute("height", "100%"); }
-          let info = "";
-          if (c.has_remote) {
-            info =
-              `<div style="background:#dcfce7;border:1px solid #bbf7d0;border-radius:10px;padding:8px 12px;color:#166534;">
-                🌏 <b>어디서나 접속 켜짐 (Tailscale)</b> — 밖에서도 이 아이콘으로 열려요<br>
-                <span style="font-family:monospace;font-size:12px;">${c.tailscale_url}</span></div>
-               <div style="font-size:12px;color:#8a80a5;margin-top:5px;">🏢 사무실 전용: <span style="font-family:monospace;">${c.lan_url}</span></div>`;
-          } else {
-            info =
-              `<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:10px;padding:8px 12px;color:#92400e;">
-                🏢 <b>지금은 사무실 전용</b> — 밖에서도 쓰려면 <b>Tailscale</b>(무료)을 설치하세요.
-                설정 화면에 방법이 있어요. <a href="settings.html#remote" style="color:#7c3aed;font-weight:700;">→ 외부접속 설정</a><br>
-                <span style="font-family:monospace;font-size:12px;">${c.lan_url}</span></div>`;
-          }
-          document.getElementById("netInfo").innerHTML = info;
-          document.getElementById("phonePanel").style.display = "block";
+        const local = /^(127\.|localhost)/.test(c.ip || "");
+        const url = c.tailscale_url || c.lan_url || c.best_url || "";
+        window.__connUrl = url;
+        const btn = "cursor:pointer;font-weight:700;font-size:12.5px;padding:8px 13px;border-radius:9px;border:1px solid #e5d9f5;background:#7c3aed;color:#fff;";
+        const shareOK = typeof navigator !== "undefined" && navigator.share;
+        let html = "";
+
+        if (c.qr_svg && !local) {
+          html +=
+            `<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+              <div id="qrBox" style="width:148px;height:148px;background:#fff;border-radius:14px;padding:8px;box-shadow:0 2px 10px rgba(120,60,180,.1);flex:0 0 auto;">${c.qr_svg}</div>
+              <div style="flex:1;min-width:230px;line-height:1.9;">
+                <b>1.</b> 폰 카메라로 QR 스캔 → 브라우저 열림<br>
+                <b>2.</b> 브라우저 메뉴 → <b>“홈 화면에 추가”</b> <span style="color:#8a80a5;">(아이폰: 공유 ⬆️ / 안드로이드: ⋮)</span><br>
+                <b>3.</b> 홈화면 <b>🎌 아이콘 탭</b>이면 끝 (QR 다신 안 찍음)
+              </div></div>`;
         }
-      } catch (e) {}
+
+        if (url && !local) {
+          html +=
+            `<div style="background:#faf7ff;border:1px solid #ede9fe;border-radius:12px;padding:12px 14px;">
+              <div style="font-size:12px;color:#7e22ce;font-weight:700;margin-bottom:6px;">📲 또는 이 주소를 폰 브라우저에 입력 / 카톡으로 보내기</div>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <code style="background:#fff;border:1px solid #e5d9f5;border-radius:8px;padding:8px 12px;font-size:13px;word-break:break-all;flex:1;min-width:160px;">${url}</code>
+                <button style="${btn}" onclick="copyConn()">📋 주소 복사</button>
+                ${shareOK ? `<button style="${btn}background:#fff;color:#7e22ce;" onclick="shareConn()">🔗 공유</button>` : ""}
+              </div>
+              <div style="font-size:11.5px;color:#8a80a5;margin-top:8px;">💬 <b>카톡으로 이 주소를 보내도 돼요</b> — 받은 사람이 링크 탭 → 열림 → “홈 화면에 추가”면 아이콘 생김.<br><span style="color:#b45309;">단, 받는 폰이 <b>같은 와이파이</b> 또는 <b>Tailscale</b>로 이 서버에 닿아야 열려요.</span></div>
+            </div>`;
+        }
+
+        if (local) {
+          html +=
+            `<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:10px;padding:11px 14px;color:#92400e;">
+              ⚠️ 지금 이 컴퓨터가 <b>네트워크(와이파이/랜)에 연결돼 있지 않아</b> 폰에서 접속할 주소를 못 만들었어요.<br>
+              인터넷에 연결한 뒤 이 화면을 <b>새로고침(F5)</b> 하면 QR·주소가 나와요.</div>`;
+        } else if (c.has_remote) {
+          html += `<div style="font-size:12px;color:#166534;margin-top:8px;">🌏 <b>어디서나 접속 켜짐(Tailscale)</b> — 밖에서도 이 주소로 열려요.</div>`;
+        } else {
+          html += `<div style="font-size:12px;color:#8a80a5;margin-top:8px;">🏢 지금은 <b>사무실 전용</b>(같은 와이파이). 밖에서도 쓰려면 <a href="settings.html#remote" style="color:#7c3aed;font-weight:700;">→ Tailscale 설정</a>.</div>`;
+        }
+
+        body.innerHTML = html;
+        const q = document.querySelector("#qrBox svg");
+        if (q) { q.setAttribute("width", "100%"); q.setAttribute("height", "100%"); }
+      } catch (e) {
+        body.innerHTML = '<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:10px;padding:11px 14px;color:#92400e;">연결 정보를 못 불러왔어요 — <b>일본쇼츠실행.bat</b> 로 서버가 켜져 있는지 확인해 주세요.</div>';
+      }
     })();
+
+    // 📋 주소 복사 / 🔗 공유 (카톡 등으로)
+    function copyConn() {
+      const u = window.__connUrl || "";
+      if (!u) return;
+      navigator.clipboard.writeText(u).then(
+        () => (window.toast ? toast("📋 주소 복사됨 — 카톡 대화창에 붙여넣기 하세요") : alert("복사됨: " + u)),
+        () => alert("복사: " + u));
+    }
+    function shareConn() {
+      const u = window.__connUrl || "";
+      if (u && navigator.share) navigator.share({ title: "일본쇼츠 자동 프로그램", text: "일본쇼츠 앱 열기", url: u }).catch(() => {});
+    }
   </script>
 </body>
 </html>
