@@ -436,6 +436,32 @@ def concept_status():
     return {**cm.llm_status(), "youtube_key": yc.has_key()}
 
 
+class ThumbGenReq(BaseModel):
+    prompt: str
+
+
+@app.post("/api/concept/thumbnail")
+def concept_thumbnail(req: ThumbGenReq):
+    """🖼️ 이미지 프롬프트 → GPT(OpenAI) 썸네일 이미지 생성(미리보기)."""
+    r = cm.generate_thumbnail_image(req.prompt)
+    if not r.get("ok"):
+        from fastapi import HTTPException as _HE
+        raise _HE(400, r.get("error", "이미지 생성 실패"))
+    return r
+
+
+@app.get("/api/concept/thumbnail/file/{name}")
+def concept_thumbnail_file(name: str):
+    from fastapi import HTTPException as _HE
+    from fastapi.responses import FileResponse as _FR
+    if any(c in name for c in ("/", "\\", "..")):
+        raise _HE(400, "잘못된 경로")
+    p = os.path.join(cm.THUMBS_DIR, name)
+    if not os.path.isfile(p):
+        raise _HE(404, "파일 없음")
+    return _FR(p, media_type="image/png")
+
+
 # ── ✂️ 자동 컷편집 (도구 ③) ─────────────────────────────
 
 import cutplanner as cp
