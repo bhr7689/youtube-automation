@@ -418,14 +418,17 @@ class ConceptReq(BaseModel):
     song_type: str = "auto"      # lyric | instrumental | auto
     num_songs: int = 1           # 1 | 10 | 25
     extra_notes: str = ""
+    images: list[str] = Field(default_factory=list)     # 업로드 썸네일 캡처(data URL)
+    titles: str = ""             # 붙여넣은 인기 상승 제목(줄바꿈 구분)
 
 
 @app.post("/api/concept/analyze")
 def concept_analyze(req: ConceptReq):
     urls = [u for u in req.channels if u.strip()][:3]
-    if not urls:
-        raise HTTPException(400, "채널 URL 을 1개 이상 넣어주세요")
-    r = cm.generate_report(urls, req.song_type, req.num_songs, req.extra_notes)
+    if not urls and not req.images and not req.titles.strip():
+        raise HTTPException(400, "채널 URL·썸네일 캡처·제목 중 하나는 넣어주세요")
+    r = cm.generate_report(urls, req.song_type, req.num_songs, req.extra_notes,
+                           images=req.images, titles_text=req.titles)
     if r.get("error"):
         raise HTTPException(400, r["error"])
     return r
