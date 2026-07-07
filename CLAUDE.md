@@ -365,4 +365,20 @@ python pipeline.py --init                              # 파이프라인 폴더 
   - 검증: 실제 파일 업로드 Playwright — 미리보기 2·요청 이미지 2(JPEG data URL·
     다운스케일)·제목 전달·헤더 "내 캡처" 전환·조회수배지 0, JS오류 0. TestClient
     images/titles-only·무입력 400 확인. **default(eqO5N) 머지·푸시 완료**.
+- [x] 🐛 **날 JSON 출력 버그 수정 + 로고·배너 GPT 생성**(2026-07-07, new-session-rhtlol):
+  사장님: 결과가 카드가 아니라 **날 JSON 텍스트**로 나옴(캡처2) + 로고·배너도 새
+  컨셉으로 그려달라.
+  - 원인: GPT JSON을 `_parse_json`이 못 파싱 → 마크다운 폴백이 원문 JSON을 그대로 표시.
+  - 수정: `_openai/_llm/translator._gemini` 에 **json_mode** 추가 — OpenAI
+    `response_format={type:json_object}`+max_tokens 8000, Gemini `response_mime_type`.
+    `generate_report` 가 json_mode=True 로 호출 → 유효 JSON 보장. `_parse_json`
+    방어 강화(후행 콤마·중괄호/따옴표 균형 복구). 프론트 안전망(markdown 이 JSON 이면
+    클라 파싱).
+  - 로고·배너 생성: 스키마 `preview.profile.image_prompt`(로고)+`banner.image_prompt`
+    (배너). `genThumb`→`genImage(boxId,size,label)` 일반화(로고 1024², 배너·썸네일
+    1536×1024). 미리보기 섹션에 "🎨 새 로고/배너 그리기" 버튼+인라인 미리보기.
+    복제 방지 가드는 기존대로 이미지 API 앞에 주입.
+  - 검증: 데모 렌더 — 날 JSON 미표시(버그 해소)·카드 10섹션·로고/배너/썸네일 버튼·
+    genLogoBox/genBannerBox, JS오류 0. OpenAI mock 으로 json_object+max_tokens 확인.
+    _parse_json 후행콤마·잘림 복구 통과. **default(eqO5N) 머지·푸시 완료**.
 - (작업하며 갱신할 것)
