@@ -375,6 +375,11 @@
       let benchSec = null;
       const P = v => (v == null ? "" : String(v));
 
+      // 🎯 이미지 생성 시 모델이 '직접 볼' 레퍼런스 (업로드 캡처/유튜브 썸네일, 래스터만)
+      REF_THUMBS = (meta.thumbnails || []).map(t => t.thumb)
+        .filter(u => u && (u.startsWith("http") || /^data:image\/(png|jpe?g|webp)/i.test(u)))
+        .slice(0, 8);
+
       // 0) 🖼️ 벤치마킹 — 인기순 썸네일 그리드 (이 도구의 핵심)
       const thumbs = meta.thumbnails || [];
       if (thumbs.length) {
@@ -618,21 +623,26 @@
     }
 
     // 🎨 GPT 이미지 생성 + 미리보기 (썸네일·로고·배너 공용)
+    // 🎯 레퍼런스 썸네일을 그리는 모델에 '직접' 넣어 무드를 이식 (ChatGPT 앱 방식)
+    let REF_THUMBS = [];
     async function genImage(promptIdx, boxId, btn, size, label) {
       const prompt = (COPY[promptIdx] || "").trim();
       if (!prompt) return toast("이미지 프롬프트가 비어 있어요");
       label = label || "이미지";
       const box = document.getElementById(boxId);
-      btn.disabled = true; const o = btn.textContent; btn.textContent = "🎨 그리는 중… (20~40초)";
-      box.innerHTML = `<div class="spin">🎨 GPT가 ${esc(label)}를 새 컨셉으로 그리는 중… (20~40초)</div>`;
+      btn.disabled = true; const o = btn.textContent; btn.textContent = "🎨 그리는 중… (20~60초)";
+      const refNote = REF_THUMBS.length ? ` — 레퍼런스 ${REF_THUMBS.length}장을 직접 보면서` : "";
+      box.innerHTML = `<div class="spin">🎨 GPT가${esc(refNote)} ${esc(label)}를 그리는 중… (20~60초)</div>`;
       try {
-        const r = await api("/api/concept/thumbnail", { method: "POST", body: JSON.stringify({ prompt, size: size || "1536x1024" }) });
+        const r = await api("/api/concept/thumbnail", { method: "POST", body: JSON.stringify({ prompt, size: size || "1536x1024", refs: REF_THUMBS }) });
+        const moodChip = r.refs_used
+          ? `<span class="rp-chip" style="background:#f3e8ff;color:#6d28d9;">🎯 레퍼런스 ${r.refs_used}장 무드 반영</span>` : "";
         box.innerHTML = `<div class="gen-wrap"><img class="gen-img" src="${r.data_url}" alt="생성된 ${esc(label)}">
           <div class="gen-actions">
             <a class="gen-dl" href="${r.data_url}" download="${esc(label)}.png">⬇️ ${esc(label)} 다운로드</a>
             <button class="gen-re" onclick="genImage(${promptIdx},'${boxId}',this,'${size || "1536x1024"}','${esc(label)}')">🔄 다시 그리기</button>
-            <span class="rp-chip" style="background:#dcfce7;color:#166534;">✨ 최고화질(${esc(r.quality || "high")}) · ${esc(r.model || "")}</span></div></div>`;
-        toast(`✅ ${label} 미리보기 완성`);
+            <span class="rp-chip" style="background:#dcfce7;color:#166534;">✨ 최고화질 · ${esc(r.model || "")}</span>${moodChip}</div></div>`;
+        toast(`✅ ${label} 완성${r.refs_used ? " — 레퍼런스 무드 반영됨" : ""}`);
       } catch (e) {
         box.innerHTML = `<div style="color:#b91c1c;font-size:13px;line-height:1.65;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:10px 13px;">⚠️ ${esc(e.message)}</div>`;
       }
