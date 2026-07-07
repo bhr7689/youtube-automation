@@ -328,33 +328,95 @@ _QUALITY_SUFFIX = (
     "color grading, beautiful natural lighting, high dynamic range, no noise, "
     "no artifacts, no blur, magazine-grade finish.")
 
+# 레퍼런스 무드 이식 지시 — 모델이 레퍼런스 이미지를 '직접 보며' 그릴 때 사용
+_MOOD_TRANSFER = (
+    "Look carefully at the attached reference thumbnail images. Absorb their EXACT "
+    "mood, emotional atmosphere, color grading, lighting, film texture, level of "
+    "realism and overall sensibility — the new image must feel like it belongs to "
+    "the very same channel (85% same emotional tone). But do NOT copy any "
+    "reference's composition, objects or scene — create a completely NEW scene "
+    "(15% twist) as described: ")
 
-def generate_thumbnail_image(prompt: str, size: str = "1536x1024") -> dict:
+
+def _ref_to_file(ref: str, idx: int):
+    """data URL/http URL → (파일명, BytesIO, mime). 래스터 이미지가 아니면 None."""
+    import io
+    data, mime = None, "image/png"
+    if ref.startswith("data:image/"):
+        m = re.match(r"data:(image/(?:png|jpe?g|webp));base64,(.+)", ref, re.S | re.I)
+        if m:
+            mime = m.group(1).lower().replace("image/jpg", "image/jpeg")
+            try:
+                data = base64.b64decode(m.group(2))
+            except Exception:
+                data = None
+    elif ref.startswith("http"):
+        try:
+            import urllib.request
+            req = urllib.request.Request(ref, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = resp.read()
+            mime = "image/jpeg"
+        except Exception:
+            data = None
+    if not data:
+        return None
+    ext = "png" if "png" in mime else ("webp" if "webp" in mime else "jpg")
+    return (f"ref{idx}.{ext}", io.BytesIO(data), mime)
+
+
+def generate_thumbnail_image(prompt: str, size: str = "1536x1024",
+                             refs: list[str] | None = None) -> dict:
     key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not key:
         return {"ok": False, "error": "OpenAI(GPT) 키가 필요해요. 설정 → 🔑 연결키 저장에서 OpenAI 키를 넣어주세요. "
                 "(미드저니를 쓰신다면 아래 미드저니 프롬프트를 복사해 붙여넣으세요.)"}
-    p = _clean_img_prompt(prompt)
-    if not p:
+    scene = _clean_img_prompt(prompt)
+    if not scene:
         return {"ok": False, "error": "이미지 프롬프트가 비어 있어요."}
-    # 레퍼런스 복제 방지 — 스타일만 참고한 '새로운 원본 썸네일'로 유도 + 화질 부스터
-    p = ("Create an original, brand-new YouTube thumbnail. Use the following as style "
-         "inspiration only — do NOT copy or reproduce any existing/reference thumbnail; "
-         "invent a fresh scene. " + p + _QUALITY_SUFFIX)
+
+    # 레퍼런스 이미지 준비 (ChatGPT 앱처럼 — 모델이 무드를 '직접 보고' 그린다)
+    files = []
+    for i, ref in enumerate((refs or [])[:8]):
+        f = _ref_to_file(ref, i)
+        if f:
+            files.append(f)
+
     try:
         from openai import OpenAI
         client = OpenAI(api_key=key)
         b64, model, qual = None, "", ""
-        try:                       # 1) 최신 gpt-image-1 — quality=high (ChatGPT 앱과 동급)
-            r = client.images.generate(model="gpt-image-1", prompt=p, size=size,
-                                       n=1, quality="high")
-            b64, model, qual = r.data[0].b64_json, "gpt-image-1", "high"
-        except Exception:          # 2) dall-e-3 폴백 — quality=hd + vivid
-            ds = "1792x1024" if size.startswith("1536") else "1024x1024"
-            r = client.images.generate(model="dall-e-3", prompt=p, size=ds, n=1,
-                                       quality="hd", style="vivid",
-                                       response_format="b64_json")
-            b64, model, qual = r.data[0].b64_json, "dall-e-3", "hd"
+        refs_used = 0
+
+        if files:   # 1) 🎯 레퍼런스 무드 반영 생성 (images.edit — 참조 이미지 직접 투입)
+            p_edit = _MOOD_TRANSFER + scene + _QUALITY_SUFFIX
+            for kwargs in (dict(quality="high"), dict()):   # 구 SDK/미지원 대비 재시도
+                try:
+                    r = client.images.edit(model="gpt-image-1", image=files,
+                                           prompt=p_edit, size=size, n=1, **kwargs)
+                    b64 = r.data[0].b64_json
+                    model, qual = "gpt-image-1", kwargs.get("quality", "auto")
+                    refs_used = len(files)
+                    break
+                except Exception:
+                    for _, bio, _m in files:                 # 재시도 전 파일 포인터 리셋
+                        bio.seek(0)
+
+        if not b64:  # 2) 레퍼런스 없음/실패 → 텍스트 생성 (gpt-image-1 high)
+            p_gen = ("Create an original, brand-new YouTube thumbnail. Use the following "
+                     "as style inspiration only — do NOT copy or reproduce any existing/"
+                     "reference thumbnail; invent a fresh scene. " + scene + _QUALITY_SUFFIX)
+            try:
+                r = client.images.generate(model="gpt-image-1", prompt=p_gen, size=size,
+                                           n=1, quality="high")
+                b64, model, qual = r.data[0].b64_json, "gpt-image-1", "high"
+            except Exception:      # 3) dall-e-3 폴백 — quality=hd + vivid
+                ds = "1792x1024" if size.startswith("1536") else "1024x1024"
+                r = client.images.generate(model="dall-e-3", prompt=p_gen, size=ds, n=1,
+                                           quality="hd", style="vivid",
+                                           response_format="b64_json")
+                b64, model, qual = r.data[0].b64_json, "dall-e-3", "hd"
+
         if not b64:
             return {"ok": False, "error": "이미지 생성 응답이 비어 있어요."}
         os.makedirs(THUMBS_DIR, exist_ok=True)
@@ -362,7 +424,8 @@ def generate_thumbnail_image(prompt: str, size: str = "1536x1024") -> dict:
         with open(os.path.join(THUMBS_DIR, name), "wb") as f:
             f.write(base64.b64decode(b64))
         return {"ok": True, "data_url": "data:image/png;base64," + b64,
-                "file": name, "model": model, "quality": qual}
+                "file": name, "model": model, "quality": qual,
+                "refs_used": refs_used}
     except Exception as e:
         return {"ok": False, "error": f"이미지 생성 실패: {e}"}
 

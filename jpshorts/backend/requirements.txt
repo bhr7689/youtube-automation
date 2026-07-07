@@ -6,3 +6,4 @@ isodate>=0.6.1
 pydantic>=2.0.0
 google-generativeai>=0.7.0   # 번역봇(선택) — GEMINI_API_KEY 있을 때만 사용
 qrcode>=7.4  # 📱 폰 연결 QR (SVG, PIL 불필요)
+openai>=1.76.0  # 🎨 플리 컨셉(GPT-4o) + 이미지 생성(gpt-image-1 레퍼런스 무드 반영)
