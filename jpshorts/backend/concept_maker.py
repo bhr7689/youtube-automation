@@ -146,7 +146,7 @@ JSON_OUTPUT = """[출력 형식 — 매우 중요]
     "concept":"대표 썸네일 콘셉트","reason":"선정 이유",
     "composition":"구도","color_codes":"컬러 코드(#hex 포함)","font":"폰트 톤",
     "object_rule":"인물·오브젝트 규칙","text_placement":"텍스트 배치","forbidden":"금지 요소",
-    "image_prompt":"신규 채널의 **새 대표 썸네일 1장**을 그리는 영어 서술형 프롬프트. 인기 썸네일의 무드·색감 계열·구도 '느낌'만 85% 참고하고, 주인공 오브젝트·장면은 신규 컨셉(concepts)의 15% 시그니처 변형(새 상징 오브젝트·새 컬러 포인트)으로 **교체**해 레퍼런스 어느 것과도 구별되는 완전히 새로운 장면을 묘사. 특정 레퍼런스 썸네일 복제·모사 금지. --ar 등 파라미터는 붙이지 마라(시스템 자동 추가)"
+    "image_prompt":"신규 채널의 **새 대표 썸네일 1장**을 그리는 영어 서술형 프롬프트. 인기 썸네일의 무드·색감 계열·구도 '느낌'만 85% 참고하고, 주인공 오브젝트·장면은 신규 컨셉(concepts)의 15% 시그니처 변형으로 **교체**해 레퍼런스 어느 것과도 구별되는 완전히 새로운 장면을 묘사. 특정 레퍼런스 복제·모사 금지. **프로 사진 수준으로 구체적으로**: 전경/중경/배경 배치, 광원과 시간대(예: warm golden-hour sunlight through leaves), 렌즈 느낌(shallow depth of field, 35mm), 질감, 컬러 팔레트(#hex), 'cinematic professional photography, photorealistic, ultra-detailed' 류 화질 묘사를 반드시 포함. --ar 등 파라미터는 붙이지 마라(시스템 자동 추가)"
   },
   "titles": ["신규 제목 10개(원본 복제 금지, 감성문장+검색키워드 조합)"],
   "suno": {
@@ -300,7 +300,14 @@ def _demo_thumb(i: int) -> str:
     return "data:image/svg+xml;utf8," + urllib.parse.quote(svg)
 
 
-# ── 🖼️ GPT 썸네일 이미지 생성 (미리보기) ────────────────
+# ── 🖼️ GPT 썸네일 이미지 생성 (미리보기, 최고 화질) ─────
+# 화질 보정 지시 — 사진·일러스트 공용 (저품질 원인이던 기본 등급을 최고 등급으로)
+_QUALITY_SUFFIX = (
+    " Masterpiece quality, ultra-detailed, tack-sharp focus, rich professional "
+    "color grading, beautiful natural lighting, high dynamic range, no noise, "
+    "no artifacts, no blur, magazine-grade finish.")
+
+
 def generate_thumbnail_image(prompt: str, size: str = "1536x1024") -> dict:
     key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not key:
@@ -309,22 +316,24 @@ def generate_thumbnail_image(prompt: str, size: str = "1536x1024") -> dict:
     p = _clean_img_prompt(prompt)
     if not p:
         return {"ok": False, "error": "이미지 프롬프트가 비어 있어요."}
-    # 레퍼런스 복제 방지 — 스타일만 참고한 '새로운 원본 썸네일'로 유도
+    # 레퍼런스 복제 방지 — 스타일만 참고한 '새로운 원본 썸네일'로 유도 + 화질 부스터
     p = ("Create an original, brand-new YouTube thumbnail. Use the following as style "
          "inspiration only — do NOT copy or reproduce any existing/reference thumbnail; "
-         "invent a fresh scene. " + p)
+         "invent a fresh scene. " + p + _QUALITY_SUFFIX)
     try:
         from openai import OpenAI
         client = OpenAI(api_key=key)
-        b64, model = None, ""
-        try:                       # 1) 최신 gpt-image-1
-            r = client.images.generate(model="gpt-image-1", prompt=p, size=size, n=1)
-            b64, model = r.data[0].b64_json, "gpt-image-1"
-        except Exception:          # 2) dall-e-3 폴백
+        b64, model, qual = None, "", ""
+        try:                       # 1) 최신 gpt-image-1 — quality=high (ChatGPT 앱과 동급)
+            r = client.images.generate(model="gpt-image-1", prompt=p, size=size,
+                                       n=1, quality="high")
+            b64, model, qual = r.data[0].b64_json, "gpt-image-1", "high"
+        except Exception:          # 2) dall-e-3 폴백 — quality=hd + vivid
             ds = "1792x1024" if size.startswith("1536") else "1024x1024"
             r = client.images.generate(model="dall-e-3", prompt=p, size=ds, n=1,
+                                       quality="hd", style="vivid",
                                        response_format="b64_json")
-            b64, model = r.data[0].b64_json, "dall-e-3"
+            b64, model, qual = r.data[0].b64_json, "dall-e-3", "hd"
         if not b64:
             return {"ok": False, "error": "이미지 생성 응답이 비어 있어요."}
         os.makedirs(THUMBS_DIR, exist_ok=True)
@@ -332,7 +341,7 @@ def generate_thumbnail_image(prompt: str, size: str = "1536x1024") -> dict:
         with open(os.path.join(THUMBS_DIR, name), "wb") as f:
             f.write(base64.b64decode(b64))
         return {"ok": True, "data_url": "data:image/png;base64," + b64,
-                "file": name, "model": model}
+                "file": name, "model": model, "quality": qual}
     except Exception as e:
         return {"ok": False, "error": f"이미지 생성 실패: {e}"}
 
