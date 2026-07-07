@@ -333,4 +333,20 @@ python pipeline.py --init                              # 파이프라인 폴더 
   - 검증: Playwright — 벤치타일9·썸네일img9·순위배지9·GPT버튼1·미리보기박스1·
     네비pill9(첫=벤치마킹)·미드저니라벨, JS오류 0. TestClient 이미지생성 키없음 400 확인.
     **default(eqO5N) 머지·푸시 완료**. ⚠️ 실제 이미지 생성은 사장님 PC(OpenAI 키)에서 작동.
+- [x] 👁 **썸네일 벤치마킹 강화 — GPT Vision 실측**(2026-07-07, new-session-rhtlol):
+  사장님이 OpenAI(GPT) 키 연결 → "썸네일 부분 더 강화". 텍스트 추정 → **실제 이미지
+  분석**으로 격상.
+  - `concept_maker.py`:
+    · `analyze_thumbnails_vision()` — **GPT-4o Vision** 이 인기 상위 9개 썸네일
+      이미지를 직접 보고 공통 컬러(#hex)·구도·오브젝트·인물·텍스트 오버레이·무드
+      + 85/15 벤치마킹 요약 추출(`detail=low` 저비용). 키 없거나 http 이미지 없으면
+      None → 텍스트 추정 경로로 안전 폴백.
+    · `generate_report()` 재구성 — 썸네일을 **LLM 호출 전에 먼저 계산** → Vision 분석
+      실행 → 결과를 컨셉 프롬프트에 **실측 근거로 주입**. 있으면 `thumbnail.estimated
+      =false` 확정. 응답에 `vision` 필드 추가.
+  - `concept_maker.html`: 벤치마킹 헤더에 **👁 이미지 실측 / 📝 추정 배지**, 그리드 아래
+    **"👁 GPT Vision 실측 분석"** 보라 박스로 공통 패턴 노출.
+  - 검증: 무키 폴백(vision=None, estimated=true 유지) + mock vision(estimated=false
+    전환·응답 노출) + Playwright(vision-box 1·실측배지·불릿7, JS오류 0). **default
+    (eqO5N) 머지·푸시 완료**. ⚠️ 실제 Vision 분석은 사장님 PC(OpenAI 키)에서 작동.
 - (작업하며 갱신할 것)
