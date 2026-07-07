@@ -310,4 +310,27 @@ python pipeline.py --init                              # 파이프라인 폴더 
     체크리스트. 모바일 대응(네비 가로스크롤·2열→1열), 마크다운 폴백 유지.
   - 검증: Playwright 렌더 — 네비8·점수막대5·총점배지·컨셉카드·복사블록9·클릭칩11·
     제목행10·타임라인6·체크5·스와치8, JS오류 0. **default(eqO5N) 머지·푸시 완료**.
+- [x] 🖼️ **플리 컨셉 제조기 = 썸네일 벤치마킹 도구로 확장**(2026-07-07, new-session-rhtlol):
+  사장님이 "이 도구의 주 목적은 썸네일 벤치마킹" 명시 → 실제 썸네일을 보여주고
+  새 썸네일을 그려주는 흐름 완성(벤치마킹 → 컨셉 → 이미지).
+  - 백엔드(`concept_maker.py`):
+    · `collect_channel` 이 영상 썸네일 URL·video_id 수집(무료·추가쿼터 없음)
+    · `generate_report` 가 **인기순 상위 9개 썸네일**(실데이터)을 `thumbnails` 로 반환
+    · 플리 컨셉 LLM 을 **GPT(OpenAI, gpt-4o) 우선**으로 전환(`_llm`=openai→gemini,
+      사장님이 GPT 연결). 없으면 Gemini 폴백. `_engine_name()` 갱신.
+    · `_midjourney()` — 이미지 프롬프트 → **미드저니용**(`--ar 16:9 --style raw --v 6`,
+      후행 비율 중복 제거) 자동 생성. `hero_thumbnail.midjourney_prompt` 후처리 주입.
+    · `generate_thumbnail_image()` — OpenAI 이미지 API(**gpt-image-1→dall-e-3** 폴백)로
+      썸네일 PNG 생성 + `data/concept_thumbs` 저장 + data_url 반환. 키 없으면 친절 400.
+    · 데모 채널에 그라디언트 SVG 썸네일 9개(3×3 그리드 시연).
+  - `main.py`: `POST /api/concept/thumbnail`(이미지 생성) + `GET .../file/{name}`.
+  - 프론트(`concept_maker.html`):
+    · **최상단 🖼️ 벤치마킹 섹션** — 인기순 9개 썸네일 3×3 그리드(순위·조회수 배지·
+      클릭 시 원본). 네비 첫 pill.
+    · 대표 썸네일 섹션에 **"🎨 이 컨셉으로 썸네일 그려서 미리보기"** 버튼 → GPT 생성
+      이미지 **인라인 미리보기** + ⬇️ 다운로드 + 🔄 다시 그리기.
+    · **🖌️ 미드저니 프롬프트** 강조 복사 블록 + **🖼️ 순수 이미지 프롬프트**(DALL·E용) 블록.
+  - 검증: Playwright — 벤치타일9·썸네일img9·순위배지9·GPT버튼1·미리보기박스1·
+    네비pill9(첫=벤치마킹)·미드저니라벨, JS오류 0. TestClient 이미지생성 키없음 400 확인.
+    **default(eqO5N) 머지·푸시 완료**. ⚠️ 실제 이미지 생성은 사장님 PC(OpenAI 키)에서 작동.
 - (작업하며 갱신할 것)
