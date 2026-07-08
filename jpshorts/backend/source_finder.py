@@ -391,7 +391,47 @@ def stage_report(job: dict) -> None:
         yt_original = "판정 불가 (프레임 필요)"
         platform_first = "미정"
 
+    # ── 최상위 결론: 찾았나? + 신뢰도 + 바로 볼 링크 ──
+    cand = job.get("candidates", {})
+    auto = cand.get("auto_found", [])
+    profiles = cand.get("profiles", [])
+    live_profiles = [p for p in profiles if "200" in p.get("probe", "")]
+
+    best_links = []
+    for a in auto[:3]:
+        best_links.append({"label": "자동 발견 링크 (원본 후보)", "url": a["url"],
+                           "handle": external[0] if external else ""})
+    for p in (live_profiles or profiles)[:3]:
+        if p["url"] not in [b["url"] for b in best_links]:
+            live = "200" in p.get("probe", "")
+            best_links.append({
+                "label": f"{p['platform']} @{p['handle']} 프로필" + ("" if live else " (열어서 확인)"),
+                "url": p["url"], "handle": p["handle"]})
+    best_links = best_links[:5]
+
+    if external and (auto or live_profiles):
+        found, confidence = "strong", "높음"
+        headline = f"🎯 원본 후보를 찾았어요 — @{external[0]} 유력"
+        summary = f"워터마크/단서에서 나온 @{external[0]} 계정과 연결된 링크를 아래에서 바로 확인하세요."
+    elif external:
+        found, confidence = "medium", "중간"
+        headline = f"🔍 원본으로 보이는 계정 @{external[0]} 을(를) 찾았어요"
+        summary = "이 계정 프로필/검색 링크를 열어 같은 장면·게시일을 대조하면 원본 확정."
+    elif auto:
+        found, confidence = "medium", "중간"
+        headline = "🔍 관련 원본 후보 링크를 찾았어요"
+        summary = "아래 링크에서 같은 장면·게시일을 직접 대조해 원본을 확정하세요."
+    else:
+        found, confidence = "weak", "낮음"
+        headline = "⚠️ 자동으로는 단서가 부족해요"
+        summary = "아래 5플랫폼 검색 루트로 같은 장면을 직접 찾아보세요. (프레임 시트·워터마크 이미지 참고)"
+
     job["verdict"] = {
+        "found": found,                    # strong | medium | weak
+        "confidence": confidence,          # 높음 | 중간 | 낮음
+        "headline": headline,              # 한 줄 결론
+        "summary": summary,                # 다음에 뭘 하면 되는지
+        "best_links": best_links,          # 바로 볼 링크 1~5개
         "yt_original_likelihood": yt_original,
         "strongest_clue": strongest,
         "platform_first": platform_first,
@@ -410,7 +450,13 @@ def stage_report(job: dict) -> None:
         f"- 업로드: {meta.get('upload_utc', '?')} / {meta.get('upload_kst', '')}",
         f"- 조회수: {meta.get('view_count', '?')}",
         "",
-        "## 현재 판정",
+        f"## {job['verdict']['headline']}  (신뢰도: {job['verdict']['confidence']})",
+        job["verdict"]["summary"],
+        "",
+        "### 🔗 바로 볼 링크",
+        *([f"- [{b['label']}] {b['url']}" for b in best_links] or ["- (직접 링크 없음 — 아래 검색 루트 이용)"]),
+        "",
+        "## 상세 판정",
         f"- YouTube 원본 가능성: **{yt_original}**",
         f"- 가장 강한 단서: **{strongest}**",
         f"- 원본 플랫폼 1순위: {platform_first}",

@@ -41,6 +41,12 @@
       <p class="pt-sub">레퍼런스 탐색부터 시선 비틀기 대본, 일본어 번역·TTS, 자동 컷편집까지<br>한 번 로그인으로 세 가지 도구를 모두 사용하세요.</p>
     </div>
 
+    <div id="installBar" style="display:none;background:linear-gradient(90deg,#7c3aed,#ec4899);color:#fff;border-radius:16px;padding:14px 18px;margin-bottom:20px;box-shadow:0 6px 20px rgba(120,60,180,.18);">
+      <div style="font-weight:800;font-size:15px;margin-bottom:4px;">📲 홈 화면에 앱으로 추가하기</div>
+      <div id="installMsg" style="font-size:13px;line-height:1.6;opacity:.96;"></div>
+      <div id="installActions" style="margin-top:10px;"></div>
+    </div>
+
     <div class="tool-grid">
       <a class="tool-card" href="trend.html">
         <div class="tool-icon">📺</div>
@@ -95,6 +101,39 @@
   </div>
 
   <script>
+    // 📲 모바일 홈 화면 추가 도우미 (아이콘으로 눌러 들어가기)
+    let __deferredInstall = null;
+    window.addEventListener("beforeinstallprompt", (e) => {
+      e.preventDefault(); __deferredInstall = e;
+      const bar = document.getElementById("installBar");
+      if (!bar || bar.dataset.installed) return;
+      const btn = "background:#fff;color:#7c3aed;font-weight:800;border:none;border-radius:10px;padding:10px 18px;font-size:14px;cursor:pointer;";
+      document.getElementById("installMsg").innerHTML = "버튼 한 번이면 홈 화면에 <b>🎌 아이콘</b>이 생겨요. 다음부턴 아이콘만 탭하면 열려요!";
+      document.getElementById("installActions").innerHTML = `<button id="doInstall" style="${btn}">📲 지금 홈 화면에 추가</button>`;
+      document.getElementById("doInstall").onclick = async () => {
+        __deferredInstall.prompt(); await __deferredInstall.userChoice;
+        __deferredInstall = null; bar.style.display = "none";
+      };
+      bar.dataset.installed = "1"; bar.style.display = "block";
+    });
+    (function () {
+      const bar = document.getElementById("installBar");
+      const standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+      if (!bar || standalone) return;                 // 이미 아이콘으로 들어왔으면 숨김
+      const ua = navigator.userAgent || "";
+      const isIOS = /iphone|ipad|ipod/i.test(ua);
+      const isAndroid = /android/i.test(ua);
+      if (!isIOS && !isAndroid) return;               // 데스크톱은 QR·주소 안내로 충분
+      const btn = "background:#fff;color:#7c3aed;font-weight:800;border:none;border-radius:10px;padding:9px 16px;font-size:13.5px;cursor:pointer;";
+      if (isIOS) {
+        document.getElementById("installMsg").innerHTML = "<b>사파리(Safari)</b> 맨 아래 <b>공유 버튼</b>(네모+⬆️) → 목록에서 <b>“홈 화면에 추가”</b> → <b>추가</b>.<br>그럼 홈 화면 <b>🎌 아이콘</b>으로 바로 들어와요.";
+      } else {
+        document.getElementById("installMsg").innerHTML = "크롬 오른쪽 위 <b>⋮</b>(점 3개) → <b>“홈 화면에 추가”</b>(또는 앱 설치) → <b>추가</b>.<br>그럼 홈 화면 <b>🎌 아이콘</b>으로 바로 들어와요.";
+      }
+      document.getElementById("installActions").innerHTML = `<button style="${btn}" onclick="document.getElementById('installBar').style.display='none'">알겠어요</button>`;
+      if (!bar.dataset.installed) bar.style.display = "block";
+    })();
+
     (async function () {
       try {
         const s = await api("/api/system/status");
