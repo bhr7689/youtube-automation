@@ -186,6 +186,7 @@
       try {
         const data = await api("/api/search?" + params);
         RESULTS = data.cards;
+        window.__xlate = data.translated || "";     // 현지어 변환 표시용
         showDemoBanner(data.demo);
         applyFilters();
         loadRecent();
@@ -202,7 +203,8 @@
         maxAgeMonths: +(selectedValue(document.getElementById("fAge")) || 0),
       });
       renderGrid(document.getElementById("grid"), cards);
-      document.getElementById("resultCount").textContent = `${cards.length}개 표시중 (가져온 ${RESULTS.length}개 중)`;
+      const xl = window.__xlate ? ` · 🌐 그 나라 말 «${esc(window.__xlate)}»로 검색됨` : "";
+      document.getElementById("resultCount").innerHTML = `${cards.length}개 표시중 (가져온 ${RESULTS.length}개 중)${xl}`;
     }
 
     /* 칩 그룹: 검색 옵션 → 재검색 / 결과 필터 → 즉시 적용 */

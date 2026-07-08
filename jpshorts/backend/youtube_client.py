@@ -27,6 +27,73 @@ LANG_REGION = {
     "ko": "KR", "en": "US", "ja": "JP", "zh": "TW", "es": "MX",
     "de": "DE", "fr": "FR", "pt": "BR", "hi": "IN",
 }
+LANG_NAME = {
+    "ja": "Japanese", "en": "English", "zh": "Traditional Chinese",
+    "es": "Spanish", "de": "German", "fr": "French",
+    "pt": "Brazilian Portuguese", "hi": "Hindi",
+}
+
+# ── 🌐 검색어 현지화 — 한국어 키워드로 그 나라 채널을 찾으려면 그 나라 말로 검색해야 함 ──
+# 자주 쓰는 음악·플레이리스트 용어는 즉시 변환(키 없이), 나머지는 LLM 번역(캐시).
+_QUERY_DICT = {
+    "플레이리스트": {"ja": "プレイリスト", "en": "playlist", "zh": "播放清單", "es": "lista de reproducción", "de": "Playlist", "fr": "playlist", "pt": "playlist", "hi": "प्लेलिस्ट"},
+    "재즈": {"ja": "ジャズ", "en": "jazz", "zh": "爵士", "es": "jazz", "de": "Jazz", "fr": "jazz", "pt": "jazz", "hi": "जैज़"},
+    "로파이": {"ja": "lo-fi", "en": "lofi", "zh": "lofi", "es": "lofi", "de": "lofi", "fr": "lofi", "pt": "lofi", "hi": "lofi"},
+    "카페 음악": {"ja": "カフェミュージック", "en": "cafe music", "zh": "咖啡廳音樂", "es": "música de café", "de": "Cafe Musik", "fr": "musique café", "pt": "música de café", "hi": "कैफे म्यूजिक"},
+    "휴식": {"ja": "リラックス", "en": "relaxing music", "zh": "放鬆音樂", "es": "música relajante", "de": "Entspannungsmusik", "fr": "musique relaxante", "pt": "música relaxante", "hi": "आराम संगीत"},
+    "수면": {"ja": "睡眠音楽", "en": "sleep music", "zh": "睡眠音樂", "es": "música para dormir", "de": "Einschlafmusik", "fr": "musique pour dormir", "pt": "música para dormir", "hi": "नींद संगीत"},
+    "공부": {"ja": "勉強用BGM", "en": "study music", "zh": "讀書音樂", "es": "música para estudiar", "de": "Lernmusik", "fr": "musique pour étudier", "pt": "música para estudar", "hi": "पढ़ाई संगीत"},
+    "집중": {"ja": "集中BGM", "en": "focus music", "zh": "專注音樂", "es": "música de concentración", "de": "Konzentrationsmusik", "fr": "musique concentration", "pt": "música de foco", "hi": "फोकस संगीत"},
+    "감성": {"ja": "エモい", "en": "aesthetic", "zh": "感性", "es": "estético", "de": "ästhetisch", "fr": "esthétique", "pt": "estético", "hi": "सौंदर्य"},
+    "발라드": {"ja": "バラード", "en": "ballad", "zh": "抒情歌", "es": "balada", "de": "Ballade", "fr": "ballade", "pt": "balada", "hi": "बैलेड"},
+    "시티팝": {"ja": "シティポップ", "en": "city pop", "zh": "city pop", "es": "city pop", "de": "City Pop", "fr": "city pop", "pt": "city pop", "hi": "city pop"},
+}
+_QCACHE: dict = {}
+
+
+def _llm_translate(text: str, langname: str) -> str:
+    prompt = (f"Translate this YouTube search keyword into {langname}. "
+              f"Return ONLY the translated search term — no quotes, no romanization, "
+              f"no explanation.\nKeyword: {text}")
+    try:                                   # Gemini 우선
+        import translator as _tr
+        r = _tr._gemini(prompt, temperature=0.0)
+        if r:
+            return r
+    except Exception:
+        pass
+    key = os.environ.get("OPENAI_API_KEY", "").strip()   # OpenAI(GPT) 폴백
+    if key:
+        try:
+            from openai import OpenAI
+            c = OpenAI(api_key=key)
+            r = c.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}], temperature=0)
+            return (r.choices[0].message.content or "").strip()
+        except Exception:
+            pass
+    return ""
+
+
+def translate_query(q: str, lang: str) -> str:
+    """검색어를 대상 국가 언어로 변환. 한국어/전체는 그대로."""
+    q = (q or "").strip()
+    if not q or not lang or lang == "ko":
+        return q
+    if q in _QUERY_DICT and lang in _QUERY_DICT[q]:
+        return _QUERY_DICT[q][lang]
+    key = (q, lang)
+    if key in _QCACHE:
+        return _QCACHE[key]
+    name = LANG_NAME.get(lang)
+    out = q
+    if name:
+        t = _llm_translate(q, name)
+        if t:
+            out = t.splitlines()[0].strip().strip('"').strip("'")[:100] or q
+    _QCACHE[key] = out
+    return out
 
 
 def has_key() -> bool:
@@ -83,13 +150,17 @@ def search_videos(
     max_results: int = 50,
     period_days: int = 0,          # 0 = 전체
     lang: str = "",
+    translate: bool = True,        # 대상 언어로 검색어 자동 번역
 ) -> list[dict]:
     if not has_key():
         return _demo_cards(query, video_type, max_results)
 
+    # 🌐 그 나라 채널을 찾으려면 검색어도 그 나라 말로
+    q_used = translate_query(query, lang) if (translate and lang) else query
+
     yt = _yt()
     params = dict(
-        part="id", q=query, type="video", order=order,
+        part="id", q=q_used, type="video", order=order,
         maxResults=min(50, max_results), safeSearch="none",
     )
     if period_days:

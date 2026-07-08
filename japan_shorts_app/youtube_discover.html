@@ -160,9 +160,11 @@
       grid.innerHTML = `<div class="loading-row"><span class="spinner"></span>${queries.length}개 검색어로 유튜브를 뒤지는 중…</div>`;
       document.getElementById("resultCount").textContent = "발굴 중…";
       try {
+        const langs = [...document.querySelectorAll("#fLangs .selected")].map(c => c.dataset.v);
+        const lang = langs.length === 1 ? langs[0] : "";   // 한 나라만 고르면 그 지역으로 필터
         const data = await api("/api/discover/search", {
           method: "POST",
-          body: JSON.stringify({ queries, video_type: selectedValue(document.getElementById("fType2")) || "all", max_per_query: 15 }),
+          body: JSON.stringify({ queries, video_type: selectedValue(document.getElementById("fType2")) || "all", max_per_query: 15, lang }),
         });
         RESULTS = data.cards;
         showDemoBanner(data.demo);

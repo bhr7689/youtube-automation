@@ -77,13 +77,17 @@ class DiscoverSearchReq(BaseModel):
     queries: list[str]
     video_type: str = "all"
     max_per_query: int = 15
+    lang: str = ""              # 지역 필터(regionCode/relevanceLanguage) 적용용
 
 
 @app.post("/api/discover/search")
 def discover_search(req: DiscoverSearchReq):
     merged: dict[str, dict] = {}
+    # 발굴 쿼리는 taxonomy 가 이미 해당 언어로 만들어줌 → 재번역 없이 지역만 적용
     for q in req.queries[:12]:
-        for card in yc.search_videos(q, video_type=req.video_type, max_results=req.max_per_query):
+        for card in yc.search_videos(q, video_type=req.video_type,
+                                     max_results=req.max_per_query,
+                                     lang=req.lang, translate=False):
             merged.setdefault(card["video_id"], card)
     cards = sorted(merged.values(), key=lambda c: -(c.get("multiplier") or 0))
     return {"cards": _annotate(cards), "demo": not yc.has_key()}
@@ -103,7 +107,9 @@ def search(
         q, video_type=video_type, order=order,
         max_results=max_results, period_days=period_days, lang=lang,
     )
-    return {"cards": _annotate(cards), "demo": not yc.has_key()}
+    used = yc.translate_query(q, lang)      # 실제 검색에 쓰인 현지어(캐시)
+    return {"cards": _annotate(cards), "demo": not yc.has_key(),
+            "query_used": used, "translated": used if used.strip() != q.strip() else ""}
 
 
 # ── 🌸 번역봇 (도구 ②) ─────────────────────────────────
