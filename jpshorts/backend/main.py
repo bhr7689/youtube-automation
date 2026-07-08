@@ -431,7 +431,30 @@ def concept_analyze(req: ConceptReq):
                            images=req.images, titles_text=req.titles)
     if r.get("error"):
         raise HTTPException(400, r["error"])
+    if r.get("result"):        # 📂 성공 리포트는 서버에 저장(모바일↔데스크톱 이어작업)
+        try:
+            r["saved_id"] = cm.save_report(r, urls)
+        except Exception:
+            pass
     return r
+
+
+@app.get("/api/concept/reports")
+def concept_reports():
+    return {"reports": cm.list_reports()}
+
+
+@app.get("/api/concept/reports/{rid}")
+def concept_report_get(rid: str):
+    rec = cm.load_report(rid)
+    if not rec:
+        raise HTTPException(404, "저장된 리포트를 찾을 수 없어요")
+    return rec["response"]
+
+
+@app.delete("/api/concept/reports/{rid}")
+def concept_report_delete(rid: str):
+    return {"ok": cm.delete_report(rid)}
 
 
 @app.get("/api/concept/status")

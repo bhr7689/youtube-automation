@@ -19,6 +19,11 @@
     .cm-chip:hover{border-color:#c084fc;}
     .cm-chip.on{background:#f3e8ff;border-color:#c084fc;color:#7e22ce;}
     .spin{color:#a855f7;padding:14px 0;}
+    .rep-item{display:flex;align-items:center;gap:8px;padding:9px 4px;border-bottom:1px dashed #f0ecf7;}
+    .rep-item:last-child{border-bottom:none;}
+    .rep-open{flex:0 0 auto;font-size:12px;font-weight:700;padding:6px 14px;border-radius:8px;background:#7c3aed;color:#fff;border:none;cursor:pointer;}
+    .rep-open:hover{background:#6d28d9;}
+    .rep-del{flex:0 0 auto;font-size:13px;padding:6px 9px;border-radius:8px;background:#fff;border:1px solid #f0d9d9;color:#dc2626;cursor:pointer;}
 
     /* 썸네일 캡처 업로드 */
     .drop-zone{border:2px dashed #d8c9f2;border-radius:12px;padding:18px 14px;text-align:center;cursor:pointer;background:#faf7ff;transition:.15s;}
@@ -264,6 +269,11 @@
         <textarea class="cm-input" id="notes" placeholder="예: 새 채널은 겨울 감성으로 가고 싶어요. 커피잔 대신 책을 시그니처로."></textarea>
 
         <button class="btn-primary" id="goBtn" style="font-size:15px;padding:12px 28px;margin-top:6px;">🎨 컨셉 리포트 생성</button>
+      </div>
+
+      <div class="cm-panel" id="historyPanel" style="display:none;">
+        <div class="cm-h">📂 최근 리포트 <span style="font-weight:400;color:#8a80a5;font-size:12px;">— 폰에서 만든 것도 여기서 열려요 (서버에 저장됨). 밖에서 생성 → 집에서 검수·이미지 생성.</span></div>
+        <div id="reportList"></div>
       </div>
 
       <div id="resultBox"></div>
@@ -717,6 +727,29 @@
       return html;
     }
 
+    // 응답(생성/저장리포트 공용) → 화면 렌더
+    function showResponse(r) {
+      const box = document.getElementById("resultBox");
+      const meta = { channels: r.channels, engine: r.engine, thumbnails: r.thumbnails || [], vision: r.vision || "", thumb_source: r.thumb_source || "" };
+      let result = r.result;
+      if (!result && r.markdown) {
+        try {
+          const t = r.markdown.trim().replace(/^```[a-z]*\s*/i, "").replace(/\s*```$/, "");
+          const s = t.indexOf("{"), e = t.lastIndexOf("}");
+          if (s !== -1 && e > s) { const o = JSON.parse(t.slice(s, e + 1)); if (o && typeof o === "object") result = o; }
+        } catch (_) {}
+      }
+      if (result) {
+        renderReport(result, meta);
+      } else {
+        const chips = (r.channels || []).map(c => `<span class="rp-chip">${esc(c.title)} · 구독 ${fmtCompact(c.subscribers)}${c.demo ? " · 데모" : ""}</span>`).join("");
+        box.innerHTML = `<div class="rp-sec"><div class="rp-sec-h">📋 컨셉 리포트 <span class="rp-chip">엔진: ${esc(r.engine)}</span>${chips}
+          <button class="rp-copy-all" onclick="navigator.clipboard.writeText(${JSON.stringify(r.markdown || "")}).then(()=>toast('📋 복사'))">📋 전체 복사</button></div>
+          <div class="report">${md(r.markdown || "결과가 비어 있어요.")}</div></div>`;
+        if (r.engine === "demo") showDemoBanner(true);
+      }
+    }
+
     document.getElementById("goBtn").onclick = async () => {
       const chans = ["ch1", "ch2", "ch3"].map(id => document.getElementById(id).value.trim()).filter(Boolean);
       const popTitles = document.getElementById("popTitles").value;
@@ -732,36 +765,53 @@
           channels: chans, song_type: state.song_type, num_songs: state.num_songs,
           extra_notes: document.getElementById("notes").value,
           images: UPLOADS, titles: popTitles }) });
-        const meta = { channels: r.channels, engine: r.engine, thumbnails: r.thumbnails || [], vision: r.vision || "", thumb_source: r.thumb_source || "" };
-        let result = r.result;
-        // 안전망: 백엔드가 파싱 못 했지만 사실 JSON이면 여기서 파싱해 카드로 렌더
-        if (!result && r.markdown) {
-          try {
-            const t = r.markdown.trim().replace(/^```[a-z]*\s*/i, "").replace(/\s*```$/, "");
-            const s = t.indexOf("{"), e = t.lastIndexOf("}");
-            if (s !== -1 && e > s) { const o = JSON.parse(t.slice(s, e + 1)); if (o && typeof o === "object") result = o; }
-          } catch (_) {}
-        }
-        if (result) {
-          renderReport(result, meta);
-        } else {
-          // JSON 파싱 실패 → 마크다운 폴백
-          const chips = (r.channels||[]).map(c => `<span class="rp-chip">${esc(c.title)} · 구독 ${fmtCompact(c.subscribers)}${c.demo?" · 데모":""}</span>`).join("");
-          box.innerHTML = `<div class="rp-sec"><div class="rp-sec-h">📋 컨셉 리포트 <span class="rp-chip">엔진: ${esc(r.engine)}</span>${chips}
-            <button class="rp-copy-all" onclick="navigator.clipboard.writeText(${JSON.stringify(r.markdown||"")}).then(()=>toast('📋 복사'))">📋 전체 복사</button></div>
-            <div class="report">${md(r.markdown || "결과가 비어 있어요.")}</div></div>`;
-          if (r.engine === "demo") showDemoBanner(true);
-        }
+        showResponse(r);
+        loadReports();            // 방금 저장된 리포트를 목록에 반영
       } catch (e) {
         box.innerHTML = `<div class="cm-panel" style="color:#b91c1c;">오류: ${esc(e.message)}</div>`;
       }
     };
+
+    // 📂 최근 리포트 (서버 저장 — 폰에서 만든 것도 집 데스크톱에서 열림)
+    function fmtWhen(ts) { if (!ts) return ""; const d = new Date(ts * 1000); const p = n => String(n).padStart(2, "0");
+      return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+    async function loadReports() {
+      const panel = document.getElementById("historyPanel");
+      try {
+        const r = await api("/api/concept/reports");
+        const list = r.reports || [];
+        if (!list.length) { panel.style.display = "none"; return; }
+        document.getElementById("reportList").innerHTML = list.map(x => {
+          const chans = (x.channels || []).map(c => esc(c.title)).join(", ") || "캡처/제목";
+          const src = x.thumb_source === "upload" ? "📎 내 캡처" : x.thumb_source === "youtube" ? "🔗 URL수집" : "";
+          return `<div class="rep-item">
+            <div style="min-width:0;flex:1;cursor:pointer;" onclick="openReport('${x.id}')">
+              <div style="font-weight:700;font-size:13.5px;color:#1e1b2e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(x.title || "컨셉 리포트")}</div>
+              <div style="font-size:11.5px;color:#8a80a5;">${chans} · ${esc(x.engine)} ${src} · ${fmtWhen(x.created)}</div></div>
+            <button class="rep-open" onclick="openReport('${x.id}')">열기</button>
+            <button class="rep-del" onclick="delReport('${x.id}',event)" title="삭제">🗑</button></div>`;
+        }).join("");
+        panel.style.display = "block";
+      } catch (e) { panel.style.display = "none"; }
+    }
+    async function openReport(id) {
+      const box = document.getElementById("resultBox");
+      box.innerHTML = '<div class="cm-panel spin">📂 저장된 리포트 여는 중…</div>';
+      try { showResponse(await api("/api/concept/reports/" + id)); box.scrollIntoView({ behavior: "smooth", block: "start" }); }
+      catch (e) { box.innerHTML = `<div class="cm-panel" style="color:#b91c1c;">오류: ${esc(e.message)}</div>`; }
+    }
+    async function delReport(id, ev) {
+      ev.stopPropagation();
+      if (!confirm("이 리포트를 삭제할까요?")) return;
+      try { await api("/api/concept/reports/" + id, { method: "DELETE" }); loadReports(); } catch (e) {}
+    }
 
     (async () => {
       try {
         const s = await api("/api/concept/status");
         if (!s.gemini && !s.openai) showDemoBanner(true);
       } catch (e) {}
+      loadReports();
     })();
   </script>
 </body>
