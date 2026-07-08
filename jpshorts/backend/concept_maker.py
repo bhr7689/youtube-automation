@@ -21,7 +21,9 @@ import translator
 import youtube_client as yc
 
 MAX_VIDEOS = 30
-THUMBS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "concept_thumbs")
+_DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+THUMBS_DIR = os.path.join(_DATA, "concept_thumbs")
+REPORTS_DIR = os.path.join(_DATA, "concept_reports")   # 📂 리포트 영구 저장(모바일↔데스크톱)
 
 # ── 지침 v1.4 (시스템 프롬프트로 내장 — 핵심 전문 유지) ──
 SPEC = """너는 "플리컨셉제조기"다. 유튜브 플레이리스트 채널의 제목 리스트·조회수·업로드
@@ -707,6 +709,73 @@ def generate_report(channel_urls: list[str], song_type: str = "auto",
                      for c in channels],
         "engine": engine,
     }
+
+
+# ── 📂 리포트 영구 저장 (모바일에서 만들고 집 데스크톱에서 검수) ──
+
+def save_report(resp: dict, channel_urls: list[str]) -> str:
+    os.makedirs(REPORTS_DIR, exist_ok=True)
+    rid = f"cr_{int(time.time() * 1000)}"
+    res = resp.get("result") or {}
+    title = ""
+    if res.get("concepts"):
+        title = (res["concepts"][0] or {}).get("name", "")
+    if not title and resp.get("channels"):
+        title = resp["channels"][0].get("title", "")
+    rec = {
+        "id": rid, "created": int(time.time()), "title": title or "컨셉 리포트",
+        "channels": resp.get("channels", []), "engine": resp.get("engine", ""),
+        "thumb_source": resp.get("thumb_source", ""), "inputs": channel_urls,
+        "response": resp,
+    }
+    tmp = os.path.join(REPORTS_DIR, rid + ".json.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(rec, f, ensure_ascii=False)
+    os.replace(tmp, os.path.join(REPORTS_DIR, rid + ".json"))
+    return rid
+
+
+def list_reports(limit: int = 40) -> list[dict]:
+    if not os.path.isdir(REPORTS_DIR):
+        return []
+    out = []
+    for fn in os.listdir(REPORTS_DIR):
+        if not fn.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(REPORTS_DIR, fn), encoding="utf-8") as f:
+                r = json.load(f)
+            out.append({"id": r["id"], "created": r.get("created", 0),
+                        "title": r.get("title", ""), "channels": r.get("channels", []),
+                        "engine": r.get("engine", ""),
+                        "thumb_source": r.get("thumb_source", "")})
+        except Exception:
+            continue
+    out.sort(key=lambda x: x.get("created", 0), reverse=True)
+    return out[:limit]
+
+
+def load_report(rid: str) -> dict | None:
+    if any(c in rid for c in ("/", "\\", "..")):
+        return None
+    p = os.path.join(REPORTS_DIR, rid + ".json")
+    if not os.path.isfile(p):
+        return None
+    try:
+        with open(p, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def delete_report(rid: str) -> bool:
+    if any(c in rid for c in ("/", "\\", "..")):
+        return False
+    p = os.path.join(REPORTS_DIR, rid + ".json")
+    if os.path.isfile(p):
+        os.remove(p)
+        return True
+    return False
 
 
 def _demo_result(ch: dict) -> dict:
