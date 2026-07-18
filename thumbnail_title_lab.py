@@ -25,6 +25,7 @@ except Exception:                       # noqa: BLE001
 import tier_lab as T
 import genre_store as G
 import thumb_overlay as OV
+import link_classifier as LC
 
 st.set_page_config(page_title="🎬 썸네일·제목 연구소", page_icon="🎬", layout="wide")
 
@@ -114,7 +115,7 @@ with st.sidebar:
     st.caption("발행 6개월 이내 · 구간 1천~30만+")
 
 
-tabs = st.tabs(["🏠 대시보드", "🔬 구간 분석", "🎯 일치성", "✨ 생성",
+tabs = st.tabs(["🏠 대시보드", "🗂 자동분류", "🔬 구간 분석", "🎯 일치성", "✨ 생성",
                 "🧺 레퍼런스 바구니", "🔔 감시/알림", "⚙️ 설정"])
 
 # ═══════════════════════════════════════════════════════════════
@@ -136,9 +137,66 @@ with tabs[0]:
                 G.set_current(name); st.rerun()
 
 # ═══════════════════════════════════════════════════════════════
-# 🔬 구간 분석
+# 🗂 자동분류
 # ═══════════════════════════════════════════════════════════════
 with tabs[1]:
+    st.subheader("🗂 미분류 대량 링크 자동분류")
+    st.caption("링크 뭉치 붙여넣기 → 유튜브에서 제목 읽어 장르통으로 자동 정렬 → "
+               "**드롭다운으로 직접 옮긴 뒤** 각 장르에 추가.")
+    cls_txt = st.text_area("링크 붙여넣기 (여러 줄, 섞여 있어도 OK)", height=130, key="cls_input",
+                           placeholder="https://youtu.be/xxxx\nhttps://youtu.be/yyyy ...")
+    cc1, cc2, cc3 = st.columns([2, 2, 3])
+    use_llm = cc1.checkbox("🤖 GPT 정밀분류", value=True, help="OpenAI/Gemini 키 있을 때 더 정확. 없으면 키워드 분류.")
+    run_paste = cc2.button("🔎 수집 + 자동분류", type="primary")
+    run_inv = cc3.button("📥 인벤토리 파일에서 불러와 분류")
+
+    urls = None
+    if run_paste:
+        urls = LC.split_links(cls_txt)
+    elif run_inv:
+        urls = LC.load_inventory_urls()
+        if urls:
+            st.info(f"인벤토리에서 영상 링크 {len(urls)}개 불러옴.")
+    if urls is not None:
+        if not urls:
+            st.warning("링크를 찾지 못했어요. (붙여넣기 또는 인벤토리 확인)")
+        else:
+            with st.spinner(f"{len(urls)}개 수집·분류 중… (유튜브 제목 읽는 중)"):
+                st.session_state["cls_res"] = LC.classify(urls, state["projects"], use_llm=use_llm)
+
+    res = st.session_state.get("cls_res")
+    if res:
+        names = list(state["projects"].keys()) + [LC.UNSORTED]
+        n_sorted = sum(1 for m in res if m.get("genre") != LC.UNSORTED)
+        st.success(f"분류 결과 {len(res)}개 · 장르 배정 {n_sorted}개 · 미분류 {len(res)-n_sorted}개")
+        if not any(m.get("title") for m in res):
+            st.warning("⚠️ 제목을 못 읽었어요. YouTube 키가 없거나(설정 탭) 링크가 비공개일 수 있어요.")
+        # 장르별로 묶어 표시(같은 장르끼리 모임)
+        order = {g: i for i, g in enumerate(names)}
+        for idx, m in enumerate(sorted(range(len(res)), key=lambda k: order.get(res[k]["genre"], 99))):
+            mm = res[m]
+            col = st.columns([1, 4, 3])
+            if mm.get("thumb"):
+                col[0].image(mm["thumb"], use_container_width=True)
+            tag = "🤖" if mm.get("by") == "gpt" else "🔤"
+            col[1].caption(f"{tag} " + (mm.get("title") or mm["url"])[:70])
+            sel = col[2].selectbox("장르", names,
+                                   index=names.index(mm["genre"]) if mm["genre"] in names else len(names) - 1,
+                                   key=f"cls_sel_{m}", label_visibility="collapsed")
+            res[m]["genre"] = sel
+        if st.button("✅ 확정 — 각 장르에 추가", type="primary"):
+            added = 0
+            for mm in res:
+                if mm["genre"] != LC.UNSORTED and mm["genre"] in state["projects"]:
+                    G.add_benchmarks(mm["genre"], [mm["url"]]); added += 1
+            st.session_state.pop("cls_res", None)
+            st.success(f"{added}개를 각 장르에 추가했습니다! 구간 분석 탭에서 확인하세요.")
+            st.rerun()
+
+# ═══════════════════════════════════════════════════════════════
+# 🔬 구간 분석
+# ═══════════════════════════════════════════════════════════════
+with tabs[2]:
     st.subheader(f"🔬 구간 분석 — {cur}")
     st.caption("벤치마킹 채널의 6개월 이내 영상 → 구간별(1천~30만+) 승리 공식.")
 
@@ -204,7 +262,7 @@ with tabs[1]:
 # ═══════════════════════════════════════════════════════════════
 # 🎯 일치성 검사
 # ═══════════════════════════════════════════════════════════════
-with tabs[2]:
+with tabs[3]:
     st.subheader("🎯 썸네일 ↔ 제목 일치성 검사")
     st.caption("감정·주제는 맞고, 문구는 새 정보를 줄 때 최고점. 실전에서 '불일치=노출저하'.")
     title = st.text_input("제목", placeholder="비 오는 새벽, 창가에서 듣는 재즈 ☔")
@@ -223,7 +281,7 @@ with tabs[2]:
 # ═══════════════════════════════════════════════════════════════
 # ✨ 생성
 # ═══════════════════════════════════════════════════════════════
-with tabs[3]:
+with tabs[4]:
     st.subheader(f"✨ 생성 — {cur}")
     st.caption("장르 공식 + 🧺 바구니 무드 + 내 콘텐츠 → 썸네일·제목 세트. 씬은 이미지, 글자는 코드로.")
     content = st.text_input("이번 영상 소재", placeholder="파리 카페의 비 오는 아침, 스텔라장 스타일 피아노")
@@ -262,7 +320,7 @@ with tabs[3]:
 # ═══════════════════════════════════════════════════════════════
 # 🧺 레퍼런스 바구니
 # ═══════════════════════════════════════════════════════════════
-with tabs[4]:
+with tabs[5]:
     st.subheader(f"🧺 레퍼런스 바구니 — {cur}")
     st.caption("체크해 담은 썸네일(이미지+제목). 생성 시 무드·제목 공식으로 자동 반영.")
     up = st.file_uploader("내 캡처 이미지 추가(바구니에 합류)", type=["png", "jpg", "jpeg", "webp"],
@@ -290,7 +348,7 @@ with tabs[4]:
 # ═══════════════════════════════════════════════════════════════
 # 🔔 감시/알림
 # ═══════════════════════════════════════════════════════════════
-with tabs[5]:
+with tabs[6]:
     st.subheader("🔔 감시 / 카톡 알림")
     st.caption("🔖 북마크 + 🔔 알림 ON 채널만 새 영상 감지 → 자동 분석 → 카톡(나에게 보내기).")
     wl = G.watch_list()
@@ -311,7 +369,7 @@ with tabs[5]:
 # ═══════════════════════════════════════════════════════════════
 # ⚙️ 설정
 # ═══════════════════════════════════════════════════════════════
-with tabs[6]:
+with tabs[7]:
     st.subheader("⚙️ 설정 — 연결 키")
     st.caption("이 PC의 .env 에 저장됩니다. .env 는 gitignore — 절대 업로드 안 됨.")
     yk = st.text_input("YOUTUBE_API_KEY", type="password")
