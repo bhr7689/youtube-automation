@@ -74,7 +74,8 @@ def load_inventory_urls(path: str = "ideas/benchmark_links_inventory.md",
 def fetch_meta(urls: list[str]) -> list[dict]:
     """URL 리스트 → [{url, title, channel, thumb, kind}]. 키 없으면 title 빈칸."""
     import youtube_client as yc
-    metas = [{"url": u, "title": "", "channel": "", "thumb": "", "kind": extract_ref(u)[0]} for u in urls]
+    metas = [{"url": u, "title": "", "channel": "", "desc": "", "tags": [], "thumb": "",
+              "kind": extract_ref(u)[0]} for u in urls]
     if not yc.has_key():
         return metas
     yt = yc._yt()
@@ -92,6 +93,8 @@ def fetch_meta(urls: list[str]) -> list[dict]:
                 if sn:
                     metas[i]["title"] = sn.get("title", "")
                     metas[i]["channel"] = sn.get("channelTitle", "")
+                    metas[i]["desc"] = (sn.get("description", "") or "")[:400]
+                    metas[i]["tags"] = sn.get("tags", []) or []
                     th = sn.get("thumbnails", {})
                     for q in ("high", "medium", "default"):
                         if th.get(q, {}).get("url"):
@@ -113,7 +116,8 @@ def fetch_meta(urls: list[str]) -> list[dict]:
                 if items:
                     sn = items[0]["snippet"]
                     metas[i]["channel"] = sn.get("title", "")
-                    metas[i]["title"] = sn.get("title", "") + " | " + sn.get("description", "")[:120]
+                    metas[i]["desc"] = (sn.get("description", "") or "")[:400]
+                    metas[i]["title"] = sn.get("title", "") + " | " + (sn.get("description", "") or "")[:120]
                     th = sn.get("thumbnails", {})
                     for q in ("high", "medium", "default"):
                         if th.get(q, {}).get("url"):
@@ -137,11 +141,13 @@ def _project_keywords(projects: dict) -> dict[str, list[str]]:
     for name, p in projects.items():
         kws = set()
         blob = (name + " " + (p.get("note") or "")).lower()
+        name_blob = name.lower()
         for tok in re.findall(r"[^\W\d_]{2,}", blob, re.UNICODE):
             if tok not in STOPWORDS and len(tok) >= 2:
                 kws.add(tok)
+        # 기본 어휘 확장은 '프로젝트 이름' 트리거로만 (메모의 곁가지 단어로 인한 오염 방지)
         for key, words in BASE_LEXICON.items():
-            if key in blob or any(w in blob for w in words[:3]):
+            if key in name_blob or any(w in name_blob for w in words[:3]):
                 kws.update(words)
         out[name] = [w for w in kws if w not in STOPWORDS]
     return out
@@ -150,7 +156,8 @@ def _project_keywords(projects: dict) -> dict[str, list[str]]:
 def classify_heuristic(metas: list[dict], projects: dict) -> list[dict]:
     kwmap = _project_keywords(projects)
     for m in metas:
-        text = (m.get("title", "") + " " + m.get("channel", "")).lower()
+        text = " ".join([m.get("title", ""), m.get("channel", ""),
+                         m.get("desc", ""), " ".join(m.get("tags", []))]).lower()
         best, score = UNSORTED, 0
         for name, kws in kwmap.items():
             s = sum(1 for w in kws if w and w in text)
@@ -177,9 +184,13 @@ def classify_llm(metas: list[dict], projects: dict) -> list[dict] | None:
     desc = "\n".join(f"- {n}: {projects[n].get('note','')[:60]}" for n in names)
     for k in range(0, len(labeled), 40):
         chunk = labeled[k:k + 40]
-        items = "\n".join(f"{j}. {m['title'][:80]} (채널:{m['channel'][:30]})"
-                          for j, m in enumerate(chunk))
-        prompt = f"""다음 유튜브 영상들을 아래 장르 중 하나로 분류해줘. 애매하면 "{UNSORTED}".
+        items = "\n".join(
+            f"{j}. {m['title'][:80]}"
+            f" | 태그:{','.join(m.get('tags', [])[:6])}"
+            f" | 설명:{(m.get('desc', '') or '')[:100]}"
+            f" (채널:{m['channel'][:25]})"
+            for j, m in enumerate(chunk))
+        prompt = f"""다음 유튜브 영상들을 제목·태그·설명글·채널명을 보고 아래 장르 중 하나로 분류해줘. 애매하면 "{UNSORTED}".
 장르:
 {desc}
 - {UNSORTED}: 위 어디에도 안 맞음

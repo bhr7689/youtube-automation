@@ -158,10 +158,12 @@ with tabs[1]:
                "**드롭다운으로 직접 옮긴 뒤** 각 장르에 추가.")
     cls_txt = st.text_area("링크 붙여넣기 (여러 줄, 섞여 있어도 OK)", height=130, key="cls_input",
                            placeholder="https://youtu.be/xxxx\nhttps://youtu.be/yyyy ...")
-    cc1, cc2, cc3 = st.columns([2, 2, 3])
-    use_llm = cc1.checkbox("🤖 GPT 정밀분류", value=True, help="OpenAI/Gemini 키 있을 때 더 정확. 없으면 키워드 분류.")
-    run_paste = cc2.button("🔎 수집 + 자동분류", type="primary")
-    run_inv = cc3.button("📥 인벤토리 파일에서 불러와 분류")
+    use_llm = st.checkbox("🤖 GPT 정밀분류", value=True, help="OpenAI/Gemini 키 있을 때 더 정확. 없으면 키워드 분류.")
+    cc1, cc2, cc3 = st.columns(3)
+    run_paste = cc1.button("🔎 붙여넣기 분류", type="primary")
+    run_inv = cc2.button("📥 인벤토리 링크 분류")
+    _uns_cnt = len(state["projects"].get(LC.UNSORTED, {}).get("benchmarks", []))
+    run_uns = cc3.button(f"📂 미분류함 다시 분류 ({_uns_cnt})", disabled=_uns_cnt == 0)
 
     urls = None
     if run_paste:
@@ -170,6 +172,10 @@ with tabs[1]:
         urls = LC.load_inventory_urls()
         if urls:
             st.info(f"인벤토리에서 영상 링크 {len(urls)}개 불러옴.")
+    elif run_uns:
+        urls = [b["url"] for b in state["projects"].get(LC.UNSORTED, {}).get("benchmarks", [])]
+        if urls:
+            st.info(f"미분류함 {len(urls)}개 다시 분류합니다.")
     if urls is not None:
         if not urls:
             st.warning("링크를 찾지 못했어요. (붙여넣기 또는 인벤토리 확인)")
@@ -197,13 +203,25 @@ with tabs[1]:
                                    index=names.index(mm["genre"]) if mm["genre"] in names else len(names) - 1,
                                    key=f"cls_sel_{m}", label_visibility="collapsed")
             res[m]["genre"] = sel
-        if st.button("✅ 확정 — 각 장르에 추가", type="primary"):
-            added = 0
+        if st.button("✅ 확정 — 분류는 각 장르로, 미분류는 미분류함에", type="primary"):
+            # 미분류함이 없으면 생성 (현재 선택 장르는 그대로)
+            stt = G.load_state()
+            if LC.UNSORTED not in stt["projects"]:
+                stt["projects"][LC.UNSORTED] = {
+                    "note": "자동분류가 장르를 못 정한 링크 모음 — 나중에 재분류.",
+                    "benchmarks": [], "basket": [], "identity": {}}
+                G.save_state(stt)
+            added = un = 0
             for mm in res:
-                if mm["genre"] != LC.UNSORTED and mm["genre"] in state["projects"]:
-                    G.add_benchmarks(mm["genre"], [mm["url"]]); added += 1
+                g = mm["genre"]
+                if g in state["projects"] and g != LC.UNSORTED:
+                    G.add_benchmarks(g, [mm["url"]]); added += 1
+                    G.remove_benchmark(LC.UNSORTED, mm["url"])   # 미분류함에서 이동
+                else:
+                    G.add_benchmarks(LC.UNSORTED, [mm["url"]]); un += 1
             st.session_state.pop("cls_res", None)
-            st.success(f"{added}개를 각 장르에 추가했습니다! 구간 분석 탭에서 확인하세요.")
+            st.success(f"장르 배정 {added}개 · 미분류함 {un}개 저장 완료! "
+                       "대시보드에 '미분류' 장르가 생겼어요 — 나중에 거기서 재분류하면 됩니다.")
             st.rerun()
 
 # ═══════════════════════════════════════════════════════════════
