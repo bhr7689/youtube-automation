@@ -11,6 +11,13 @@ from __future__ import annotations
 import os
 import sys
 
+# .env 를 환경변수로 로드 (concept_maker/youtube_client import 전에 해야 키가 잡힘)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+except Exception:                       # noqa: BLE001
+    pass
+
 import streamlit as st
 
 # concept_maker (Vision·이미지생성·수집) 재사용 — jpshorts/backend 경로 주입
@@ -76,6 +83,12 @@ def _save_keys(keys: dict):
     with open(path, "w", encoding="utf-8") as f:
         for k, v in lines.items():
             f.write(f"{k}={v}\n")
+    # 유튜브 모듈이 시작 시 캐시한 키를 즉시 갱신 (재시작 없이 반영)
+    try:
+        if CM and keys.get("YOUTUBE_API_KEY", "").strip():
+            CM.yc.YOUTUBE_API_KEY = keys["YOUTUBE_API_KEY"].strip()
+    except Exception:                   # noqa: BLE001
+        pass
 
 # ── 사이드바: 프로젝트(장르) 선택 ─────────────────────────────
 state = G.load_state()
