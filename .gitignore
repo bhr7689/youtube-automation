@@ -36,6 +36,7 @@ nation_prompts.json
 
 # 채널 브랜드 브리프 (사용자 편집 로컬 상태, 시드는 channel_brief.py 안)
 channel_brief.json
+thumb_title_lab.json
 japan_shorts_app/screenshots/
 
 # jpshorts 런타임 데이터

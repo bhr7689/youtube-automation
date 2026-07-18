@@ -422,4 +422,19 @@ python pipeline.py --init                              # 파이프라인 폴더 
   - 검증: mock(edit 파일2·무드지시·quality high·edit실패→gen 폴백·refs없음→gen) +
     Playwright E2E(캡처 업로드→세트 그리기 클릭→refs 2장 전송·무드배지). JS오류 0.
     **default(eqO5N) 머지·푸시 완료**. ⚠️ 실감성 확인은 사장님 PC에서.
+- [x] 🎬 **썸네일·제목 연구소 (장르별 채널 공장)**(2026-07-18, youtube-thumbnail-title-app-3ow1g5):
+  여러 장르 유튜브 채널을 새로 개설하기 위한 도구. **분석↔생성 2축** + 감시 + 레퍼런스 바구니.
+  - 신규 모듈: `tier_lab.py`(6개월 필터·9단계 구간 1천~30만+·제목 승리공식·일치성 채점, 순수로직),
+    `genre_store.py`(장르=채널 프로젝트, 벤치마크 링크+🔖북마크/🔔알림 토글, 🧺레퍼런스 바구니,
+    watch export), `thumb_overlay.py`(생성 씬 위에 한글 문구 PIL 렌더 — 글자 깨짐 방지·폰트 통일),
+    `thumbnail_title_lab.py`(Streamlit 7탭: 대시보드/구간분석/일치성/생성/바구니/감시/설정, 포트 8505).
+  - 감시: `channel_watcher.py`(RSS 쿼터0 새영상 감지+자동분석), `kakao_notify.py`(카톡 나에게보내기),
+    `get_kakao_token.py`(토큰 1회 발급), `.github/workflows/watch_channels.yml`(3시간 cron).
+    🔖북마크+🔔알림 ON 채널만 → watch_channels.json 커밋 → Actions 가 카톡 발송(PC 꺼져도).
+  - 생성: `concept_maker` 재사용(Vision·image-to-image 무드이식·최고화질). 씬(이미지)+글자(코드) 분리.
+  - 실행: `썸네일제목분석기실행.bat`(8505) + `썸네일분석기_바탕화면아이콘.bat`(바탕화면 🎬 아이콘, assets/thumb_lab.ico).
+  - 설계·링크 인벤토리: `ideas/benchmark_links_inventory.md`(사장님 벤치마킹 링크 8배치 누적 보존).
+  - 검증: 전 모듈 컴파일 + tier/consistency 로직 + genre_store CRUD + RSS 파서 + AppTest(예외0·7탭) +
+    Streamlit HTTP 200 + overlay 렌더. ⚠️ 실제 수집/이미지생성은 사장님 PC(키+YouTube 접속)에서 완전 작동.
+  - **다음(사용하며 보완)**: eqO5N 머지 → 실키 end-to-end → 미분류 대량링크 PC 자동분류 → 채널 정체성 확정.
 - (작업하며 갱신할 것)
