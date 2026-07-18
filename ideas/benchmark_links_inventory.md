@@ -308,6 +308,30 @@
 - https://youtu.be/QaJyPtUgUO4
 - https://youtu.be/GfuiuFgSUw0
 
+### 8차 배치 (일본 채널 벤치마킹 — 상세 관찰)
+1. https://www.youtube.com/@cozyhibi
+2. https://www.youtube.com/@wavehibi — 청량감 (6차 #21 중복)
+3. https://www.youtube.com/@Nonbiri-BGM — 피아노·기타
+4. https://www.youtube.com/@블루레인 (@%EB%B8%94%EB%A3%A8%EB%A0%88%EC%9D%B8) — **대한민국 채널인데 일본어 검색으로 노출됨**
+5. https://www.youtube.com/@Odiroom — 일본 채널, 4월 생성, **수익창출됨**
+6. https://www.youtube.com/@calmtime_jp — 한국인이 만든 일본 채널, 4월, 아직 수창 안됨, 핸들 끝에 jp
+7. https://www.youtube.com/@TWF66666 — 일본 감성, 참 특이
+8. https://www.youtube.com/watch?v=Cy91zTIAfEI — **일본 시니어 채널 추정**, 자막에 글 쓰고 시니어들이 댓글, 음악=느린 재즈
+9. https://www.youtube.com/@3freeBGM — 정말 음향효과 같다
+10. https://www.youtube.com/@mocomocoroomdiary — 일본 채널, 4월 생성, 수창 안됨, 구독자 부족
+11. https://www.youtube.com/@NAGISORASounds — 일본, 5/15 생성, 수창 안됨, 구독자 너무 적음, 일본 정통 음악가 피아노·클래식, **내가 좋아하는 스타일**, ⚠️ **썸네일 그림과 제목 불일치 → 노출 안되는 듯, 음악은 좋다** (일치성 앱의 핵심 사례!)
+12. https://www.youtube.com/@Otoakari1 — **제목 짓는 걸 벤치마킹하자** ⭐
+13. https://www.youtube.com/@-manzanillamusic- — 일본 채널, **그림체·제목 벤치마킹하자** ⭐
+14. https://www.youtube.com/@COZYSOUNDS-l2q — 제목에 "서양 플레이리스트", 일본 채널
+15. https://www.youtube.com/@GoodDayPop — 핸들에 'pop', 제목에 '서양', 일본 채널
+16. (16번 = @wavehibi 재중복)
+
+> 8차 인사이트:
+> - ⚠️ **썸네일↔제목 불일치 = 노출 저하**(11번) → 앱 "일치성 점수"의 실전 근거.
+> - 🇯🇵 **일본 신생 채널(4~5월 생성) 다수** 관찰 — 수익창출/구독자 상태까지 체크 → "지금 뜨는 신생 벤치마크" 추적 가치.
+> - ⭐ 제목·그림체 벤치마킹 지정: @Otoakari1(제목) · @-manzanillamusic-(그림체+제목).
+> - 🌏 한국 채널이 일본어 검색으로 노출(4번), 한국인의 일본 타깃 채널(6번) → **일본어 타깃 전략** 반복 신호.
+
 > 6차 관찰 요약(반복 신호):
 > - 🗼 **파리/샹송/프렌치팝** 계열이 가장 강함 (스텔라장·라따뚜이·에펠탑·Pink Martini·Sarah Kang·여름 드라이브 샹송) → **내 채널 주력 후보**
 > - ⭐ **"내 채널과 결이 맞다"** 표시: @Jayurhy·@oaplaylist·@onto_japan·@OOOffi·@Jackscompany·11번(스텔라장) → 채널 정체성 시드
