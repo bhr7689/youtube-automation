@@ -137,5 +137,96 @@
 - https://youtu.be/gidQv3LmwKE  — ☀️ 초여름
 - https://youtu.be/WaefwC8kyRg  — ☀️ 여름
 
+### 6차 배치 (상세 코멘트 — 사장님 관찰. 장르 공식 근거로 최우선 활용)
+1. https://www.youtube.com/watch?v=8GD_B0h1BLg — [Playlist] 커피 마시러 왔다가 자리 못 뜨는 노래 ☕ | Chill R&B / **여자 리듬 좋다**
+2. https://www.youtube.com/watch?v=laRCjrj2wmM — [playlist] 숲속 작은 카페, 아무 생각 없이 쉬어가는 시간 | JazzVintage92 · Cozy Notes / **여자 목소리 느린 템포**
+3. https://www.youtube.com/watch?v=7-rL_MGWctQ — Chill guitar｜새벽 두 시, 너만 아는 시간 − Relaxing Lo-fi / **클래식 리라 같기도, 느린 템포 기타 주멜로디**
+4. https://www.youtube.com/watch?v=_RS9ohsqliw — 疲れて何もしたくない夜に…【洋楽】 / **남자 목소리 느린 템포 조회수 대박** 🔥
+   - https://www.youtube.com/watch?v=1zhM4mVqXyE — 最高の一日の始まり…【洋楽】 / 같은 채널, 남자 목소리 리듬·테크닉 은근 매력
+5. https://www.youtube.com/watch?v=ZEfhDiPkZ-o — 도시가 깨어나기 전, 파리 카페에서 맞이하는 아침 | Slow Jazz / **여자 목소리 경쾌한 재즈풍 피아노** 🗼
+6. https://www.youtube.com/@UnwindLofiRoom — 일본인 채널, 기타 로파이, **설명글이 특히 좋다**
+7. https://www.youtube.com/watch?v=QhX2-0E84xw — [playlist] 책과 커피 사이로 부드럽게 흐르는 재즈 / 남자 템포 느리다
+8. https://www.youtube.com/@Jayurhy — 연인들의 풋풋함, **내 채널과 분위기 어울릴 듯** ⭐
+9. https://www.youtube.com/watch?v=WaefwC8kyRg — [playlist] 여름이었고, 우리는 파리에 있었지 with 파라다이스시티 / 노래는 별로, **제목·영상이 포인트** 🗼☀️ (5차와 중복)
+10. https://www.youtube.com/@Mysig.Sounds — 일본인 채널 (재즈카페 통, 중복)
+11. https://www.youtube.com/watch?v=n5O8q5U9ZJ8 — **에펠탑+신디피아노 손 클로즈업 좋다, 노래=스텔라장, 라따뚜이 스타일 좋다, 템포 조금 느리게** 🗼⭐
+12. https://www.youtube.com/watch?v=ih5DKY56gM0 — 재즈 좋다, 남자 목소리·반주도
+13. https://www.youtube.com/@oaplaylist — 낭만적인 파리의 아침 | Sarah Kang, Stella Jang, Pink Martini, Luca Minor, Anthony Lazaro | **프렌치팝** 🗼⭐
+14. https://www.youtube.com/@onto_japan — 첫번째 제목·이미지 레퍼런스 채널 ⭐
+15. https://www.youtube.com/@OOOffi — 도시 배경, **제목도 나랑 결이 비슷** ⭐
+16. (URL 미기재) 夏のシャンソン… / **여름의 여유롭고 스윗한 드라이브 샹송 플레이리스트** 🗼☀️
+17. https://www.youtube.com/@EMMAJAZZRADIO — 템포 적당, 여자 보컬
+    - https://www.youtube.com/watch?v=Mdfng79O6vE — 파도 소리 넣음, 베이스가 좀더 리드미컬했으면
+18. https://www.youtube.com/@JazzRecording — **제목·썸네일 이미지 일치, 파리 나옴, 빈티지 재즈** 🗼
+19. https://www.youtube.com/@Jackscompany — **대만 채널, 카페 분위기 레퍼런스** ⭐
+20. https://www.youtube.com/watch?v=sVDE5E1TXD0 — 재즈 여자 목소리 살짝 무거운 듯 듣기 좋다, 박자 살짝 아쉬움
+21. https://www.youtube.com/@wavehibi — 음악 리듬 좋다
+22. https://www.youtube.com/@BGMstudio_Tokyo — 전형적 일본 채널, **여자 그림 만화**
+23. https://www.youtube.com/@LuckyCloverRadio — 22번과 비슷
+24. https://www.youtube.com/@GoodlifeGroove — 일본 채널, 5월에 만듦(신생)
+25. https://www.youtube.com/@TokyosongsMusic — 일본
+26. https://youtu.be/wlEIQVYyn3o
+27. https://youtu.be/h84x1mhg5C4
+28. https://youtu.be/jIcAmWCtbmY — 일본풍
+29. https://youtu.be/ywtY6ST_ypU
+30. https://youtu.be/i8W-LdXKT6s — **나이트 무드, 조회수 미침** 🔥
+31. https://youtu.be/hvfOJIss3ho
+32. https://youtu.be/mWaHmKOchs0 — 레게
+33. https://youtu.be/jkNP4lu-VoE — 심야의 딥베이스 재즈, 일본
+34. https://youtu.be/qZvQT1LJvlg — 일본판 조선힙합
+35. https://youtu.be/TMeeP_LBQUY — 일본
+36. https://youtu.be/V8IIc7mrOCw — 잘생겼다, 카메라 비디오
+37. https://youtu.be/MrFHHpRTpBI — 일본 왕자, 애니한 채널
+38. https://youtu.be/kqOLhq6U4J4 — **2주 전 428만 미쳤다** 🔥🔥
+39. https://youtu.be/YdjGqVLkJWE
+40. https://youtu.be/pWuFhj5H0gc
+41. https://youtu.be/hBCefXKUD1c
+42. https://youtu.be/iBSYd1NKfUI — 감성 좋다, 영화 같다
+43. https://youtu.be/Ga8YU1fjspo — 일본 스타일
+44. https://youtu.be/lPC7FEhkLFc — 인스타 감성, **제목들을 잘 봐야겠다**
+45. https://youtu.be/UGaYkMthUGo — 청량 하이틴
+46. https://youtu.be/zAtTl356oFY
+47. https://youtu.be/fI7rRLKScuQ — 애니한 감성
+48. https://youtu.be/ZJ6KTok41GU
+49. https://youtu.be/qN5M41xK-AI
+50. https://youtu.be/GoZyyoDjmIA
+51. https://youtu.be/pCBh3_Ii-L0 — 애니한 스타일
+52. https://youtu.be/HUVqXAp8FZg — 고대 아라비아 음악
+53. https://youtu.be/ihELFBtuVIA — **그림 예쁘다, 공주 스타일 접목해도 좋을 듯**
+54. https://youtu.be/F7N6zC2vwIw — 일본 취향 특이
+55. https://youtu.be/5G8pi9spFC4 — 일본 젠(zen)
+56. https://youtu.be/rIcX8C3c5Dk — 바이올린 힙합, 일본
+57. https://youtu.be/lpTSLdTVEh4 — 힙합 조선힙합 스타일 일본판
+58. https://youtu.be/ZM9eJJWH1X0 — 애니한 스타일
+59. https://youtu.be/oCA8DkQHC40 — 스터디 음악, 특이
+60. https://youtu.be/2P7HOmKGHaU — 중국과 인도
+61. https://youtu.be/IUARG6yQKvE — **7개월 전 178만** 🔥
+62. https://youtu.be/fKk6Ox0r4zg — **왈츠, 148만** 🔥
+63. https://youtu.be/t01_UPHuP60 — 남자 사진 장면컷 연출, 영상 초반
+64. https://youtu.be/CDD_yRgRyJc — 왈츠
+65. https://youtu.be/9RDlaKu8mYU — 다비드 상에 옷을 입혔다(썸네일)
+66. https://youtu.be/fCGHfBFJxzY — 남성을 위한 심야
+67. https://youtu.be/hgOtkOc4Vws — 아라빅 재즈
+68. https://youtu.be/kJw7MBx1dcs — 빨강, 여자, "이유 없이 다 짜증날 때"
+69. https://youtu.be/rblH2SbMNr8 — 어두운 일본 인트로, 멘탈
+70. https://youtu.be/6dCO_a44874 — 작업용/공부용, 만화 캐릭터 여자, 일본
+71. https://youtu.be/mxjSyrNE8J8 — **썸네일 그림과 제목이 찰떡**
+72. https://youtu.be/AU0xtFBg0-w — 썸네일 특이, 그림자·빨간 배경
+73. https://youtu.be/Cl75mzNUKBM — 72번과 결 비슷, 일본 문화와도 어울릴 듯
+74. https://youtu.be/XcMW7_HEj9M
+75. https://youtu.be/09K79_bD6w0 — 일본 감성
+76. https://youtu.be/PB8ZrGinWi0 — 수도승 모드, 조회수 좋아 🔥
+77. https://youtu.be/x5s7l3vnRj8 — 갱스타
+78. https://youtu.be/z63KyqrIpok — 공부
+79. https://www.youtube.com/@FallingForMemories-p5e — **슬픈 노래, 여자 얼굴과 제목의 거의 일관성**
+    - https://www.youtube.com/@QuietlyYoursMusic — 딥 하우스, 남자 목소리 좋다, **벤치마킹 해볼까?**
+
+> 6차 관찰 요약(반복 신호):
+> - 🗼 **파리/샹송/프렌치팝** 계열이 가장 강함 (스텔라장·라따뚜이·에펠탑·Pink Martini·Sarah Kang·여름 드라이브 샹송) → **내 채널 주력 후보**
+> - ⭐ **"내 채널과 결이 맞다"** 표시: @Jayurhy·@oaplaylist·@onto_japan·@OOOffi·@Jackscompany·11번(스텔라장) → 채널 정체성 시드
+> - 🇯🇵 **일본 채널 대량** — 애니/만화 그림 썸네일, 젠, 일본판 힙합, 신생 채널 등 (구도·그림체 벤치마크 소스)
+> - 🔥 **조회수 폭발** 표시: 428만(2주), 178만(7개월), 148만(왈츠), i8W 나이트무드, 76번 수도승 → 구간 분석 최우선
+> - 실험 장르 탐색: 왈츠·아라빅재즈·레게·딥하우스·갱스타·공주풍
+
 > 중복 제거: jQf9eUGEg40·-AGoTdlnqJk(고양이)·saM94vXxxxA(파리·클래식배치) 는 앞 배치와 겹쳐 1회만 유효.
 > 반복 키워드 관찰: **파리**(fXX2sS-BUG8·saM94vXxxxA·Ng7FLbSkHNI) 가 여러 번 등장 → 파리/샹송 테마가 주력 후보.
