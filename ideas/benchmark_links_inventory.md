@@ -131,5 +131,11 @@
 - https://youtu.be/jNLUrg_y0fQ
 - (중복: c5-Z87XUSQM — 3차와 겹침)
 
+### 5차 배치 (라벨 없음 — 여름 힌트)
+- https://youtu.be/9ESo0BO6Glg
+- https://youtu.be/8J6avjeh1SM
+- https://youtu.be/gidQv3LmwKE  — ☀️ 초여름
+- https://youtu.be/WaefwC8kyRg  — ☀️ 여름
+
 > 중복 제거: jQf9eUGEg40·-AGoTdlnqJk(고양이)·saM94vXxxxA(파리·클래식배치) 는 앞 배치와 겹쳐 1회만 유효.
 > 반복 키워드 관찰: **파리**(fXX2sS-BUG8·saM94vXxxxA·Ng7FLbSkHNI) 가 여러 번 등장 → 파리/샹송 테마가 주력 후보.
