@@ -128,9 +128,9 @@ with tabs[0]:
         with cols[i % 3]:
             bm = sum(1 for b in p["benchmarks"] if b.get("bookmark"))
             al = sum(1 for b in p["benchmarks"] if b.get("alarm"))
-            box = st.container(border=True)
+            box = st.container(border=True, height=250)   # 고정 높이 → 열 맞춤
             box.markdown(f"### {'⭐ ' if name == cur else ''}{name}")
-            box.caption((p.get("note") or "")[:60])
+            box.caption((p.get("note") or "")[:70])
             box.write(f"벤치 {len(p['benchmarks'])}개 · 🔖{bm} · 🔔{al} · 🧺{len(p['basket'])}")
             if box.button("선택", key=f"pick_{i}", use_container_width=True):
                 G.set_current(name); st.rerun()
