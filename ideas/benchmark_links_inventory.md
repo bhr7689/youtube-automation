@@ -221,6 +221,93 @@
 79. https://www.youtube.com/@FallingForMemories-p5e — **슬픈 노래, 여자 얼굴과 제목의 거의 일관성**
     - https://www.youtube.com/@QuietlyYoursMusic — 딥 하우스, 남자 목소리 좋다, **벤치마킹 해볼까?**
 
+### 7차 배치 (라벨·코멘트 없음 — 대량 수집, 미분류. PC 앱 자동분류 예정)
+> 배치 내 중복 제거(1회만): IgIVGCwJ80Y, B00YlkCiBK4, Sv4ezSLAppM, xbUa_8CIuAQ, 0vQOzpJ0VJ8.
+> 앞 배치와 중복: _RS9ohsqliw(6차) · 8GD_B0h1BLg(6차) · tw9QJzHZjeM(1차) · ZEfhDiPkZ-o(6차) · UKbZ4r88z3Q(클래식) · CDD_yRgRyJc(6차). #94 공란.
+
+- https://youtu.be/gNVzIeDRNLg
+- https://youtu.be/U8ugO8stnBk
+- https://youtu.be/jNfaUkATxHg
+- https://youtu.be/6dGvamv4im4
+- https://youtu.be/VShXQiRLMqU
+- https://youtu.be/wJkNXfmB3Rc
+- https://youtu.be/toSvP83EebU
+- https://youtu.be/Yl-7KMk8Ejo
+- https://youtu.be/IPgALki7Cig
+- https://youtu.be/NW32tyK1d70
+- https://youtu.be/3UgpbEhvoTY
+- https://youtu.be/lsRfflGKqQc
+- https://youtu.be/wiGVohAv478
+- https://youtu.be/iKShF6iv0sI
+- https://youtu.be/ghpiAxqq4aw
+- https://youtu.be/QA9FpizKFeU
+- https://youtu.be/foEjHAkrIDA
+- https://youtu.be/KbuvnS9vTYI
+- https://youtu.be/BOyNLX3ocKs
+- https://youtu.be/aBVC8L_fhAc
+- https://youtu.be/IgIVGCwJ80Y
+- https://youtu.be/B00YlkCiBK4
+- https://youtu.be/f0uhfNcRdug
+- https://youtu.be/uB1QpupEHGo
+- https://youtu.be/NM5wf7o-hNo
+- https://youtu.be/OC9I6BSA0rg
+- https://youtu.be/EulgkeAjD74
+- https://youtu.be/bqVhWdjxKdU
+- https://youtu.be/nn7hXZr4Lqg
+- https://youtu.be/i8v-vQ0lNTQ
+- https://youtu.be/Bnpk0mEKCa0
+- https://youtu.be/Sv4ezSLAppM
+- https://youtu.be/o0YjmJrmpYI
+- https://youtu.be/SM7eHVToU-Q
+- https://youtu.be/FaSpRBr38cY
+- https://youtu.be/s2P-O5uAoNo
+- https://youtu.be/uLwpqSYKZW0
+- https://youtu.be/qbFhggCAVNY
+- https://youtu.be/VX2d1Et0ywc
+- https://youtu.be/PJjt5Z0TLjY
+- https://youtu.be/jHoChZ2ykbk
+- https://youtu.be/GYAIctA2Mtw
+- https://youtu.be/30bfrx8-Cbc
+- https://youtu.be/0cfBJG_wMiU
+- https://youtu.be/U-V_rOICToM
+- https://youtu.be/_8yv1SJquVQ
+- https://youtu.be/ypEZ2S0prk4
+- https://youtu.be/_bqppPXwid4
+- https://youtu.be/x6c-lgeA15k
+- https://youtu.be/Py3IKxJcbAA
+- https://youtu.be/QgtDgADXHS4
+- https://youtu.be/JLXNQNRwgEs
+- https://youtu.be/7InR9hxF2Qo
+- https://youtu.be/w-ePzTAY-9Y
+- https://youtu.be/lI1hxHjWQvM
+- https://youtu.be/Ooz81q6NcZY
+- https://youtu.be/RCWD6Mnhni0
+- https://youtu.be/j6UN0SH1rek
+- https://youtu.be/nkXhoJnTazs
+- https://youtu.be/RwAIdGJAl78
+- https://youtu.be/Fw32PPy3CUU
+- https://youtu.be/AX9T2emPoQo
+- https://youtu.be/OgXKTJ8TItc
+- https://youtu.be/ydW5mgwVemc
+- https://youtu.be/xbUa_8CIuAQ
+- https://youtu.be/xZtj_7-BrNc
+- https://youtu.be/fYmDt5bWDxg
+- https://youtu.be/tkWEpUtsJ2Y
+- https://youtu.be/1O3o_c4a-J4
+- https://youtu.be/cie55mgMF3c
+- https://youtu.be/Gu83u73hiiw
+- https://youtu.be/0vQOzpJ0VJ8
+- https://youtu.be/QtBUvmBOhho
+- https://youtu.be/GofEvLBdWQw
+- https://youtu.be/L1E4rkvGo-Y
+- https://youtu.be/NIMForVc-qc
+- https://youtu.be/buZSS052oq0
+- https://youtu.be/yYBN2bnIzs4
+- https://youtu.be/t-Jhy7XhdGI
+- https://youtu.be/91VpHUKYgR4
+- https://youtu.be/QaJyPtUgUO4
+- https://youtu.be/GfuiuFgSUw0
+
 > 6차 관찰 요약(반복 신호):
 > - 🗼 **파리/샹송/프렌치팝** 계열이 가장 강함 (스텔라장·라따뚜이·에펠탑·Pink Martini·Sarah Kang·여름 드라이브 샹송) → **내 채널 주력 후보**
 > - ⭐ **"내 채널과 결이 맞다"** 표시: @Jayurhy·@oaplaylist·@onto_japan·@OOOffi·@Jackscompany·11번(스텔라장) → 채널 정체성 시드
