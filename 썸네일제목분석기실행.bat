@@ -30,8 +30,12 @@ if not exist ".env" (
     if exist ".env.example" copy .env.example .env >nul
 )
 
+:: 이전에 켜둔 앱이 8505 포트를 잡고 있으면 자동 정리 (중복 실행 방지)
+echo [3/3] 이전 실행 정리 중...
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8505 ^| findstr LISTENING') do taskkill /F /PID %%a >nul 2>&1
+
 :: Streamlit 실행 (8505 포트 — 다른 툴과 충돌 안 함)
-echo [3/3] 연구소 시작 중... (브라우저가 자동으로 열립니다)
+echo  연구소 시작 중... (브라우저가 자동으로 열립니다)
 echo.
 echo  종료하려면 이 창을 닫거나 Ctrl+C 를 누르세요.
 echo.
