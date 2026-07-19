@@ -53,6 +53,7 @@ import chat_editor as CE
 import localize as LZ
 import img_similar as IMG
 import title_digest as TD
+import bookmark_tool as BT
 
 st.set_page_config(page_title="🎬 썸네일·제목 연구소", page_icon="🎬", layout="wide")
 
@@ -152,8 +153,8 @@ def _ss_del(key: str) -> None:
     AC.delete(key)
 
 # ── 페이지 네비게이션 ─────────────────────────────────────────
-PAGES = ["🏠 대시보드", "🗂 자동분류", "🔬 구간 분석", "🌊 트렌드 레이더",
-         "🔔 감시/알림", "⚙️ 설정"]
+PAGES = ["🏠 대시보드", "🗂 자동분류", "🔖 북마크 채널", "🔬 구간 분석",
+         "🌊 트렌드 레이더", "🔔 감시/알림", "⚙️ 설정"]
 if "_goto" in st.session_state:          # 다른 화면에서 넘어온 이동 요청(위젯 생성 전 반영)
     st.session_state["nav"] = st.session_state.pop("_goto")
 
@@ -210,19 +211,38 @@ with st.sidebar:
 # ═══════════════════════════════════════════════════════════════
 if page == "🏠 대시보드":
     st.subheader("🏠 채널(장르) 대시보드")
-    st.caption("장르마다 독립 채널 프로젝트. 새 장르 진입엔 **분석이 곧 설계도**입니다.")
+    st.caption("장르마다 독립 채널 프로젝트. 새 장르 진입엔 **분석이 곧 설계도**입니다. "
+               "지금 목표 🇯🇵→🇰🇷 · 🇰🇷→🇯🇵 번안.")
+
+    # ── 전체 요약(한눈에) ──────────────────────────────
+    _all = list(state["projects"].values())
+    _tb = sum(len(p["benchmarks"]) for p in _all)
+    _tbm = sum(1 for p in _all for b in p["benchmarks"] if b.get("bookmark"))
+    _tal = sum(1 for p in _all for b in p["benchmarks"] if b.get("alarm"))
+    m = st.columns(4)
+    m[0].metric("장르(채널)", len(_all))
+    m[1].metric("벤치마킹 링크", _tb)
+    m[2].metric("🔖 북마크 채널", _tbm)
+    m[3].metric("🔔 알림 ON", _tal)
+    st.divider()
+
     cols = st.columns(3)
     for i, (name, p) in enumerate(state["projects"].items()):
         with cols[i % 3]:
             bm = sum(1 for b in p["benchmarks"] if b.get("bookmark"))
             al = sum(1 for b in p["benchmarks"] if b.get("alarm"))
-            box = st.container(border=True, height=250)   # 고정 높이 → 열 맞춤
+            box = st.container(border=True, height=270)   # 고정 높이 → 열 맞춤
             box.markdown(f"### {'⭐ ' if name == cur else ''}{name}")
             box.caption((p.get("note") or "")[:70])
             box.write(f"벤치 {len(p['benchmarks'])}개 · 🔖{bm} · 🔔{al} · 🧺{len(p['basket'])}")
-            if box.button("🔬 선택 → 구간분석 보기", key=f"pick_{i}", use_container_width=True):
+            g1, g2 = box.columns(2)
+            if g1.button("🔬 구간분석", key=f"pick_{i}", use_container_width=True):
                 G.set_current(name)
                 st.session_state["_goto"] = "🔬 구간 분석"   # 바로 분석 화면으로 이동
+                st.rerun()
+            if g2.button("🔖 북마크채널", key=f"pickbm_{i}", use_container_width=True):
+                G.set_current(name)
+                st.session_state["_goto"] = "🔖 북마크 채널"
                 st.rerun()
 
 # ═══════════════════════════════════════════════════════════════
@@ -334,6 +354,73 @@ if page == "🗂 자동분류":
             st.rerun()
 
 # ═══════════════════════════════════════════════════════════════
+# 🔖 북마크 채널
+# ═══════════════════════════════════════════════════════════════
+if page == "🔖 북마크 채널":
+    st.subheader(f"🔖 북마크 채널 — {cur}")
+    st.caption("🔖 북마크한 채널을 조회수순으로: 채널명·로고·구독자·개설일 + 인기 영상(썸네일·제목·조회수). "
+               "🔔 알림 켜면 새 영상+72h 성과 카톡.")
+    _bm = [b for b in proj["benchmarks"] if b.get("bookmark")]
+    b1, b2 = st.columns(2)
+    if b1.button(f"🔖 북마크 채널 불러오기 ({len(_bm)}개)", type="primary"):
+        with st.spinner("채널 정보·구독자·개설일·인기영상 수집 중…"):
+            _ss_set("bm_" + cur, BT.collect(proj["benchmarks"]))
+    if b2.button("🇰🇷🇯🇵 제목 번안 보기 (일↔한)"):
+        _d = st.session_state.get("bm_" + cur)
+        if _d:
+            _allt = [(v["video_id"], v["title"]) for ch in _d["channels"]
+                     for v in ch["videos"] if v.get("video_id")]
+            _ja = [(vid, t) for vid, t in _allt if LC.is_japanese({"title": t})]
+            _ko = [(vid, t) for vid, t in _allt if not LC.is_japanese({"title": t})]
+            _tr = {}
+            if _ja:
+                _m = LZ.localize_batch([t for _, t in _ja], "KR")
+                for _i, (vid, _) in enumerate(_ja):
+                    _tr[vid] = ("🇰🇷", _m.get(_i, ""))
+            if _ko:
+                _m = LZ.localize_batch([t for _, t in _ko], "JP")
+                for _i, (vid, _) in enumerate(_ko):
+                    _tr[vid] = ("🇯🇵", _m.get(_i, ""))
+            _ss_set("bmtr_" + cur, _tr)
+
+    data = st.session_state.get("bm_" + cur)
+    tr = st.session_state.get("bmtr_" + cur, {})
+    if data:
+        if data.get("demo"):
+            st.warning("⚠️ YouTube 키가 없어 데모입니다. (사장님 PC에선 실데이터)")
+        if not data["channels"]:
+            st.info("북마크된 채널이 없어요. 구간분석/레이더 카드에서 🔖·⭐로 북마크하세요.")
+        for ci, ch in enumerate(data["channels"]):
+            box = st.container(border=True)
+            hd = box.columns([1, 5, 2])
+            if ch.get("logo"):
+                hd[0].image(ch["logo"], width=64)
+            hd[1].markdown(f"### {ch['channel']}")
+            hd[1].caption(f"👥 구독 {ch['subscribers']:,} · 📅 개설 {ch.get('created','?')} "
+                          f"({BT.channel_age(ch.get('created',''))} 됨)")
+            if ch.get("url"):
+                _bref = next((b for b in proj["benchmarks"] if b["url"] == ch["url"]), None)
+                _al = _bref.get("alarm") if _bref else False
+                if hd[2].checkbox("🔔 알림", value=_al, key=f"bmal_{ci}") != _al:
+                    G.toggle_flag(cur, ch["url"], "alarm"); st.rerun()
+            grid = box.columns(4)
+            for j, v in enumerate(ch["videos"][:8]):
+                with grid[j % 4]:
+                    _vid = v.get("video_id", "")
+                    if v.get("thumb"):
+                        _lk = f"https://youtu.be/{_vid}"
+                        st.markdown(f'<a href="{_lk}" target="_blank">'
+                                    f'<img src="{v["thumb"]}" style="width:100%;border-radius:8px"></a>',
+                                    unsafe_allow_html=True)
+                    st.caption(f"👁 {v['views']:,} · {v['published']}")
+                    st.caption((v.get("title", "") or "")[:30])
+                    _t = tr.get(_vid)
+                    if _t:
+                        st.caption(_t[0] + " " + (_t[1] or "")[:28])
+    elif not _bm:
+        st.info("아직 북마크한 채널이 없어요. 🔬 구간분석/🌊 레이더 카드에서 🔖·⭐로 북마크한 뒤 여기서 모아보세요.")
+
+# ═══════════════════════════════════════════════════════════════
 # 🔬 구간 분석
 # ═══════════════════════════════════════════════════════════════
 if page == "🔬 구간 분석":
@@ -369,6 +456,24 @@ if page == "🔬 구간 분석":
                     G.toggle_flag(cur, b["url"], "alarm"); st.rerun()
                 if c4.button("🗑", key="rm_" + b["url"]):
                     G.remove_benchmark(cur, b["url"]); st.rerun()
+
+        with st.expander("🔀 장르 이동 / 삭제 (여러 개 한 번에)", expanded=False):
+            st.caption("이 장르의 링크를 골라 **다른 장르로 옮기거나** 삭제해요. 필요 없는 데이터 정리에 쓰세요.")
+            _opts = {(f"{b['channel']} · " if b.get("channel") else "") + b["url"]: b["url"]
+                     for b in proj["benchmarks"]}
+            _sel_lbls = st.multiselect("링크 선택", list(_opts), key="mv_sel_" + cur)
+            _sel = [_opts[l] for l in _sel_lbls]
+            _others = [g for g in projects if g != cur]
+            m1, m2 = st.columns([2, 1])
+            _tgt = m1.selectbox("이동할 장르", _others, key="mv_tgt_" + cur) if _others else None
+            if m1.button("➡️ 선택 이동", disabled=not (_sel and _tgt), use_container_width=True):
+                for u in _sel:
+                    G.move_benchmark(cur, u, _tgt)
+                st.toast(f"{len(_sel)}개 → '{_tgt}'로 이동"); st.rerun()
+            if m2.button("🗑 선택 삭제", disabled=not _sel, use_container_width=True):
+                for u in _sel:
+                    G.remove_benchmark(cur, u)
+                st.toast(f"{len(_sel)}개 삭제"); st.rerun()
 
         expand = st.checkbox("🔗 영상 링크를 **원채널로 확장** (그 채널 새 영상까지 분석 — 시간 지나도 갱신)",
                              value=True, key="expand_ch")
@@ -492,8 +597,11 @@ if page == "🌊 트렌드 레이더":
         st.caption(f"🌍 {region} · 급상승 {len(rr['videos'])}개 (일평균 조회수 높은 순)"
                    + (f" · 검색어: {', '.join(_usedkw[:6])}" if _usedkw else ""))
         _plist = list(state["projects"].keys())
-        rtarget = st.selectbox("📁 담을 장르 (아래 버튼이 이 장르로 저장돼요)", _plist,
-                               index=_plist.index(cur) if cur in _plist else 0, key="radar_target")
+        _tc1, _tc2 = st.columns([3, 1])
+        rtarget = _tc1.selectbox("📁 담을 장르 (아래 버튼이 이 장르로 저장돼요)", _plist,
+                                 index=_plist.index(cur) if cur in _plist else 0, key="radar_target")
+        if _tc2.button("🗑 전체 삭제", help="분류 다 끝냈으면 결과 목록 비우기"):
+            _ss_del("radar_res"); st.rerun()
 
         # 🔑 떠오르는 키워드 (결과 제목에서 추출 → 데이터화)
         _rtitles = [v.get("title_ko") or v.get("title", "") for v in rr["videos"]]
@@ -534,14 +642,20 @@ if page == "🌊 트렌드 레이더":
             cc[1].code(tmpl, language=None)
             _vurl = f"https://youtu.be/{v.get('video_id','')}"
             _demo = str(v.get("video_id", "")).startswith("demo")
-            b1, b2 = cc[1].columns(2)
+            b1, b2, b3 = cc[1].columns(3)
             if b1.button("📌 벤치마크 담기", key=f"radar_bench_{i}", disabled=_demo,
-                         help=f"이 영상 링크를 '{rtarget}' 벤치마크에 추가"):
-                G.add_benchmarks(rtarget, [_vurl]); st.toast(f"'{rtarget}' 벤치마크 추가")
+                         help=f"'{rtarget}' 벤치마크에 담고 목록에서 제거"):
+                G.add_benchmarks(rtarget, [_vurl])
+                rr["videos"].pop(i); _ss_set("radar_res", rr)
+                st.toast(f"'{rtarget}'에 담고 목록서 제거"); st.rerun()
             if b2.button("⭐ 집중+알림", key=f"radar_focus_{i}", disabled=_demo,
-                         help="집중 벤치마킹에 추가 + 새 영상 알림 ON"):
+                         help="집중 벤치마킹에 추가 + 알림 ON, 목록서 제거"):
                 G.add_benchmarks(G.FOCUS_BUCKET, [_vurl])
-                G.toggle_flag(G.FOCUS_BUCKET, _vurl, "alarm", True); st.toast("⭐ 집중 벤치마킹 + 🔔알림")
+                G.toggle_flag(G.FOCUS_BUCKET, _vurl, "alarm", True)
+                rr["videos"].pop(i); _ss_set("radar_res", rr)
+                st.toast("⭐ 집중+알림, 목록서 제거"); st.rerun()
+            if b3.button("🗑 삭제", key=f"radar_del_{i}", help="이 결과만 제거"):
+                rr["videos"].pop(i); _ss_set("radar_res", rr); st.rerun()
 
 # ═══════════════════════════════════════════════════════════════
 # 🔔 감시/알림

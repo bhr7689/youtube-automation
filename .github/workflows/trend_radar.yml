@@ -5,7 +5,7 @@ name: 🌊 트렌드 레이더 → 카톡 (지금 터지는 제목)
 # 준비: Secrets 에 YOUTUBE_API_KEY, KAKAO_REST_API_KEY, KAKAO_REFRESH_TOKEN
 on:
   schedule:
-    - cron: '30 23 * * *'    # 매일 한국시간 08:30
+    - cron: '30 23 */3 * *'  # 3일에 한 번(한국시간 08:30경)
   workflow_dispatch:
 
 jobs:
