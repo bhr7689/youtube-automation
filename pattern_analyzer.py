@@ -102,16 +102,44 @@ def _heuristic(titles: list[str], agg: dict, genre: str) -> dict:
     }
 
 
-def analyze(urls: list[str], genre: str = "") -> dict:
-    """링크 N개 → 패턴 분석 결과."""
-    metas = LC.fetch_meta(urls)
-    titles = [m.get("title", "") for m in metas]
-    thumbs = [m.get("thumb", "") for m in metas]
+def _gather(urls: list[str], per_channel: int = 2) -> list[dict]:
+    """채널/핸들 URL → 그 채널의 실제 영상 썸네일(로고 아님), 영상 URL → 그대로.
+    로고를 분석하던 버그 방지: 패턴은 영상 썸네일로만 본다."""
+    try:
+        import concept_maker as CM
+    except Exception:                   # noqa: BLE001
+        CM = None
+    metas, video_urls = [], []
+    for u in urls:
+        kind, _ = LC.extract_ref(u)
+        if kind in ("channel", "handle") and CM is not None:
+            data = CM.collect_channel(u)
+            vids = sorted(data.get("videos", []), key=lambda v: v.get("views", 0), reverse=True)
+            for v in vids[:per_channel]:
+                metas.append({"url": f"https://youtu.be/{v.get('video_id','')}",
+                              "title": v.get("title", ""), "thumb": v.get("thumb", ""),
+                              "channel": data.get("title", ""), "desc": "", "tags": []})
+        else:
+            video_urls.append(u)
+    if video_urls:
+        metas += LC.fetch_meta(video_urls)
+    return metas
+
+
+def analyze_videos(videos: list[dict], genre: str = "") -> dict:
+    """이미 확보한 영상 dict 목록({title,thumb}) → 패턴 분석."""
+    titles = [v.get("title", "") for v in videos]
+    thumbs = [v.get("thumb", "") for v in videos]
     agg = T.aggregate_titles([{"title": t} for t in titles if t])
     vision = _vision_analyze(thumbs, titles, genre)
     engine = "gpt-4o-vision"
     if vision is None:
         vision = _heuristic(titles, agg, genre)
         engine = "heuristic(제목만)"
-    return {"n": len(metas), "genre": genre, "engine": engine,
-            "metas": metas, "title_stats": agg, **vision}
+    return {"n": len(videos), "genre": genre, "engine": engine,
+            "metas": videos, "title_stats": agg, **vision}
+
+
+def analyze(urls: list[str], genre: str = "", per_channel: int = 2) -> dict:
+    """링크 N개(채널/영상 혼합) → 영상 썸네일로 확장 → 패턴 분석."""
+    return analyze_videos(_gather(urls, per_channel), genre)

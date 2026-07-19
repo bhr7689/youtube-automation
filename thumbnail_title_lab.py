@@ -359,19 +359,29 @@ if page == "🎯 일치성":
     pa_urls = []
     if src == "📺 현재 장르 벤치마크":
         pa_urls = [b["url"] for b in proj["benchmarks"]]
-        st.caption(f"'{cur}' 벤치마크 {len(pa_urls)}개 중 아래 개수만큼 Vision 분석")
+        st.caption(f"'{cur}' 벤치마크 {len(pa_urls)}개. 💡 구간분석을 먼저 돌리면 **실제 영상 썸네일**로 분석돼요(로고 아님).")
     else:
-        _t = st.text_area("링크 (여러 줄)", height=110, key="pa_links",
+        _t = st.text_area("영상 링크 (여러 줄)", height=110, key="pa_links",
                           placeholder="https://youtu.be/xxxx\nhttps://youtu.be/yyyy")
         pa_urls = LC.split_links(_t)
     n_limit = st.slider("Vision 분석 개수(비용·속도)", 3, 9, 6)
 
     if st.button("🔍 패턴 분석 실행", type="primary"):
-        if not pa_urls:
-            st.warning("분석할 링크가 없어요.")
-        else:
-            with st.spinner(f"{min(len(pa_urls), n_limit)}개 수집 + GPT Vision 분석 중…"):
+        with st.spinner("수집 + GPT Vision 분석 중… (실제 썸네일)"):
+            rep = st.session_state.get("report_" + cur)
+            if src == "📺 현재 장르 벤치마크" and rep:
+                allv = []
+                for label in T.TIER_ORDER:
+                    allv += rep["tiers"][label]["videos"]
+                allv = sorted(allv, key=lambda v: v.get("views", 0), reverse=True)[:n_limit]
+                if allv:
+                    st.session_state["pa_res"] = PA.analyze_videos(allv, cur)
+                else:
+                    st.warning("수집된 영상이 없어요. 🔬 구간분석에서 [분석 실행]을 먼저.")
+            elif pa_urls:
                 st.session_state["pa_res"] = PA.analyze(pa_urls[:n_limit], cur)
+            else:
+                st.warning("분석할 링크가 없어요.")
 
     res = st.session_state.get("pa_res")
     if res:
