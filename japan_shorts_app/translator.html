@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🌸 일본어 자동번역 프로그램</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/api.js"></script>
+  <style>
+    .tc-content[contenteditable]{outline:none;white-space:pre-wrap;overflow:auto;}
+    .tc-content[contenteditable]:focus{background:#fffdf9;}
+    .tc-content.placeholder{color:#b9aed0;}
+    .vv-pick.busy{opacity:.5;pointer-events:none;}
+    .tts-result{margin-top:14px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:12px;padding:14px 16px;font-size:13px;line-height:1.7;display:none;}
+    .tts-result.show{display:block;}
+    .tts-dl{display:inline-flex;align-items:center;gap:6px;background:var(--c-primary);color:#fff;padding:8px 16px;border-radius:10px;text-decoration:none;font-weight:700;margin-top:8px;}
+    .issue{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:8px;padding:8px 10px;font-size:12px;margin-top:6px;}
+    .gemini-off{font-size:12px;color:#b45309;background:#fef3c7;border-radius:8px;padding:8px 12px;margin:0 16px 8px;}
+  </style>
+</head>
+<body>
+  <div class="translator-app">
+    <div class="translator-toolbar">
+      <a class="tb-item" href="index.html"><span class="tb-icon">🏠</span><span>홈</span></a>
+      <div class="tb-item" onclick="clearAll()"><span class="tb-icon">🗑️</span><span>초기화</span></div>
+      <div class="tb-title">🌸 일본어 자동번역 프로그램</div>
+      <a class="tb-item" href="editor.html"><span class="tb-icon">✂️</span><span>컷편집</span></a>
+      <a class="tb-item" href="settings.html"><span class="tb-icon">🔑</span><span>API 키</span></a>
+      <div class="tb-spacer"></div>
+    </div>
+
+    <div class="gemini-off" id="geminiOff" style="display:none;">
+      🪶 <b>데모 모드</b> — GEMINI_API_KEY 가 없어 예시 번역이 나옵니다. 키를 넣으면 원문 기반 실제 번역이 작동해요.
+      (문장 분해·TTS·자막·ZIP 패키지는 지금도 정상 작동)
+    </div>
+
+    <div class="translator-columns">
+      <!-- STEP 1 -->
+      <div class="translator-col">
+        <div class="tc-header">
+          <span class="step-badge step1">STEP 1</span>
+          <span class="tc-title">원본 (영/한)</span>
+          <span class="tc-copy" onclick="copyCol('col1')">📋</span>
+        </div>
+        <div class="tc-content" id="col1" contenteditable="true" data-ph="여기에 영어/한국어 자막·대본을 붙여넣으세요."></div>
+        <div class="tc-footer">
+          <span class="tc-stats" id="col1Stats">0자</span>
+          <button class="tc-action purple" onclick="makeShorts()">⚡ 쇼츠 만들기</button>
+        </div>
+      </div>
+
+      <!-- 검토용 한국어 직역 -->
+      <div class="translator-col">
+        <div class="tc-header">
+          <span class="step-badge review">검토용</span>
+          <span class="tc-title">한국어 직역 <span class="tc-title-meta">(선택)</span></span>
+          <span class="tc-copy" onclick="copyCol('col2')">📋</span>
+        </div>
+        <div class="tc-content placeholder" id="col2" contenteditable="true" data-ph="영어 원문을 한국어로 직역한 내용이 여기 표시됩니다. 검토가 필요할 때만 쓰세요.">영어 원문을 한국어로 직역한 내용이 여기 표시됩니다.
+
+검토가 필요할 때만 사용하세요.</div>
+        <div class="tc-footer">
+          <span class="tc-stats" id="col2Stats">0자</span>
+          <button class="tc-action purple" onclick="makeLiteral()">↻ 직역하기</button>
+        </div>
+      </div>
+
+      <!-- STEP 2 한국어 쇼츠 -->
+      <div class="translator-col">
+        <div class="tc-header">
+          <span class="step-badge step2">STEP 2</span>
+          <span class="tc-title">한국어 쇼츠</span>
+          <span class="tc-copy" onclick="copyCol('col3')">📋</span>
+        </div>
+        <div class="tc-content placeholder" id="col3" contenteditable="true" data-ph="쇼츠 스타일 한국어 대본. 여기서 직접 고친 뒤 번역할 수 있어요.">쇼츠 스타일로 재구성된 한국어 대본이 여기 표시됩니다.
+
+여기서 직접 수정한 뒤 번역할 수 있어요.</div>
+        <div class="tc-footer">
+          <span class="tc-stats" id="col3Stats">0자</span>
+          <button class="tc-action orange" onclick="autoComplete()">✨ 자동완성</button>
+          <button class="tc-action purple" onclick="toJapanese()">번역하기</button>
+        </div>
+      </div>
+
+      <!-- STEP 3 일본어 대본 -->
+      <div class="translator-col">
+        <div class="tc-header">
+          <span class="step-badge step3">STEP 3</span>
+          <span class="tc-title">일본어 대본</span>
+          <span class="tc-copy" onclick="copyCol('col4')">📋</span>
+        </div>
+        <div class="tc-content placeholder" id="col4" contenteditable="true" data-ph="번역된 일본어 대본. 🔍 점검으로 다듬고 💾 저장으로 패키지를 만들어요.">번역된 일본어 쇼츠 대본이 여기 표시됩니다.
+
+🔍 점검으로 품질을 다듬고, 💾 저장하면 자막·음성·매니페스트 패키지가 만들어져요.</div>
+        <div class="tc-footer">
+          <span class="tc-stats" id="col4Stats">0자</span>
+          <button class="tc-action icon-only" title="품질 점검" onclick="checkQuality()">🔍</button>
+          <button class="tc-action orange" onclick="openTTSModal()">🔊 TTS·저장</button>
+        </div>
+      </div>
+    </div>
+    <div class="tts-result" id="ttsResult"></div>
+  </div>
+
+  <!-- TTS 모달 -->
+  <div class="modal-backdrop" id="ttsModal">
+    <div class="modal" style="width:680px;max-width:92vw;padding:24px 28px;position:relative;">
+      <button class="modal-close" onclick="closeTTSModal()">×</button>
+      <div class="subtitle-modal-title">🔊 TTS 음성 선택 · 패키지 저장</div>
+      <p style="font-size:13px;color:var(--c-text-muted);margin:8px 0 4px;line-height:1.6;">
+        일본어 대본을 <b>문장별 음성 + 자막(SRT) + manifest.json</b> 으로 묶어 ZIP 다운로드합니다. 컷편집이 그대로 읽어요.
+      </p>
+      <p id="vvState" style="font-size:12px;color:var(--c-text-muted);margin-bottom:16px;"></p>
+
+      <div class="settings-section-title" style="font-size:13px;margin-bottom:8px;display:flex;justify-content:space-between;">
+        <span>🎚️ 재생 속도</span><span id="spdLabel" style="color:var(--c-primary-dark);font-weight:700;">1.20x</span>
+      </div>
+      <input id="spd" type="range" min="0.8" max="1.5" step="0.05" value="1.2" style="width:100%;accent-color:var(--c-primary);margin-bottom:16px;" oninput="document.getElementById('spdLabel').textContent=(+this.value).toFixed(2)+'x'">
+
+      <div class="settings-section-title" style="font-size:13px;margin-bottom:10px;">🎤 음성 선택 (누르면 생성)</div>
+      <div id="voiceGrid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:8px;"></div>
+
+      <div class="tts-result" id="modalResult"></div>
+      <div style="display:flex;justify-content:flex-end;margin-top:14px;">
+        <button class="btn-secondary" onclick="closeTTSModal()">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .voicevox-card{background:#fafafa;border:1px solid var(--c-border);border-radius:12px;padding:12px 14px;}
+    .vv-name{font-size:13px;font-weight:600;}
+    .vv-meta{color:var(--c-text-muted);font-weight:400;font-size:11px;}
+    .vv-desc{font-size:11.5px;color:var(--c-text-muted);margin:4px 0 10px;}
+    .vv-pick{width:100%;background:var(--c-primary-100);color:var(--c-primary-dark);padding:8px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:none;}
+    .vv-pick:hover{background:var(--c-primary);color:white;}
+  </style>
+
+  <script>
+    const el = id => document.getElementById(id);
+    const getText = id => { const e = el(id); return e.classList.contains("placeholder") ? "" : e.innerText.trim(); };
+    function setText(id, txt) { const e = el(id); e.innerText = txt; e.classList.remove("placeholder"); updateStats(id); }
+    function updateStats(id) {
+      const n = getText(id).replace(/\s/g, "").length;
+      const sec = Math.round(n * 0.16);
+      el(id + "Stats").innerHTML = `${n.toLocaleString()}자 <span class="tc-duration">~ ${sec >= 60 ? Math.floor(sec/60)+"분 "+(sec%60)+"초" : sec+"초"}</span>`;
+    }
+    ["col1","col2","col3","col4"].forEach(id => {
+      const e = el(id);
+      e.addEventListener("input", () => updateStats(id));
+      e.addEventListener("focus", () => { if (e.classList.contains("placeholder")) { e.innerText=""; e.classList.remove("placeholder"); } });
+    });
+
+    function copyCol(id){ navigator.clipboard.writeText(getText(id)).then(()=>toast("📋 복사됨")); }
+    function clearAll(){ ["col1","col2","col3","col4"].forEach(id=>{el(id).innerText="";el(id).classList.remove("placeholder");updateStats(id);}); el("ttsResult").classList.remove("show"); }
+
+    async function callTranslate(mode, text) {
+      return api("/api/translate", { method: "POST", body: JSON.stringify({ mode, text }) });
+    }
+
+    async function makeShorts() {
+      const src = getText("col1"); if (!src) return toast("원본을 먼저 넣어주세요");
+      toast("쇼츠 재구성 중…");
+      const d = await callTranslate("shorts", src); setText("col3", d.result); toast("✓ 한국어 쇼츠 생성");
+    }
+    async function makeLiteral() {
+      const src = getText("col1"); if (!src) return toast("원본을 먼저 넣어주세요");
+      toast("직역 중…"); const d = await callTranslate("literal", src); setText("col2", d.result); toast("✓ 직역 완료");
+    }
+    async function toJapanese() {
+      const ko = getText("col3") || getText("col1"); if (!ko) return toast("한국어 대본이 없어요");
+      toast("일본어 번역 중…"); const d = await callTranslate("japanese", ko); setText("col4", d.result); toast("✓ 일본어 번역 완료");
+    }
+    async function autoComplete() {
+      const src = getText("col1"); if (!src) return toast("원본을 먼저 넣어주세요");
+      toast("[자동 1/3] 재구성…");
+      const d = await callTranslate("auto", src);
+      setText("col2", d.ko_literal); setText("col3", d.ko_shorts); setText("col4", d.ja);
+      toast("✓ 자동완성 — 원본→한국어→일본어");
+    }
+    async function checkQuality() {
+      const ja = getText("col4"); if (!ja) return toast("일본어 대본이 없어요");
+      const d = await callTranslate("check", ja);
+      const box = el("ttsResult"); box.classList.add("show");
+      if (d.ok) box.innerHTML = "✅ <b>점검 통과</b> — 단정·과장 표현 없음, 문장 길이 양호. 저장해도 좋아요.";
+      else box.innerHTML = `⚠️ <b>${d.issue_count}개 항목</b> 확인 권장:` + d.issues.map(i => `<div class="issue">${i.msg}</div>`).join("");
+    }
+
+    // ── TTS 모달 ──
+    let VOICES = [];
+    async function initStatus() {
+      const s = await api("/api/translate/status");
+      el("geminiOff").style.display = s.gemini ? "none" : "block";
+      VOICES = s.voices || [];
+      el("vvState").innerHTML = s.voicevox
+        ? "🎙️ VOICEVOX 감지됨 — 실제 일본어 음성이 합성됩니다."
+        : "🪶 VOICEVOX 미가동 — 지금은 <b>무음(추정 길이) + 자막·매니페스트</b>로 패키지를 만듭니다. VOICEVOX 실행 후 다시 만들면 실제 음성이 들어가요.";
+      el("voiceGrid").innerHTML = VOICES.map(v => `
+        <div class="voicevox-card">
+          <div class="vv-name">${v.name} <span class="vv-meta">— ${v.desc}</span></div>
+          <button class="vv-pick" data-id="${v.id}" onclick="generateTTS(this, ${v.id})">이 음성으로 생성·저장</button>
+        </div>`).join("");
+    }
+    function openTTSModal() { if (!getText("col4")) return toast("일본어 대본을 먼저 만들어주세요"); el("modalResult").classList.remove("show"); el("ttsModal").classList.add("open"); }
+    function closeTTSModal() { el("ttsModal").classList.remove("open"); }
+    document.addEventListener("click", e => { if (e.target.id === "ttsModal") closeTTSModal(); });
+
+    async function generateTTS(btn, voice) {
+      btn.classList.add("busy"); btn.textContent = "생성 중…";
+      const speed = +el("spd").value;
+      try {
+        const m = await api("/api/tts", { method: "POST", body: JSON.stringify({ ja_text: getText("col4"), voice, speed }) });
+        const dur = Math.round(m.total_duration_ms / 1000);
+        const box = el("modalResult"); box.classList.add("show");
+        box.innerHTML = `✅ <b>패키지 생성 완료</b><br>
+          🆔 ${m.job_id} · 문장 ${m.sentence_count}개 · 총 ${Math.floor(dur/60)}분 ${dur%60}초<br>
+          <span style="color:#9a3412;">${m.engine_note}</span><br>
+          <a class="tts-dl" href="/api/tts/${m.job_id}/download">⬇️ ZIP 다운로드 (manifest·자막·음성)</a>
+          <a class="tts-dl" style="background:#ec4899;" href="editor.html?job=${m.job_id}">✂️ 컷편집으로 보내기</a>`;
+        toast("✓ 저장 완료");
+      } catch (e) { toast("오류: " + e.message); }
+      btn.classList.remove("busy"); btn.textContent = "이 음성으로 생성·저장";
+    }
+
+    // 초기 상태: URL ?text= 또는 데모 채움
+    (function () {
+      const q = new URLSearchParams(location.search);
+      const t = q.get("text");
+      if (t) setText("col1", t);
+      updateStats("col1");
+      initStatus();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>패널 · RefTracker</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <div class="sidebar-brand">RefTracker</div>
+        <div class="sidebar-brand-sub">레퍼런스 채널 추적</div>
+      </div>
+      <nav class="nav-section">
+        <a href="trend.html" class="nav-item">🔥 트렌드 피드</a>
+        <a href="youtube_discover.html" class="nav-item">🌐 YouTube 발굴</a>
+        <a href="search.html" class="nav-item active">🔍 검색</a>
+        <a href="source_finder.html" class="nav-item">🕵️ 원본 소스 찾기</a>
+        <a href="channels.html" class="nav-item">📺 레퍼런스 채널</a>
+        <a href="collections.html" class="nav-item">📁 컬렉션</a>
+        <a href="bookmarks.html" class="nav-item">⭐ 북마크</a>
+        <a href="notifications.html" class="nav-item">🔔 알림 <span class="nav-badge">3</span></a>
+        <a href="settings.html" class="nav-item">⚙️ 설정</a>
+      </nav>
+      <div class="nav-divider"></div>
+      <nav class="nav-section">
+        <a href="index.html" class="nav-item-secondary"><span>🏠 포털 메인</span><span>›</span></a>
+        <a href="translator.html" class="nav-item-secondary"><span>🌸 일본어 번역봇</span><span>›</span></a>
+        <a href="editor.html" class="nav-item-secondary"><span>✂️ 자동 컷편집</span><span>›</span></a>
+      </nav>
+      <div class="version">v0.3.0</div>
+    </aside>
+
+    <main class="main">
+      <div class="breadcrumb">
+        <a href="search.html">🔍 검색</a>
+        <span class="sep">›</span>
+        <span class="current">패널 보기</span>
+      </div>
+
+      <!-- HERO: 이미지 + 메타 한 줄 요약 -->
+      <div class="detail-hero">
+        <div class="detail-thumb">
+          <img src="https://picsum.photos/seed/v11/800/450" alt="">
+          <span class="shorts-tag">SHORTS</span>
+          <span class="multiplier-tag">×38.1</span>
+          <span class="duration-tag">0:53</span>
+        </div>
+
+        <div class="detail-meta">
+          <div class="detail-title">Smartest hair invention on Shark Tank ⁉️ ...</div>
+
+          <div class="detail-channel-row">
+            <div class="channel-avatar" style="background:#db2777;"></div>
+            <div class="detail-channel-info">
+              <div class="detail-channel-name">Pitch Reality</div>
+              <div class="detail-channel-sub">구독 28만 · 영상 126 · 평균 조회 32.6만</div>
+            </div>
+            <span class="btn-registered">✓ 등록</span>
+          </div>
+
+          <div class="detail-stats-row">
+            <span class="detail-stat">👁️ <strong>조회 1.4억</strong></span>
+            <span class="detail-stat">🕐 <strong>3달 전</strong></span>
+            <span class="detail-stat">❤️ <strong>1.2백만</strong></span>
+            <span class="detail-stat">💬 <strong>4.8만</strong></span>
+            <span class="detail-stat">⚡ 시간당 조회 <strong>6.4만</strong></span>
+            <span class="detail-stat">🔥 평균 대비 <strong>×38.1</strong></span>
+          </div>
+
+          <div class="detail-cta-row">
+            <button class="btn-primary">🔗 YouTube 에서 열기</button>
+            <button class="btn-secondary">📁 컬렉션에 저장</button>
+            <button class="btn-secondary">📋 링크 복사</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 📜 자막 (원본) -->
+      <div class="detail-section">
+        <div class="section-header">
+          <div class="section-title">📜 자막 (원본)</div>
+          <div class="section-count">자동 추출 · 영어</div>
+        </div>
+        <div class="subtitle-box">
+          <div class="subtitle-line">
+            <span class="subtitle-time">00:00</span>
+            <span class="subtitle-text">자막 한 줄이 여기에 보입니다.</span>
+          </div>
+          <div class="subtitle-line">
+            <span class="subtitle-time">00:03</span>
+            <span class="subtitle-text">실제 영상의 자막을 자동으로 가져와 시간 코드와 함께 나란히 보여줍니다.</span>
+          </div>
+          <div class="subtitle-line">
+            <span class="subtitle-time">00:07</span>
+            <span class="subtitle-text">사장님이 한 줄씩 보면서 인용하고 싶은 구간을 골라 마크할 수 있어요.</span>
+          </div>
+          <div class="subtitle-line">
+            <span class="subtitle-time">00:12</span>
+            <span class="subtitle-text">자막이 없으면 음성 인식(Whisper)으로 자동 생성됩니다.</span>
+          </div>
+          <div class="subtitle-line">
+            <span class="subtitle-time">00:18</span>
+            <span class="subtitle-text">번역봇 탭으로 보내면 시니어 친화 일본어로 바꿔줘요.</span>
+          </div>
+          <div class="subtitle-line">
+            <span class="subtitle-time">00:24</span>
+            <span class="subtitle-text">컷편집 탭으로 보내면 이 구간을 쇼츠로 잘라줘요.</span>
+          </div>
+          <div class="subtitle-line">
+            <span class="subtitle-time">00:30</span>
+            <span class="subtitle-text">한 줄씩 체크박스로 묶음 선택해 한꺼번에 번역할 수도 있고요.</span>
+          </div>
+          <div class="subtitle-line">
+            <span class="subtitle-time">00:38</span>
+            <span class="subtitle-text">스크롤하면 영상 끝까지 한눈에 흐름이 보입니다.</span>
+          </div>
+          <div class="subtitle-line">
+            <span class="subtitle-time">00:45</span>
+            <span class="subtitle-text">감동 구간이 어디인지 댓글 반응과 같이 보고 결정.</span>
+          </div>
+          <div class="subtitle-line">
+            <span class="subtitle-time">00:50</span>
+            <span class="subtitle-text">이 줄이 마지막 자막입니다.</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          <button class="btn-secondary">📋 자막 전체 복사</button>
+          <button class="btn-secondary">🌸 번역봇으로 보내기</button>
+          <button class="btn-secondary">✂️ 컷편집으로 보내기</button>
+        </div>
+      </div>
+
+      <!-- 📰 유사한 주제 영상 -->
+      <div class="detail-section">
+        <div class="section-header">
+          <div class="section-title">📰 유사한 주제 영상</div>
+          <div class="section-count">제목·태그·자막이 비슷한 영상 8개</div>
+        </div>
+        <div class="similar-grid">
+          <div class="similar-card">
+            <div class="similar-thumb">
+              <img src="https://picsum.photos/seed/sim1/300/170" alt="">
+              <span class="duration-tag">0:48</span>
+            </div>
+            <div class="similar-body">
+              <div class="similar-title">Best Shark Tank Pitches Ever Made on Show</div>
+              <div class="similar-meta">조회 8200만 · 6달 전</div>
+            </div>
+          </div>
+          <div class="similar-card">
+            <div class="similar-thumb">
+              <img src="https://picsum.photos/seed/sim2/300/170" alt="">
+              <span class="duration-tag">0:54</span>
+            </div>
+            <div class="similar-body">
+              <div class="similar-title">She Walked In Confident, Walked Out a Millionaire</div>
+              <div class="similar-meta">조회 5400만 · 1년 전</div>
+            </div>
+          </div>
+          <div class="similar-card">
+            <div class="similar-thumb">
+              <img src="https://picsum.photos/seed/sim3/300/170" alt="">
+              <span class="duration-tag">0:39</span>
+            </div>
+            <div class="similar-body">
+              <div class="similar-title">Inventor Pitched His Idea Then This Happened</div>
+              <div class="similar-meta">조회 3100만 · 5달 전</div>
+            </div>
+          </div>
+          <div class="similar-card">
+            <div class="similar-thumb">
+              <img src="https://picsum.photos/seed/sim4/300/170" alt="">
+              <span class="duration-tag">0:42</span>
+            </div>
+            <div class="similar-body">
+              <div class="similar-title">The Pitch That Made All Sharks Cry</div>
+              <div class="similar-meta">조회 2800만 · 8달 전</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 💬 인기 댓글 -->
+      <div class="detail-section">
+        <div class="section-header">
+          <div class="section-title">💬 인기 댓글</div>
+          <div class="section-count">좋아요 순 · 5개</div>
+        </div>
+        <div>
+          <div class="comment-row">
+            <div class="comment-avatar" style="background:#fb923c;"></div>
+            <div class="comment-body">
+              <div class="comment-meta">
+                <span class="comment-author">@viewer_one</span>
+                <span>2주 전</span>
+              </div>
+              <div class="comment-text">정말 감동적인 순간이었어요. 가족 생각이 났습니다.</div>
+              <div class="comment-likes">👍 12,400 · 답글 84</div>
+            </div>
+          </div>
+          <div class="comment-row">
+            <div class="comment-avatar" style="background:#a855f7;"></div>
+            <div class="comment-body">
+              <div class="comment-meta">
+                <span class="comment-author">@another_viewer</span>
+                <span>3주 전</span>
+              </div>
+              <div class="comment-text">이런 영상 더 보고 싶어요. 따뜻한 마음이 전해집니다.</div>
+              <div class="comment-likes">👍 8,920 · 답글 41</div>
+            </div>
+          </div>
+          <div class="comment-row">
+            <div class="comment-avatar" style="background:#10b981;"></div>
+            <div class="comment-body">
+              <div class="comment-meta">
+                <span class="comment-author">@regular_fan</span>
+                <span>1달 전</span>
+              </div>
+              <div class="comment-text">내 인생에 위로가 되는 영상. 진심으로 응원합니다.</div>
+              <div class="comment-likes">👍 5,610 · 답글 22</div>
+            </div>
+          </div>
+          <div class="comment-row">
+            <div class="comment-avatar" style="background:#ef4444;"></div>
+            <div class="comment-body">
+              <div class="comment-meta">
+                <span class="comment-author">@kind_soul</span>
+                <span>1달 전</span>
+              </div>
+              <div class="comment-text">눈물이 나네요. 좋은 사람들이 많은 세상이라 다행이에요.</div>
+              <div class="comment-likes">👍 3,840 · 답글 18</div>
+            </div>
+          </div>
+          <div class="comment-row">
+            <div class="comment-avatar" style="background:#0ea5e9;"></div>
+            <div class="comment-body">
+              <div class="comment-meta">
+                <span class="comment-author">@hopeful_one</span>
+                <span>2달 전</span>
+              </div>
+              <div class="comment-text">이걸 보고 오늘 하루도 힘내기로 했습니다.</div>
+              <div class="comment-likes">👍 2,210 · 답글 9</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 🔗 링크 / 액션 -->
+      <div class="detail-section">
+        <div class="section-header">
+          <div class="section-title">🔗 링크 & 다음 단계</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;">
+          <button class="btn-secondary" style="justify-content:flex-start;text-align:left;">🔗 YouTube 영상 링크 복사</button>
+          <button class="btn-secondary" style="justify-content:flex-start;text-align:left;">📺 채널 페이지 열기</button>
+          <button class="btn-secondary" style="justify-content:flex-start;text-align:left;">📁 컬렉션 폴더에 저장</button>
+          <button class="btn-secondary" style="justify-content:flex-start;text-align:left;">⭐ 즐겨찾기(북마크)</button>
+          <button class="btn-secondary" style="justify-content:flex-start;text-align:left;">🌸 번역봇으로 보내기</button>
+          <button class="btn-secondary" style="justify-content:flex-start;text-align:left;">✂️ 컷편집으로 보내기</button>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

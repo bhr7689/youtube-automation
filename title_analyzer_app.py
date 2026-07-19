@@ -23,7 +23,7 @@ except Exception:
 st.set_page_config(
     page_title="제목 알고리즘 분석",
     page_icon="🔬",
-    layout="centered",
+    layout="wide",
     initial_sidebar_state="collapsed",
 )
 
@@ -31,9 +31,13 @@ st.markdown(
     """
 <style>
 .main .block-container {
-    max-width: 480px;
+    max-width: 1500px;
     padding-top: 1.2rem;
     padding-bottom: 6rem;
+}
+/* 입력 폼 영역은 적당히 좁게 유지 (가독성), 결과 표는 풀 와이드 */
+.input-narrow {
+    max-width: 700px;
 }
 .stButton button {
     width: 100%;
@@ -930,8 +934,13 @@ def calc_contribution_grade(engagement: float) -> str:
     return "최하"
 
 
-def render_videos_table(videos: list[dict], title: str = "", *, show_grade: bool = True):
-    """HiView 스타일의 표 — 등급/수치 토글 가능."""
+def render_videos_table(videos: list[dict], title: str = "", *,
+                         show_grade: bool = True, compact: bool = True):
+    """HiView 스타일의 표 — 등급/수치 + 핵심만/전체 토글 가능.
+
+    compact=True: 핵심 8컬럼만 (한 화면에 다 보임)
+    compact=False: 모든 컬럼 (가로 스크롤)
+    """
     if not videos:
         return
     try:
@@ -954,14 +963,11 @@ def render_videos_table(videos: list[dict], title: str = "", *, show_grade: bool
         perf_grade = calc_performance_grade(ratio)
         contrib_grade = calc_contribution_grade(engagement)
 
-        row = {
+        row: dict = {
             "썸네일": v.get("thumbnail_url", ""),
             "제목": v["title"],
             "🔗": f"https://www.youtube.com/watch?v={v.get('video_id','')}",
             "채널": v.get("channel_title", ""),
-            "📅채널개설일": v.get("channel_created_at", "") or "",
-            "구독자": v.get("subscriber_count") or 0,
-            "📹채널영상수": v.get("channel_video_count") or 0,
             "조회수": v.get("view_count") or 0,
         }
         if show_grade:
@@ -970,15 +976,24 @@ def render_videos_table(videos: list[dict], title: str = "", *, show_grade: bool
         else:
             row["⚡실적도"] = round(ratio, 1)
             row["💖공헌도"] = round(engagement, 2)
-        row.update({
-            "게시일": v.get("published_at", "") or "",
-            "👍좋아요": v.get("like_count") or 0,
-            "💬댓글": v.get("comment_count") or 0,
-            "길이": dur_txt,
-        })
+        row["게시일"] = v.get("published_at", "") or ""
+
+        if not compact:
+            # 상세 컬럼들
+            row["📅채널개설일"] = v.get("channel_created_at", "") or ""
+            row["구독자"] = v.get("subscriber_count") or 0
+            row["📹채널영상수"] = v.get("channel_video_count") or 0
+            row["👍좋아요"] = v.get("like_count") or 0
+            row["💬댓글"] = v.get("comment_count") or 0
+            row["길이"] = dur_txt
+
         if has_lang:
-            row["🌐 언어"] = v.get("search_lang_label", "")
-            row["검색어"] = v.get("search_query", "")
+            flags = v.get("search_lang_flags") or v.get("search_lang_label", "")
+            cnt = v.get("search_lang_count", 1)
+            row["🌐 언어"] = f"{flags} ×{cnt}" if cnt > 1 else flags
+            if not compact:
+                qs = v.get("search_queries") or [v.get("search_query", "")]
+                row["검색어"] = " / ".join(q for q in qs if q)[:80]
         rows.append(row)
 
     df = pd.DataFrame(rows)
@@ -1128,9 +1143,12 @@ def render_analysis(videos: list[dict], section_label: str = "", *, color: str =
                 dur_txt = f" · ⏱ {m}:{s:02d}"
             else:
                 dur_txt = ""
+            # 🌐 다국어 모드면 어느 언어 검색에서 잡혔는지 표시
+            flags = v.get("search_lang_flags") or ""
+            lang_txt = f" · 🌐 {flags}" if flags else ""
             st.markdown(
                 f"<div class='title-row'><div class='t'>{t}</div>"
-                f"<div class='s'>길이 {ln}자{dur_txt}</div></div>",
+                f"<div class='s'>길이 {ln}자{dur_txt}{lang_txt}</div></div>",
                 unsafe_allow_html=True,
             )
 
@@ -1161,7 +1179,7 @@ def filter_by_length(videos: list[dict], length_mode: str) -> list[dict]:
 def render_with_split(videos: list[dict], length_mode: str, *,
                       show_gems: bool = False, view_mode: str = "table",
                       search_label: str = "", category_default: tuple = ("", "", ""),
-                      show_grade: bool = True):
+                      show_grade: bool = True, compact: bool = True):
     """선택한 길이 필터로 한 번 렌더링."""
     shorts, longs, unknown = split_shorts_longs(videos)
     has_dur = any(v.get("duration_s") is not None for v in videos)
@@ -1183,6 +1201,31 @@ def render_with_split(videos: list[dict], length_mode: str, *,
         return
 
     st.markdown("---")
+
+    # 🌐 다국어 모드일 때 언어별 영상 수 카운트 표시
+    has_lang = any(v.get("search_lang_labels") or v.get("search_lang_label") for v in filtered)
+    if has_lang:
+        from collections import Counter as _Counter
+        lang_counter: _Counter = _Counter()
+        for v in filtered:
+            labels = v.get("search_lang_labels") or [v.get("search_lang_label", "")]
+            for lab in labels:
+                if lab:
+                    lang_counter[lab] += 1
+        if lang_counter:
+            chips = "<div style='display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 12px;'>"
+            chips += "<span style='color:#6b7280;font-weight:600;font-size:0.9rem;'>🌐 언어별:</span>"
+            for lab, cnt in lang_counter.most_common():
+                bg = "#dbeafe" if cnt >= 5 else "#f3f4f6"
+                fg = "#1e40af" if cnt >= 5 else "#374151"
+                chips += (
+                    f"<span style='background:{bg};color:{fg};padding:3px 10px;"
+                    f"border-radius:12px;font-size:0.88rem;font-weight:700;'>"
+                    f"{lab} · {cnt}개</span>"
+                )
+            chips += "</div>"
+            st.markdown(chips, unsafe_allow_html=True)
+
     if search_label:
         m, mi, s = (category_default + ("", "", ""))[:3]
         render_notion_save_panel(
@@ -1194,7 +1237,7 @@ def render_with_split(videos: list[dict], length_mode: str, *,
 
     if view_mode == "table":
         render_videos_table(filtered, title=f"📊 {label} · {len(filtered)}개",
-                            show_grade=show_grade)
+                            show_grade=show_grade, compact=compact)
     else:
         if show_gems:
             render_hidden_gems(filtered)
@@ -1231,7 +1274,7 @@ def render_multi_country(results: dict[str, list[dict]], length_mode: str,
                           view_mode: str = "table",
                           search_label: str = "",
                           category_default: tuple = ("", "", ""),
-                          show_grade: bool = True):
+                          show_grade: bool = True, compact: bool = True):
     """results: {country_label: [videos]} — 국가별 시드 발굴 결과를 비교."""
     # 1) 길이 필터 적용
     filtered: dict[str, list[dict]] = {
@@ -1314,7 +1357,7 @@ def render_multi_country(results: dict[str, list[dict]], length_mode: str,
                 )
             # 표 모드면 표, 카드 모드면 미니 인사이트
             if view_mode == "table":
-                render_videos_table(vids, show_grade=show_grade)
+                render_videos_table(vids, show_grade=show_grade, compact=compact)
             else:
                 r = analyze_titles([v["title"] for v in vids])
                 if r:
@@ -1493,6 +1536,15 @@ grade_or_num_label = st.radio(
     help="등급은 색상으로 한눈에. 수치는 정확한 값으로 정렬 정밀.",
 )
 show_grade = grade_or_num_label.startswith("🏷️")
+
+table_density = st.radio(
+    "표 컬럼 개수",
+    ["🎯 핵심만 (한 화면에 다 보임)", "📐 모두 (가로 스크롤 발생)"],
+    horizontal=True,
+    label_visibility="visible",
+    help="핵심만 = 썸네일/제목/채널/조회수/실적도/공헌도/게시일/언어. 나머지(구독자/좋아요/댓글/채널개설일 등)는 펼치기로 봐요.",
+)
+compact_table = table_density.startswith("🎯")
 
 videos: list[dict] = []
 go = False
@@ -1890,14 +1942,14 @@ if go and videos:
             multi_country_results, length_mode, view_mode=view_mode,
             search_label=search_label_for_save,
             category_default=category_default_for_save,
-            show_grade=show_grade,
+            show_grade=show_grade, compact=compact_table,
         )
     else:
         render_with_split(
             videos, length_mode, show_gems=show_gems_flag, view_mode=view_mode,
             search_label=search_label_for_save,
             category_default=category_default_for_save,
-            show_grade=show_grade,
+            show_grade=show_grade, compact=compact_table,
         )
     st.markdown(
         "<div class='caption-small'>💡 더 많은 영상을 넣을수록 공식이 정확해져요</div>",

@@ -146,7 +146,295 @@ python pipeline.py --init                              # 파이프라인 폴더 
   - 모든 결과 출력은 `st.code()` 블록으로 통일(우상단 📋 아이콘 복사). 통합
     페르소나·가사 본문도 텍스트 영역에서 코드 블록으로 교체. 각 탭 상단에
     복사 안내 캡션 1회 노출.
+- [x] ☀️ **오늘의 시그니처(채널 사운드 정체성)**(2026-06-27, lyrics-auto-generator-9pf34x):
+  `daily_signature.py` 신규 + `daily_signature.json` 로컬 저장. 첫 시드 시리즈 =
+  사용자가 명시한 **"Parisian Chanson Café"** (스텔라장식, soft acoustic piano +
+  romantic accordion + upright bass + warm string pad, 보컬 whispering airy female,
+  분위기 charming/cozy/dreamy, **strictly no drums, no guitars**).
+  - 곡마다 액센트 1개만 자동 변주(glockenspiel/vibraphone/muted trumpet/flute/cello/celeste)
+  - day_count 자동 증가 — 같은 시그니처 50곡 쌓아 채널 정체성 확립
+  - 사이드바에서 시그니처 편집(악기·보컬·분위기·액센트 팔레트 수정 가능)
+  - Suno Style of Music = 시리즈명(Day N) + 금지 악기 + 핵심 악기 + 보컬 + 분위기 +
+    레퍼런스 아티스트 + 언어 명시 + [today's accent: …]
+  - `lyrics_generator.build_prompt` 에 `signature_brief` 주입 → LLM 이 섹션마다
+    sound_direction(괄호) + stage_direction(대괄호) 자동 작성
+  - 결과 가사 = 사용자 예시 동일 형식: `[Intro]\n(사운드)\n[Stage]\n가사`
+- [x] 🎤 **가사 자동 생성기 단독 앱**(2026-06-27, lyrics-auto-generator-9pf34x):
+  `lyrics_app.py` 신규 — 모바일 세로 우선 단일 페이지 Streamlit. 장르(트로트5070/
+  트로트흥/발라드/K-POP/포크7080) + 길이(2:30~6:00) + **언어 멀티셀렉트(12개국)** +
+  주제 선택 + 변주개수(1~3) → Gemini → 언어별 N개 가사 변주.
+  **결과 카드를 3블록(제목/스타일/가사)으로 분리**해 **수노(Suno) Custom 모드에
+  그대로 붙여넣기** 가능. 섹션 태그는 Suno 표준 `[Verse 1]/[Chorus]/[Bridge]/[Outro]`
+  로 자동 변환. **다국어 지원**: 한국어/영어/일본어/대만식 중국어/멕시코·스페인
+  스페인어/프랑스어/힌디/베트남어/인도네시아어/태국어/브라질 포르투갈어. 각 언어
+  선택 시 Suno 스타일도 그 지역 음악(샹송/랜체라/볼리우드/만도팝/볼레로/MPB 등)으로
+  자동 변환 + "sung in {언어}" 명시. 전체 백업 TXT 다운로드.
+  - 엔진: `lyrics_generator.py` 에 `language` 파라미터 추가(언어별 가요 운율 지시)
+  - 실행: `streamlit run lyrics_app.py` 또는 `가사생성기실행.bat` (포트 8503)
+  - import + Suno 섹션/스타일 변환 + 다국어 프롬프트 + stub generate_lyrics 검증.
+    HTTP 200 페이지 렌더 확인.
 - [ ] 실제 API 키로 end-to-end 점검(collect→score→검수→역설계→pipeline) — 키 필요해 미수행
 - [ ] `automation.py`(laughing-hawking) cron 레이어를 통합할지 결정
 - [ ] sleepy-fermat-76R13 의 reverse_app.py 를 default 브랜치(eqO5N)로 머지해야 사용자 화면에 반영됨
+- [x] 🌍 **나라별 작사 도서관**(2026-06-27, lyrics-auto-generator-9pf34x):
+  `nation_prompts.py` + `nation_prompts.json` (gitignore — 사용자 편집 로컬 보존,
+  시드는 코드 안 SEED_NATION_PROMPTS). **12개국 작사 DNA 시드**:
+  한국어/영어/일본어/대만식 중국어/멕시코식·스페인 스페인어/프랑스어/힌디어/
+  베트남어/인도네시아어/태국어/브라질 포르투갈어. 각 나라마다 6필드 — 작사가
+  페르소나·자주 쓰는 모티프(9개 내외)·운율 형식 규칙·대표 작사가·피해야 할 것·
+  한 줄 샘플(톤 참고). 가사 생성 시 `build_combined_persona()` 가 자동으로
+  장르 페르소나 + 그 나라 작사 DNA 를 합쳐 generate_lyrics 에 주입.
+  사이드바에서 나라별 편집·저장 UI(드롭다운 + expander). 결과 카드에 적용된
+  작사 DNA(대표 작사가) 표시. 새 언어 시드 추가 시 기존 사용자 편집 보존하며
+  자동 보충.
+- [x] 🏆 **자동 셀프 평가 + 재생성**(2026-06-28, lyrics-auto-generator-9pf34x):
+  `lyrics_evaluator.py` 신규. 가사 생성 후 같은 Gemini 호출로 4기준 채점 →
+  임계값 미만이면 곡당 1회 자동 재생성, 점수 더 높은 쪽 채택.
+  - 기준 4개 (각 0-10, 합 40): rhyme(운율) / nativeness(나라스러움) /
+    emotion(정서 전달) / signature_fit(시그니처 일치)
+  - 기본 임계값 28 (70%). 사용자가 사이드바 슬라이더로 20~36 조정.
+  - 기본 OFF — 사용자가 사이드바 토글 켜야 작동(API 호출 약 1.5~2배).
+  - 결과 카드에 🏆 점수 배지(30↑녹/24↑주/그 아래 빨), 4기준 세부 점수,
+    💬 한국어 코멘트 1줄, 🔄 재시도됨 표식 표시.
+  - 채점 프롬프트에 그 나라 작사 DNA + 오늘의 시그니처 요약 주입 →
+    "그 나라스러움"·"시그니처 일치" 항목이 의미 있게 작동.
+  - stub LLM 으로 채점/임계값 검출 흐름 검증 완료.
+- [x] 🎭 **시리즈 전환 (시즌 운영)**(2026-06-27, lyrics-auto-generator-9pf34x):
+  여러 시그니처를 보관·전환해 시즌처럼 운영. 시드 4개 추가:
+  · Parisian Chanson Café (스텔라장식 샹송, 사용자 명시)
+  · Hometown Memory Café (5070 트로트, 시골 봄날·어머니)
+  · Midnight City Lounge (발라드, 도시 야경·Rhodes)
+  · Saturday Morning Café (7080 포크, 통기타·하모니카)
+  - `daily_signature.py` 헬퍼 추가: `list_series` / `create_series`
+    (현재 복제 옵션 + slug ID 자동 + 중복 시 _N 접미) / `delete_series`
+    (마지막 1개 보호) / `_slugify` (한글/영문 안전)
+  - lyrics_app.py 사이드바 🎭 시리즈 셀렉트박스 + 시리즈 추가/삭제 expander
+  - 새 시리즈 만들면 자동 current 전환. 삭제 시 현재 삭제하면 다른 것으로 자동 전환.
+- [x] **lyrics-auto-generator-9pf34x → default 브랜치(eqO5N) 머지 완료**
+  (2026-06-27, rebase + no-ff merge). 사용자 PC `유튜브실행.bat` 로 받으면
+  가사 생성기 자동 포함.
+- [x] 🎬 **채널 설명·해시태그 자동 생성기**(2026-06-28, youtube-description-generator-lssj9c):
+  유튜브 링크(채널/영상) → YouTube Data API 로 채널 정체성 + 최근 영상 설명 N개
+  수집 → 키워드/태그 빈도 분석 → Gemini 가 채널 브리프 + **의식의 흐름 4단**
+  (감정 호명 → 그림 한 컷 → 약속 → 강요 없는 초대) 으로 채널 설명 + 해시태그 +
+  채널 설정 키워드 생성. 결과 카드 3블록 모두 `st.code()` 로 복붙 가능.
+  - 신규 모듈:
+    · `channel_brief.py` — **모든 앱이 공유하는 채널 브랜드 브리프** JSON 메모리
+      (정체성/타깃/약속/감정·음악 키워드/톤/금지어/시그니처/CTA/발행 리듬).
+      시드 2개(파리지앵 샹송 카페·고향의 봄 트로트). `as_prompt_block()` 으로
+      LLM 프롬프트에 그대로 주입. 사이드바에서 브리프 추가·편집·삭제·전환.
+    · `channel_desc_generator.py` — URL 파싱(channel/video/handle/user 전부) +
+      YouTube Data API 수집 + 키워드 빈도(스톱워드 필터) + Gemini 호출 + 파싱.
+      `llm_call` 주입으로 헤드리스 테스트 가능.
+    · `channel_desc_app.py` — 모바일 세로 우선 Streamlit. 변주 1~3개 / 길이
+      짧게·중간·길게 / 분석 영상 수 5~50개 슬라이더. 전체 결과 JSON 백업.
+  - 실행: `streamlit run channel_desc_app.py` 또는 `채널설명생성기실행.bat`
+    (포트 8504). `channel_brief.json` 은 gitignore — 로컬 보존.
+  - 검증: URL 파싱 5종 + 키워드 추출 + stub generate + Streamlit HTTP 200.
+- 💡 **(아이디어 보관)** 일본 시니어 타깃 — 해외 감동/인생교훈 채널 자동화
+  (영상 짜집기 + TTS + CapCut 편집). 30개 소스 채널·전략·기술스택·MVP 로드맵 전문:
+  `ideas/japan_senior_heartwarming.md`. 기존 youtube-automation(K-Trot)과 **별개**
+  의 독립 프로젝트로 구상 — MVP 진입 시 별도 repo 분리 권장.
+- 🎌 **(설계 완료)** **일본쇼츠 자동 프로그램** (2026-07-01, new-session-rhtlol):
+  사장님이 시안 15장+ 로 그린 3-도구 통합 대시보드 설계 완결.
+  전문: `ideas/japan_shorts_architecture.md` (~900줄).
+  - **3 도구**: 📺 RefTracker(발굴) · 🌸 일본어 번역봇(대본·TTS) · ✂️ 자동 컷편집
+  - **핵심 자산**: 통합대본 4섹션(의미확인/자막/영어확인/TTS용) · 파이프(`|`) 3역할
+    · 매칭 신뢰도 % · MediaPipe 얼굴추적 9:16 크롭 · 캡컷 프로젝트 직접 쓰기
+  - **파이프라인 6단계**: yt-dlp → Whisper STT → 쇼츠처리 → 한국어번역 →
+    의미매칭 → 시각매칭보강
+  - **스택 결정**: Next.js 14 + FastAPI + SQLite(MVP) + Redis/RQ + VOICEVOX
+  - **로드맵**: Phase 0~5 총 11주 (2.5개월)
+  - **저장소 전략**: `japan_shorts/` 서브폴더 시작 → 안정화 후 별도 repo
+  - 다음 단계: 사장님 GO 사인 → Phase 0 착수
+- [x] 🎌 **일본쇼츠 Phase 1 — RefTracker 실작동**(2026-07-02, new-session-rhtlol):
+  정적 시안(`japan_shorts_app/`)에 FastAPI 백엔드(`jpshorts/backend/`)를 붙여
+  **4개 화면 실작동**: 🔍 검색 / 🌐 YouTube 발굴(3축 칩 조합) / ⭐ 북마크 / 📺 레퍼런스 채널.
+  - 실행: **`일본쇼츠실행.bat`** → uvicorn 포트 8787 이 UI+API 통합 서빙 (서버 1개).
+  - 백엔드: `taxonomies.json`(장르17·상황10·감정8, 한/영/일 어휘) + `taxonomy.py`
+    (칩 조합→검색어 5템플릿) + `youtube_client.py`(키 없으면 **데모 폴백**,
+    배수=조회수/채널평균, 채널나이 개월) + `store.py`(SQLite: 북마크/채널/최근검색/캐시24h).
+  - 프론트: `assets/api.js` 공용(카드 렌더러·북마크/채널 토글·정렬필터·토스트·데모배너).
+    카드 액션 5개 작동(자막=downsub/원본/유사=재검색/댓글/링크복사). 🌱 채널나이 필터.
+  - 검증: Playwright 전 화면 통과 — 검색 24카드·북마크 크로스 화면·채널 등록·
+    3축 조합(트로트×슬픔) 5검색어→75카드·JS 오류 0. 스크린샷 `japan_shorts_app/screenshots/`.
+  - ⚠️ `.env` 에 YOUTUBE_API_KEY 넣으면 실검색, 없으면 데모 데이터 (UI에 배너 표시).
+  - **다음(Phase 2 후보)**: trend.html(레시피 자동 재실행 피드) · collections.html(컬렉션+내보내기)
+    · translator.html(Gemini 번역+VOICEVOX 문장별 TTS→manifest 패키지) · editor.html(컷 플래너
+    →CapCut draft). 설계 전문: `ideas/japan_shorts_architecture.md` + `ideas/japan_senior_heartwarming.md`.
+- [x] 🕵️ **원본 소스 찾기 — 5플랫폼 역추적**(2026-07-04, new-session-rhtlol):
+  사용자가 Codex(로컬 PC PowerShell)에서 쓰던 source-finder 를 Python 으로 이식+확장.
+  조사 범위: YouTube·Instagram·TikTok·**샤오홍슈·더우인** 기본 포함.
+  - `jpshorts/backend/source_finder.py`: meta(yt-dlp→oEmbed 폴백)→다운로드(480p)→
+    프레임24+contact_sheet.jpg+**워터마크 스트립**(하단 28% 2배 확대)→@핸들 추출
+    (정규식+pytesseract OCR 옵션)→5플랫폼 후보(프로필 probe+검색 루트+DDG 자동검색)
+    →판정+report.md/json. **전 단계 실패 허용** — 막혀도 한계 명시하고 완주.
+  - 판정 체계(Codex 방식 답습): "가장 이른 공개 후보" vs "원본 촬영 후보" 분리,
+    근거 우선순위 워터마크 @핸들 > 메타 날짜 > 자막 일치. 업로더 자신 핸들과 외부 핸들 구분.
+  - 수동 단서(hints: 제목/@핸들) 지원 — 프록시로 메타 수집 막혀도 후보 생성 가능.
+  - API: POST/GET `/api/source-finder` (백그라운드 스레드 잡+1.5s 폴링+산출물 서빙+기록).
+  - UI: `source_finder.html` (URL 입력→6단계 진행 표시→판정 패널+이미지+확인 루트 버튼
+    +report.md+과거 기록). 전 페이지 사이드바 🕵️ 메뉴 + 카드 액션 "🕵️ 원본찾기".
+  - 검증: 로컬 워터마크 시뮬레이션(@kimdy804 drawtext 영상)으로 전 단계 통과 —
+    Codex 실사례와 동일 판정(@kimdy804 유력·TikTok/Instagram 1순위) 재현. Playwright UI 통과.
+  - ⚠️ 웹 컨테이너는 프록시가 유튜브 차단 → 메타·다운로드 실패(정상 동작으로 한계 기록).
+    **사용자 PC(일본쇼츠실행.bat)에서 풀가동** (yt-dlp/ffmpeg 로컬 설치 확인됨).
+  - ⚠️ 이 컨테이너는 2회 리셋됨 — **커밋·푸시를 검증보다 먼저** 하는 원칙 재확인.
+- [x] 🔑 **설정 화면에서 API 키 직접 저장**(2026-07-06, new-session-rhtlol):
+  비개발자 사장님이 메모장으로 `.env` 편집하는 대신 **설정 → 🔑 연결키 저장**
+  패널에서 YouTube/Gemini/OpenAI 키를 붙여넣고 💾 저장 → 이 PC의 `.env` 에
+  영구 저장 + **서버 재시작 없이 즉시 적용**.
+  - 백엔드(`jpshorts/backend/main.py`): `POST /api/keys/save`(.env upsert — 다른
+    줄 보존, 빈칸은 기존 키 유지해 실수 삭제 방지, 최소 1개 없으면 400) +
+    `os.environ` & `yc.YOUTUBE_API_KEY` 즉시 반영. `GET /api/keys/status` 는
+    마스킹(••••last4)만 반환 — 평문 노출 없음. `ENV_PATH`=저장소 루트 `.env`.
+  - 프론트(`settings.html`): 3개 비밀번호 입력 + 현재 상태 배지(저장됨/미설정) +
+    "입력한 키 보기" 토글. 저장 후 상태·연결배지 자동 새로고침.
+  - 🔒 보안: `.env` 는 `.gitignore` — **절대 커밋/업로드 안 됨**. 키는 사장님
+    PC 에만. 검증: TestClient 8케이스(저장/부분업데이트/빈칸보존/즉시반영/마스킹)
+    + 라이브 HTTP + Playwright 렌더 통과. **default(eqO5N) 머지·푸시 완료**.
+- [x] 🎨 **플리 컨셉 제조기 결과 화면 카드형 개편**(2026-07-06, new-session-rhtlol):
+  사장님이 "결과가 너무 보기 불편" + GPT 예시 출력을 붙여줌 → 장점(9섹션 구조·
+  85/15 컨셉·복붙 자산)은 살리고 단점(마크다운 한 덩어리 = 긴 스크롤 벽)을 보완.
+  - 백엔드(`concept_maker.py`): 출력 방식을 마크다운 → **구조화 JSON** 으로 전환.
+    `JSON_OUTPUT` 스키마 지침(입력가정/채널분석/브랜딩점수/컨셉/세팅/미리보기/
+    대표썸네일/제목10/Suno/체크리스트) + `_parse_json`(코드펜스 제거·첫{~마지막}
+    방어 파싱). 파싱 실패 시 원문 마크다운 폴백, 키 없으면 `_demo_result`(전
+    컴포넌트 채운 구조화 데모). 반환 `{result, markdown, channels, engine}`.
+  - 프론트(`concept_maker.html`): `renderReport` 카드 렌더러. 상단 **섹션 네비
+    pill**(탭 점프) + 전체복사 · 브랜딩점수 **색상 막대+총점배지(/50)** · 컨셉
+    **그라디언트 카드**(유지85%/비틀15% 2열+색상 스와치) · **채널 세팅 복붙 존**
+    (설명문·키워드·태그·해시태그·템플릿 각각 📋 복사 버튼, 이름·핸들·곡제목은
+    클릭복사 칩) · 대표썸네일 **이미지 프롬프트**·Suno **스타일/가사** 강조 복사
+    블록 · 제목10 번호리스트(개별+전체복사) · Suno 구조 타임라인 · 체크박스
+    체크리스트. 모바일 대응(네비 가로스크롤·2열→1열), 마크다운 폴백 유지.
+  - 검증: Playwright 렌더 — 네비8·점수막대5·총점배지·컨셉카드·복사블록9·클릭칩11·
+    제목행10·타임라인6·체크5·스와치8, JS오류 0. **default(eqO5N) 머지·푸시 완료**.
+- [x] 🖼️ **플리 컨셉 제조기 = 썸네일 벤치마킹 도구로 확장**(2026-07-07, new-session-rhtlol):
+  사장님이 "이 도구의 주 목적은 썸네일 벤치마킹" 명시 → 실제 썸네일을 보여주고
+  새 썸네일을 그려주는 흐름 완성(벤치마킹 → 컨셉 → 이미지).
+  - 백엔드(`concept_maker.py`):
+    · `collect_channel` 이 영상 썸네일 URL·video_id 수집(무료·추가쿼터 없음)
+    · `generate_report` 가 **인기순 상위 9개 썸네일**(실데이터)을 `thumbnails` 로 반환
+    · 플리 컨셉 LLM 을 **GPT(OpenAI, gpt-4o) 우선**으로 전환(`_llm`=openai→gemini,
+      사장님이 GPT 연결). 없으면 Gemini 폴백. `_engine_name()` 갱신.
+    · `_midjourney()` — 이미지 프롬프트 → **미드저니용**(`--ar 16:9 --style raw --v 6`,
+      후행 비율 중복 제거) 자동 생성. `hero_thumbnail.midjourney_prompt` 후처리 주입.
+    · `generate_thumbnail_image()` — OpenAI 이미지 API(**gpt-image-1→dall-e-3** 폴백)로
+      썸네일 PNG 생성 + `data/concept_thumbs` 저장 + data_url 반환. 키 없으면 친절 400.
+    · 데모 채널에 그라디언트 SVG 썸네일 9개(3×3 그리드 시연).
+  - `main.py`: `POST /api/concept/thumbnail`(이미지 생성) + `GET .../file/{name}`.
+  - 프론트(`concept_maker.html`):
+    · **최상단 🖼️ 벤치마킹 섹션** — 인기순 9개 썸네일 3×3 그리드(순위·조회수 배지·
+      클릭 시 원본). 네비 첫 pill.
+    · 대표 썸네일 섹션에 **"🎨 이 컨셉으로 썸네일 그려서 미리보기"** 버튼 → GPT 생성
+      이미지 **인라인 미리보기** + ⬇️ 다운로드 + 🔄 다시 그리기.
+    · **🖌️ 미드저니 프롬프트** 강조 복사 블록 + **🖼️ 순수 이미지 프롬프트**(DALL·E용) 블록.
+  - 검증: Playwright — 벤치타일9·썸네일img9·순위배지9·GPT버튼1·미리보기박스1·
+    네비pill9(첫=벤치마킹)·미드저니라벨, JS오류 0. TestClient 이미지생성 키없음 400 확인.
+    **default(eqO5N) 머지·푸시 완료**. ⚠️ 실제 이미지 생성은 사장님 PC(OpenAI 키)에서 작동.
+- [x] 👁 **썸네일 벤치마킹 강화 — GPT Vision 실측**(2026-07-07, new-session-rhtlol):
+  사장님이 OpenAI(GPT) 키 연결 → "썸네일 부분 더 강화". 텍스트 추정 → **실제 이미지
+  분석**으로 격상.
+  - `concept_maker.py`:
+    · `analyze_thumbnails_vision()` — **GPT-4o Vision** 이 인기 상위 9개 썸네일
+      이미지를 직접 보고 공통 컬러(#hex)·구도·오브젝트·인물·텍스트 오버레이·무드
+      + 85/15 벤치마킹 요약 추출(`detail=low` 저비용). 키 없거나 http 이미지 없으면
+      None → 텍스트 추정 경로로 안전 폴백.
+    · `generate_report()` 재구성 — 썸네일을 **LLM 호출 전에 먼저 계산** → Vision 분석
+      실행 → 결과를 컨셉 프롬프트에 **실측 근거로 주입**. 있으면 `thumbnail.estimated
+      =false` 확정. 응답에 `vision` 필드 추가.
+  - `concept_maker.html`: 벤치마킹 헤더에 **👁 이미지 실측 / 📝 추정 배지**, 그리드 아래
+    **"👁 GPT Vision 실측 분석"** 보라 박스로 공통 패턴 노출.
+  - 검증: 무키 폴백(vision=None, estimated=true 유지) + mock vision(estimated=false
+    전환·응답 노출) + Playwright(vision-box 1·실측배지·불릿7, JS오류 0). **default
+    (eqO5N) 머지·푸시 완료**. ⚠️ 실제 Vision 분석은 사장님 PC(OpenAI 키)에서 작동.
+- [x] 📎 **썸네일 캡처 직접 업로드 + 인기 제목 붙여넣기**(2026-07-07, new-session-rhtlol):
+  사장님이 "정밀도가 떨어진다 → 인기도순 이미지·제목을 캡처해 붙여넣겠다". URL
+  자동수집 대신 **사용자가 선별한 실제 이미지**를 GPT가 직접 보게 함.
+  - `concept_maker.py`: `generate_report(images, titles_text)` 확장. 업로드 캡처가
+    있으면 벤치마킹 그리드·Vision 대상을 그 이미지로(선별=정밀), 붙여넣은 제목은
+    반복 키워드·문형·감정 훅의 **최우선 근거**로 프롬프트 주입. `_is_image_ref()`
+    가 base64 data(png/jpeg/webp/gif) 허용 → Vision 이 업로드 이미지 직접 봄.
+    채널 없이 이미지·제목만으로도 동작. 응답에 `thumb_source`(upload/youtube/none).
+  - `main.py`: `ConceptReq.images/titles` 추가, 검증 완화(셋 중 하나).
+  - `concept_maker.html`: 🖼️ 업로드존(클릭·드래그·**Ctrl+V 붙여넣기**) — 클라
+    다운스케일(≤900px JPEG) 후 전송, 인기도 순서 보존·미리보기·개별삭제(최대 9).
+    📝 인기 상승 제목 textarea. 벤치마킹 헤더가 "내가 올린 캡처 N장 · 👁 이미지
+    실측(내 캡처)"로 전환, 조회수 0이면 배지 숨김.
+  - 검증: 실제 파일 업로드 Playwright — 미리보기 2·요청 이미지 2(JPEG data URL·
+    다운스케일)·제목 전달·헤더 "내 캡처" 전환·조회수배지 0, JS오류 0. TestClient
+    images/titles-only·무입력 400 확인. **default(eqO5N) 머지·푸시 완료**.
+- [x] 🐛 **날 JSON 출력 버그 수정 + 로고·배너 GPT 생성**(2026-07-07, new-session-rhtlol):
+  사장님: 결과가 카드가 아니라 **날 JSON 텍스트**로 나옴(캡처2) + 로고·배너도 새
+  컨셉으로 그려달라.
+  - 원인: GPT JSON을 `_parse_json`이 못 파싱 → 마크다운 폴백이 원문 JSON을 그대로 표시.
+  - 수정: `_openai/_llm/translator._gemini` 에 **json_mode** 추가 — OpenAI
+    `response_format={type:json_object}`+max_tokens 8000, Gemini `response_mime_type`.
+    `generate_report` 가 json_mode=True 로 호출 → 유효 JSON 보장. `_parse_json`
+    방어 강화(후행 콤마·중괄호/따옴표 균형 복구). 프론트 안전망(markdown 이 JSON 이면
+    클라 파싱).
+  - 로고·배너 생성: 스키마 `preview.profile.image_prompt`(로고)+`banner.image_prompt`
+    (배너). `genThumb`→`genImage(boxId,size,label)` 일반화(로고 1024², 배너·썸네일
+    1536×1024). 미리보기 섹션에 "🎨 새 로고/배너 그리기" 버튼+인라인 미리보기.
+    복제 방지 가드는 기존대로 이미지 API 앞에 주입.
+  - 검증: 데모 렌더 — 날 JSON 미표시(버그 해소)·카드 10섹션·로고/배너/썸네일 버튼·
+    genLogoBox/genBannerBox, JS오류 0. OpenAI mock 으로 json_object+max_tokens 확인.
+    _parse_json 후행콤마·잘림 복구 통과. **default(eqO5N) 머지·푸시 완료**.
+- [x] ✨ **이미지 생성 최고 화질 격상**(2026-07-07, new-session-rhtlol):
+  사장님: 생성 이미지가 ChatGPT 결과 대비 화질·색상·선명도 저품질.
+  - 원인: OpenAI 이미지 API `quality` 미지정 → 기본(저품질) 등급 생성.
+  - 수정(`generate_thumbnail_image`): gpt-image-1 `quality="high"`(ChatGPT 앱 동급),
+    dall-e-3 폴백 `quality="hd"`+`style="vivid"`. 프롬프트에 화질 부스터 suffix
+    (masterpiece·ultra-detailed·tack-sharp·no noise — 사진·로고 공용). 응답에
+    quality 필드. JSON 스키마 image_prompt 지시 강화(전경/중경/배경·광원·렌즈·
+    #hex·cinematic photorealistic 필수). 프론트 "✨ 최고화질(high)·모델" 배지.
+  - mock 검증: gpt-image-1 quality=high·suffix·가드 / dall-e-3 hd·vivid·1792x1024.
+    **default(eqO5N) 머지·푸시 완료**. ⚠️ 실제 화질 확인은 사장님 PC에서.
+- [x] 🎬 **썸네일+제목 한 세트 10개**(2026-07-07, new-session-rhtlol):
+  사장님: "제목이 썸네일 이미지에 담겨 있다 — 따로따로가 아니라 한 세트로 10개"
+  (Season Walk Pop 예시: 제목 ↔ 장면 ↔ 이미지 위 한글 문구가 한 몸).
+  - 스키마: `titles` → `title_sets` ×10 [{title, thumb_text(이미지에 얹을 한글
+    문구 1~2줄), image_prompt(그 제목의 계절·시간대·상황이 그대로 보이는 장면)}].
+    "제목만 봐도 장면이 그려지고 썸네일만 봐도 제목이 읽혀야" + 계절·시간대 분산.
+  - 후처리(`generate_report`): 세트별 `full_image_prompt` = 장면 + **한글 문구
+    오버레이 지시**(`_overlay_prompt` — GPT가 문구를 이미지에 새김) +
+    `midjourney_prompt`(장면만 — 한글은 캡컷에서). titles 자동 파생(호환).
+  - 프론트: 🎬 세트 카드 ×10 — 좌측 16:9 슬롯 세트별 "🎨 그리기"(그 장면+문구
+    새겨진 썸네일 최고화질 생성·인라인 미리보기·다운로드·재생성), 제목 복사,
+    문구 표시, 프롬프트 접기(GPT용/미드저니용), 제목·문구 전체복사. 구형
+    titles 폴백·모바일 스택 유지.
+  - 검증: Playwright — 세트카드10·그리기버튼10·문구10·details10·복사블록2/세트·
+    네비 "🎬 세트10", JS오류 0. 데모 10세트 전체 작성. **default(eqO5N) 머지·푸시
+    완료**. ⚠️ 실제 이미지 생성(문구 새김 품질)은 사장님 PC에서 확인.
+- [x] 🎯 **이미지 생성 레퍼런스 무드 이식**(2026-07-07, new-session-rhtlol):
+  사장님: 로고·배너·썸네일 감성이 벤치마킹 채널과 1%도 안 맞음(ChatGPT 직접은 찰떡).
+  - 원인: ChatGPT 앱은 생성 시 모델이 레퍼런스 이미지를 **직접 봄**. 우리는
+    [이미지→Vision 텍스트 요약→텍스트만으로 생성] — 텍스트 병목에서 감성 소실.
+  - 수정: `generate_thumbnail_image(refs)` — 레퍼런스(업로드 캡처/유튜브 썸네일)를
+    **`images.edit(gpt-image-1)` 에 직접 투입** + `_MOOD_TRANSFER` 지시(무드·색보정·
+    조명·필름 질감 흡수 85%, 구도·오브젝트 복제 금지, 새 장면 15%). 체인:
+    edit(quality high)→edit(재시도)→generate(high)→dall-e-3. `_ref_to_file()`
+    (data URL 디코드/http 다운로드/SVG 제외/포인터 리셋).
+  - `main.py` ThumbGenReq.refs(≤8) · 프론트 REF_THUMBS 전역(래스터만) — 세트·로고·
+    배너 모든 생성에 자동 첨부, "🎯 레퍼런스 N장 무드 반영" 배지.
+  - `jpshorts/backend/requirements.txt` 에 `openai>=1.76.0` 추가(bat 이 설치).
+  - 검증: mock(edit 파일2·무드지시·quality high·edit실패→gen 폴백·refs없음→gen) +
+    Playwright E2E(캡처 업로드→세트 그리기 클릭→refs 2장 전송·무드배지). JS오류 0.
+    **default(eqO5N) 머지·푸시 완료**. ⚠️ 실감성 확인은 사장님 PC에서.
+- [x] 🎬 **썸네일·제목 연구소 (장르별 채널 공장)**(2026-07-18, youtube-thumbnail-title-app-3ow1g5):
+  여러 장르 유튜브 채널을 새로 개설하기 위한 도구. **분석↔생성 2축** + 감시 + 레퍼런스 바구니.
+  - 신규 모듈: `tier_lab.py`(6개월 필터·9단계 구간 1천~30만+·제목 승리공식·일치성 채점, 순수로직),
+    `genre_store.py`(장르=채널 프로젝트, 벤치마크 링크+🔖북마크/🔔알림 토글, 🧺레퍼런스 바구니,
+    watch export), `thumb_overlay.py`(생성 씬 위에 한글 문구 PIL 렌더 — 글자 깨짐 방지·폰트 통일),
+    `thumbnail_title_lab.py`(Streamlit 7탭: 대시보드/구간분석/일치성/생성/바구니/감시/설정, 포트 8505).
+  - 감시: `channel_watcher.py`(RSS 쿼터0 새영상 감지+자동분석), `kakao_notify.py`(카톡 나에게보내기),
+    `get_kakao_token.py`(토큰 1회 발급), `.github/workflows/watch_channels.yml`(3시간 cron).
+    🔖북마크+🔔알림 ON 채널만 → watch_channels.json 커밋 → Actions 가 카톡 발송(PC 꺼져도).
+  - 생성: `concept_maker` 재사용(Vision·image-to-image 무드이식·최고화질). 씬(이미지)+글자(코드) 분리.
+  - 실행: `썸네일제목분석기실행.bat`(8505) + `썸네일분석기_바탕화면아이콘.bat`(바탕화면 🎬 아이콘, assets/thumb_lab.ico).
+  - 설계·링크 인벤토리: `ideas/benchmark_links_inventory.md`(사장님 벤치마킹 링크 8배치 누적 보존).
+  - 검증: 전 모듈 컴파일 + tier/consistency 로직 + genre_store CRUD + RSS 파서 + AppTest(예외0·7탭) +
+    Streamlit HTTP 200 + overlay 렌더. ⚠️ 실제 수집/이미지생성은 사장님 PC(키+YouTube 접속)에서 완전 작동.
+  - **다음(사용하며 보완)**: eqO5N 머지 → 실키 end-to-end → 미분류 대량링크 PC 자동분류 → 채널 정체성 확정.
 - (작업하며 갱신할 것)

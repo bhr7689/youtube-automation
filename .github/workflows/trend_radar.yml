@@ -1,0 +1,26 @@
+name: 🌊 트렌드 레이더 → 카톡 (지금 터지는 제목)
+
+# 장르 불문 '상황 키워드'로 최근 급상승 음악 영상을 찾아 카톡 알림.
+# 검색 쿼터를 아끼려고 하루 1회만 실행.
+# 준비: Secrets 에 YOUTUBE_API_KEY, KAKAO_REST_API_KEY, KAKAO_REFRESH_TOKEN
+on:
+  schedule:
+    - cron: '30 23 */3 * *'  # 3일에 한 번(한국시간 08:30경)
+  workflow_dispatch:
+
+jobs:
+  radar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 의존성 설치
+        run: pip install google-api-python-client
+      - name: 급상승 제목 찾아 카톡
+        env:
+          YOUTUBE_API_KEY:     ${{ secrets.YOUTUBE_API_KEY }}
+          KAKAO_REST_API_KEY:  ${{ secrets.KAKAO_REST_API_KEY }}
+          KAKAO_REFRESH_TOKEN: ${{ secrets.KAKAO_REFRESH_TOKEN }}
+        run: python trend_radar.py --notify

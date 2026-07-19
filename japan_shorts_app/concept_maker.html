@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>플리 컨셉 제조기 · RefTracker</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/api.js"></script>
+  <style>
+    .cm-panel{background:#fff;border:1px solid #f0ecf7;border-radius:16px;padding:18px 20px;margin-bottom:16px;box-shadow:0 2px 10px rgba(120,60,180,.05);}
+    .cm-h{font-size:15px;font-weight:800;margin-bottom:4px;}
+    .cm-sub{font-size:12px;color:#8a80a5;margin-bottom:12px;}
+    .cm-input{width:100%;border:1px solid #e5d9f5;border-radius:10px;padding:10px 14px;font-size:14px;outline:none;box-sizing:border-box;margin-bottom:8px;}
+    .cm-input:focus{border-color:#c084fc;}
+    textarea.cm-input{min-height:70px;resize:vertical;font-family:inherit;}
+    .cm-label{font-size:12px;color:#8a80a5;font-weight:600;margin:10px 0 6px;display:block;}
+    .cm-chips{display:flex;flex-wrap:wrap;gap:7px;}
+    .cm-chip{border:1px solid #e5d9f5;background:#fff;color:#64748b;padding:6px 14px;border-radius:999px;font-size:13px;cursor:pointer;font-weight:600;}
+    .cm-chip:hover{border-color:#c084fc;}
+    .cm-chip.on{background:#f3e8ff;border-color:#c084fc;color:#7e22ce;}
+    .spin{color:#a855f7;padding:14px 0;}
+    .rep-item{display:flex;align-items:center;gap:8px;padding:9px 4px;border-bottom:1px dashed #f0ecf7;}
+    .rep-item:last-child{border-bottom:none;}
+    .rep-open{flex:0 0 auto;font-size:12px;font-weight:700;padding:6px 14px;border-radius:8px;background:#7c3aed;color:#fff;border:none;cursor:pointer;}
+    .rep-open:hover{background:#6d28d9;}
+    .rep-del{flex:0 0 auto;font-size:13px;padding:6px 9px;border-radius:8px;background:#fff;border:1px solid #f0d9d9;color:#dc2626;cursor:pointer;}
+
+    /* 썸네일 캡처 업로드 */
+    .drop-zone{border:2px dashed #d8c9f2;border-radius:12px;padding:18px 14px;text-align:center;cursor:pointer;background:#faf7ff;transition:.15s;}
+    .drop-zone:hover,.drop-zone.drag{border-color:#a855f7;background:#f3e8ff;}
+    .dz-inner{font-size:13px;color:#8a80a5;line-height:1.6;}
+    .dz-inner b{color:#7c3aed;}
+    .up-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;margin-top:10px;}
+    .up-cell{position:relative;border-radius:9px;overflow:hidden;border:1px solid #ece6f7;background:#0b0b12;aspect-ratio:16/9;}
+    .up-cell img{width:100%;height:100%;object-fit:cover;display:block;}
+    .up-num{position:absolute;top:3px;left:3px;background:rgba(124,58,237,.94);color:#fff;font-size:10px;font-weight:800;padding:2px 6px;border-radius:999px;}
+    .up-x{position:absolute;top:3px;right:3px;background:rgba(0,0,0,.6);color:#fff;border:none;width:18px;height:18px;border-radius:50%;font-size:11px;cursor:pointer;line-height:1;padding:0;}
+    .up-x:hover{background:#dc2626;}
+
+    /* ── 결과: 헤더 + 섹션 네비 ── */
+    .rp-top{background:#fff;border:1px solid #f0ecf7;border-radius:16px;padding:16px 18px;margin-bottom:14px;box-shadow:0 2px 10px rgba(120,60,180,.05);}
+    .rp-top-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
+    .rp-title{font-size:16px;font-weight:800;color:#1e1b2e;}
+    .rp-chip{font-size:11px;font-weight:700;padding:4px 11px;border-radius:999px;background:#ede9fe;color:#6d28d9;}
+    .rp-chip.demo{background:#fef3c7;color:#92400e;}
+    .rp-nav{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;-webkit-overflow-scrolling:touch;}
+    .rp-nav::-webkit-scrollbar{height:0;}
+    .rp-pill{white-space:nowrap;font-size:12.5px;font-weight:700;padding:7px 13px;border-radius:999px;background:#faf7ff;border:1px solid #ede9fe;color:#6d28d9;cursor:pointer;flex:0 0 auto;}
+    .rp-pill:hover{background:#f3e8ff;}
+    .rp-copy-all{margin-left:auto;font-size:12px;font-weight:700;padding:6px 13px;border-radius:9px;background:#f3e8ff;border:1px solid #e5d9f5;color:#7e22ce;cursor:pointer;}
+
+    /* ── 섹션 카드 ── */
+    .rp-sec{background:#fff;border:1px solid #f0ecf7;border-radius:16px;padding:18px 20px;margin-bottom:14px;box-shadow:0 2px 10px rgba(120,60,180,.05);scroll-margin-top:12px;}
+    .rp-sec-h{font-size:15px;font-weight:800;color:#5b21b6;margin-bottom:12px;display:flex;align-items:center;gap:7px;}
+    .rp-sec-note{font-size:12px;color:#8a80a5;font-weight:400;}
+    .rp-block{margin-bottom:14px;}
+    .rp-block:last-child{margin-bottom:0;}
+    .rp-block-h{font-size:13px;font-weight:800;color:#1e1b2e;margin-bottom:7px;}
+    .rp-assumptions{background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:10px 14px;font-size:12.5px;color:#78591c;line-height:1.7;}
+    .rp-assumptions li{margin:2px 0;}
+
+    /* key-value */
+    .kv{display:grid;grid-template-columns:auto 1fr;gap:2px 0;font-size:13px;}
+    .kv-row{display:contents;}
+    .kv-k{font-weight:700;color:#6d28d9;padding:6px 12px 6px 0;white-space:nowrap;border-bottom:1px dashed #f0ecf7;}
+    .kv-v{color:#334155;padding:6px 0;border-bottom:1px dashed #f0ecf7;line-height:1.6;}
+    @media(max-width:640px){.kv{grid-template-columns:1fr;}.kv-k{border-bottom:none;padding-bottom:0;}.kv-v{padding-top:2px;}}
+
+    /* chips */
+    .chips{display:flex;flex-wrap:wrap;gap:6px;}
+    .chip{font-size:12px;font-weight:600;padding:4px 11px;border-radius:999px;background:#f3f0fa;color:#5b21b6;}
+    .cc-chip{font-size:13px;font-weight:700;padding:6px 13px;border-radius:999px;background:#fff;border:1px solid #e5d9f5;color:#334155;cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
+    .cc-chip:hover{border-color:#c084fc;background:#faf7ff;}
+    .cc-ic{font-size:11px;opacity:.6;}
+
+    /* score bars */
+    .sc-row{display:flex;align-items:center;gap:10px;margin:5px 0;font-size:12.5px;}
+    .sc-lab{width:74px;color:#64748b;font-weight:600;flex:0 0 auto;}
+    .sc-track{flex:1;height:9px;background:#f1edf9;border-radius:999px;overflow:hidden;}
+    .sc-fill{display:block;height:100%;border-radius:999px;transition:width .5s;}
+    .sc-val{width:20px;text-align:right;font-weight:800;color:#1e1b2e;flex:0 0 auto;}
+    .sc-total{display:inline-flex;align-items:baseline;gap:4px;background:linear-gradient(90deg,#7c3aed,#ec4899);color:#fff;padding:8px 16px;border-radius:12px;font-weight:800;font-size:15px;}
+    .sc-total small{font-size:11px;opacity:.85;font-weight:600;}
+    .one-liner{font-size:13px;color:#4b5563;font-style:italic;margin-top:8px;padding-left:10px;border-left:3px solid #ddd6fe;}
+
+    /* concept card */
+    .concept-card{border:1px solid #ede9fe;border-radius:14px;padding:16px 18px;margin-bottom:12px;background:linear-gradient(135deg,#faf7ff 0%,#fdf2f8 100%);}
+    .concept-name{font-size:16px;font-weight:800;color:#5b21b6;margin-bottom:4px;}
+    .concept-def{font-size:13.5px;color:#334155;line-height:1.7;margin-bottom:12px;}
+    .two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:10px 0;}
+    @media(max-width:640px){.two-col{grid-template-columns:1fr;}}
+    .col-box{background:#fff;border:1px solid #f0ecf7;border-radius:10px;padding:10px 13px;}
+    .col-h{font-size:12px;font-weight:800;margin-bottom:6px;}
+    .col-keep .col-h{color:#059669;}
+    .col-twist .col-h{color:#db2777;}
+    .col-box ul{margin:0;padding-left:16px;font-size:12.5px;color:#334155;line-height:1.65;}
+    .rationale{font-size:12.5px;color:#6b7280;background:#f9fafb;border-radius:9px;padding:8px 12px;margin-top:8px;}
+    .sws{display:inline-flex;gap:4px;margin-left:6px;vertical-align:middle;}
+    .sw{width:16px;height:16px;border-radius:4px;border:1px solid rgba(0,0,0,.1);display:inline-block;}
+
+    /* copy block */
+    .copy-block{border:1px solid #e9e4f5;border-radius:11px;overflow:hidden;margin-bottom:10px;}
+    .copy-block.hot{border-color:#c084fc;box-shadow:0 0 0 3px rgba(192,132,252,.12);}
+    .copy-head{display:flex;align-items:center;gap:8px;background:#faf7ff;padding:7px 12px;border-bottom:1px solid #f0ecf7;}
+    .copy-label{font-size:12px;font-weight:800;color:#5b21b6;flex:1;}
+    .copy-btn{font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:8px;background:#7c3aed;color:#fff;border:none;cursor:pointer;flex:0 0 auto;}
+    .copy-btn:hover{background:#6d28d9;}
+    .copy-btn.done{background:#059669;}
+    .copy-pre{margin:0;padding:11px 13px;font-size:12.5px;line-height:1.65;color:#1e1b2e;white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,Menlo,Consolas,monospace;background:#fff;max-height:360px;overflow:auto;}
+
+    /* mini cards grid (preview) */
+    .mini-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;}
+    .mini-card{background:#faf7ff;border:1px solid #f0ecf7;border-radius:11px;padding:12px 14px;}
+    .mini-card h4{font-size:12.5px;font-weight:800;color:#5b21b6;margin:0 0 7px;}
+    .mini-card .kv{font-size:12px;}
+
+    /* timeline (suno structure) */
+    .tl{position:relative;padding-left:18px;}
+    .tl::before{content:"";position:absolute;left:5px;top:4px;bottom:4px;width:2px;background:#ede9fe;}
+    .tl-item{position:relative;margin-bottom:9px;}
+    .tl-item::before{content:"";position:absolute;left:-16px;top:5px;width:9px;height:9px;border-radius:50%;background:#a855f7;border:2px solid #fff;}
+    .tl-sec{font-size:12.5px;font-weight:800;color:#6d28d9;}
+    .tl-desc{font-size:12.5px;color:#4b5563;line-height:1.6;}
+
+    /* titles list */
+    .title-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;font-size:13px;}
+    .title-row:nth-child(odd){background:#faf7ff;}
+    .title-no{width:22px;height:22px;border-radius:50%;background:#ede9fe;color:#6d28d9;font-weight:800;font-size:11px;display:flex;align-items:center;justify-content:center;flex:0 0 auto;}
+    .title-txt{flex:1;color:#1e1b2e;line-height:1.5;}
+    .title-cp{font-size:11px;font-weight:700;padding:4px 10px;border-radius:7px;background:#fff;border:1px solid #e5d9f5;color:#7e22ce;cursor:pointer;flex:0 0 auto;}
+    .title-cp:hover{background:#f3e8ff;}
+
+    /* checklist */
+    .check-item{display:flex;align-items:flex-start;gap:9px;padding:7px 0;font-size:13.5px;color:#334155;line-height:1.6;cursor:pointer;}
+    .check-box{width:19px;height:19px;border-radius:6px;border:2px solid #c4b5fd;flex:0 0 auto;margin-top:1px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff;}
+    .check-item.done .check-box{background:#7c3aed;border-color:#7c3aed;}
+    .check-item.done .check-txt{color:#9ca3af;text-decoration:line-through;}
+
+    .badge-song{font-size:12px;font-weight:800;padding:5px 13px;border-radius:999px;background:#ede9fe;color:#6d28d9;}
+
+    /* 벤치마킹 썸네일 그리드 */
+    .bt-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+    @media(max-width:640px){.bt-grid{grid-template-columns:repeat(2,1fr);}}
+    .bt{position:relative;border-radius:11px;overflow:hidden;border:1px solid #ece6f7;background:#0b0b12;text-decoration:none;color:inherit;display:block;transition:transform .12s;}
+    .bt:hover{transform:translateY(-2px);}
+    .bt-img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block;background:#1a1730;}
+    .bt-rank{position:absolute;top:6px;left:6px;background:rgba(124,58,237,.94);color:#fff;font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px;}
+    .bt-views{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.66);color:#fff;font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;}
+    .bt-meta{padding:8px 10px;background:#fff;}
+    .bt-title{font-size:11.5px;color:#1e1b2e;line-height:1.45;font-weight:600;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:32px;}
+    .bt-date{font-size:10.5px;color:#a99fc0;margin-top:3px;}
+
+    /* GPT 생성 이미지 미리보기 */
+    .gen-wrap{margin-top:6px;}
+    .gen-img{max-width:100%;border-radius:12px;border:1px solid #ede9fe;box-shadow:0 4px 16px rgba(120,60,180,.12);display:block;}
+    .gen-actions{display:flex;gap:8px;align-items:center;margin-top:9px;flex-wrap:wrap;}
+    .gen-dl{font-size:12.5px;font-weight:700;padding:8px 15px;border-radius:9px;background:#7c3aed;color:#fff;text-decoration:none;}
+    .gen-dl:hover{background:#6d28d9;}
+    .gen-re{font-size:12.5px;font-weight:700;padding:8px 15px;border-radius:9px;background:#fff;border:1px solid #e5d9f5;color:#7e22ce;cursor:pointer;}
+    .gen-note{font-size:11.5px;color:#8a80a5;margin-top:6px;line-height:1.6;}
+    .btn-gen{font-size:14px;font-weight:800;padding:11px 22px;border-radius:11px;border:none;cursor:pointer;color:#fff;background:linear-gradient(90deg,#7c3aed,#ec4899);}
+    .btn-gen:hover{opacity:.92;}
+    .btn-gen:disabled{opacity:.5;cursor:default;}
+
+    /* 🎬 썸네일+제목 세트 카드 */
+    .set-card{display:flex;gap:14px;border:1px solid #ede9fe;border-radius:13px;padding:12px;margin-bottom:12px;background:#fff;}
+    .set-imgcol{width:280px;flex:0 0 auto;}
+    .set-slot{aspect-ratio:16/9;border-radius:10px;background:#faf7ff;border:1.5px dashed #ddd6fe;display:flex;align-items:center;justify-content:center;}
+    .set-body{flex:1;min-width:0;}
+    .set-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+    .set-title{font-weight:700;font-size:13.5px;color:#1e1b2e;flex:1;min-width:0;line-height:1.5;}
+    .set-overlay{font-size:12px;color:#6d28d9;background:#faf7ff;border:1px solid #f0ecf7;border-radius:8px;padding:6px 10px;margin:8px 0;line-height:1.6;}
+    .set-det summary{cursor:pointer;font-size:12px;font-weight:700;color:#7c3aed;margin:6px 0 4px;}
+    @media(max-width:720px){.set-card{flex-direction:column;}.set-imgcol{width:100%;}}
+
+    /* 👁 GPT Vision 실측 분석 박스 */
+    .vision-box{margin-top:13px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:12px;padding:13px 16px;}
+    .vision-h{font-size:13px;font-weight:800;color:#5b21b6;margin-bottom:7px;}
+    .vision-sub{font-weight:400;color:#8a80a5;font-size:11.5px;}
+    .vision-body{font-size:12.5px;color:#4b5563;line-height:1.75;}
+    .vision-body p{margin:3px 0;}
+    .vision-body ul{padding-left:18px;margin:5px 0;}
+    .vision-body li{margin:2px 0;}
+    .vision-body strong{color:#5b21b6;}
+
+    /* 마크다운 폴백 */
+    .report{font-size:14px;line-height:1.75;color:#334155;}
+    .report h1{font-size:20px;font-weight:800;margin:18px 0 10px;color:#1e1b2e;}
+    .report h2{font-size:16px;font-weight:800;margin:22px 0 8px;color:#5b21b6;border-bottom:2px solid #ede9fe;padding-bottom:5px;}
+    .report h3{font-size:14.5px;font-weight:700;margin:14px 0 6px;color:#1e1b2e;}
+    .report table{border-collapse:collapse;margin:8px 0;width:100%;font-size:13px;}
+    .report th,.report td{border:1px solid #e9e4f5;padding:6px 10px;text-align:left;}
+    .report th{background:#faf7ff;font-weight:700;color:#5b21b6;}
+    .report ul{padding-left:20px;margin:6px 0;}
+    .report code{background:#f3f0fa;border-radius:5px;padding:1px 6px;font-size:12.5px;}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <div class="sidebar-brand">RefTracker</div>
+        <div class="sidebar-brand-sub">레퍼런스 채널 추적</div>
+      </div>
+      <nav class="nav-section">
+        <a href="trend.html" class="nav-item">🔥 트렌드 피드</a>
+        <a href="global_surge.html" class="nav-item">🌍 글로벌 급등</a>
+        <a href="youtube_discover.html" class="nav-item">🌐 YouTube 발굴</a>
+        <a href="search.html" class="nav-item">🔍 검색</a>
+        <a href="source_finder.html" class="nav-item">🕵️ 원본 소스 찾기</a>
+        <a href="surge_analysis.html" class="nav-item">📊 급등 규칙 분석</a>
+        <a href="keyword_radar.html" class="nav-item">🌡️ 키워드 레이더</a>
+        <a href="scriptwriter.html" class="nav-item">✍️ 대본 작성</a>
+        <a href="concept_maker.html" class="nav-item active">🎨 플리 컨셉 제조기</a>
+        <a href="channels.html" class="nav-item">📺 레퍼런스 채널</a>
+        <a href="collections.html" class="nav-item">📁 컬렉션</a>
+        <a href="bookmarks.html" class="nav-item">⭐ 북마크</a>
+        <a href="notifications.html" class="nav-item">🔔 알림·작업 기록</a>
+        <a href="settings.html" class="nav-item">⚙️ 설정</a>
+      </nav>
+      <div class="nav-divider"></div>
+      <nav class="nav-section">
+        <a href="index.html" class="nav-item-secondary"><span>🏠 포털 메인</span><span>›</span></a>
+        <a href="translator.html" class="nav-item-secondary"><span>🌸 일본어 번역봇</span><span>›</span></a>
+        <a href="editor.html" class="nav-item-secondary"><span>✂️ 자동 컷편집</span><span>›</span></a>
+      </nav>
+      <div class="version">v0.4.0</div>
+    </aside>
+
+    <main class="main">
+      <span class="badge-dot">플리 컨셉 제조기</span>
+      <h1 class="page-title"><span class="gradient-text">85% 결 유지, 15% 비틀기</span> 컨셉 설계</h1>
+      <p class="page-sub">플레이리스트 채널 URL만 넣으면 — 제목·조회수를 자동 수집해 분석하고, 신규 채널 컨셉 + 복붙용 세팅 문구 + Suno 곡 패키지까지 카드로 정리해요</p>
+
+      <div class="cm-panel">
+        <div class="cm-h">① 분석할 채널 (1~3개)</div>
+        <div class="cm-sub">GPT 버전과 달리 캡처 업로드 불필요 — URL만 넣으면 제목·조회수·업로드 날짜를 <b>실데이터</b>로 수집해요. 2개 이상이면 융합 비율까지 분석.</div>
+        <input class="cm-input" id="ch1" placeholder="메인 기준 채널 — https://youtube.com/@채널핸들 또는 채널 URL">
+        <input class="cm-input" id="ch2" placeholder="(선택) 보조 채널 2">
+        <input class="cm-input" id="ch3" placeholder="(선택) 보조 채널 3">
+
+        <label class="cm-label">🎵 Suno 곡 유형</label>
+        <div class="cm-chips" id="songType">
+          <span class="cm-chip on" data-v="auto">🎲 자동 (채널 성격 판단)</span>
+          <span class="cm-chip" data-v="lyric">🎤 가사곡</span>
+          <span class="cm-chip" data-v="instrumental">🎹 연주곡</span>
+        </div>
+
+        <label class="cm-label">📀 곡 수</label>
+        <div class="cm-chips" id="numSongs">
+          <span class="cm-chip on" data-v="1">1곡 패키지</span>
+          <span class="cm-chip" data-v="10">10곡 묶음</span>
+          <span class="cm-chip" data-v="25">25곡 풀 플레이리스트</span>
+        </div>
+
+        <label class="cm-label">🖼️ 인기 썸네일 캡처 붙여넣기 <span style="font-weight:400;color:#22c55e;">(정확도 ↑↑ 강력 추천)</span></label>
+        <div class="cm-sub" style="margin-bottom:7px;">인기도 순으로 썸네일을 캡처해 올리면 <b>GPT가 그 이미지를 직접 보고</b> 컬러·구도·오브젝트를 정확히 분석해요. URL 자동수집보다 훨씬 정밀. (클릭·드래그·<b>Ctrl+V 붙여넣기</b>)</div>
+        <div id="dropZone" class="drop-zone">
+          <input type="file" id="imgInput" accept="image/*" multiple hidden>
+          <div class="dz-inner">📎 <b>클릭</b>해서 캡처 선택 · 여기로 <b>끌어다 놓기</b> · <b>Ctrl+V</b> 로 붙여넣기<br><span style="font-size:11.5px;">인기도 높은 순서대로 올려주세요 (최대 9장)</span></div>
+        </div>
+        <div id="upGrid" class="up-grid"></div>
+
+        <label class="cm-label">📝 인기 상승 제목 붙여넣기 <span style="font-weight:400;color:#8a80a5;">(선택 — 한 줄에 하나)</span></label>
+        <div class="cm-sub" style="margin-bottom:6px;">터졌던·상승세인 제목들을 붙여넣으면 반복 키워드·문형·감정 훅을 최우선 근거로 새 제목·컨셉을 만들어요.</div>
+        <textarea class="cm-input" id="popTitles" placeholder="예:&#10;🎵 Un Momento para Mí 💙 Música para la Paz Interior #48&#10;Después de la Lluvia, Todo Respira en Paz #03&#10;창밖에 눈이 내리면 | 겨울밤 재즈"></textarea>
+
+        <label class="cm-label">📝 추가 메모 (선택 — 원하는 방향 등)</label>
+        <textarea class="cm-input" id="notes" placeholder="예: 새 채널은 겨울 감성으로 가고 싶어요. 커피잔 대신 책을 시그니처로."></textarea>
+
+        <button class="btn-primary" id="goBtn" style="font-size:15px;padding:12px 28px;margin-top:6px;">🎨 컨셉 리포트 생성</button>
+      </div>
+
+      <div class="cm-panel" id="historyPanel" style="display:none;">
+        <div class="cm-h">📂 최근 리포트 <span style="font-weight:400;color:#8a80a5;font-size:12px;">— 폰에서 만든 것도 여기서 열려요 (서버에 저장됨). 밖에서 생성 → 집에서 검수·이미지 생성.</span></div>
+        <div id="reportList"></div>
+      </div>
+
+      <div id="resultBox"></div>
+    </main>
+  </div>
+
+  <script>
+    const state = { song_type: "auto", num_songs: 1 };
+    function bindChips(id, key) {
+      document.querySelectorAll("#" + id + " .cm-chip").forEach(c => c.onclick = () => {
+        document.querySelectorAll("#" + id + " .cm-chip").forEach(x => x.classList.remove("on"));
+        c.classList.add("on");
+        state[key] = isNaN(c.dataset.v) ? c.dataset.v : +c.dataset.v;
+      });
+    }
+    bindChips("songType", "song_type");
+    bindChips("numSongs", "num_songs");
+
+    // ── 🖼️ 썸네일 캡처 업로드 (클릭·드래그·붙여넣기) ──
+    let UPLOADS = [];   // 다운스케일된 data URL 배열 (인기도 순서 보존)
+    const MAX_UP = 9;
+    function fileToDataURL(file, maxW = 900) {
+      return new Promise((resolve, reject) => {
+        const rd = new FileReader();
+        rd.onerror = reject;
+        rd.onload = () => {
+          const img = new Image();
+          img.onerror = reject;
+          img.onload = () => {
+            const scale = Math.min(1, maxW / (img.width || maxW));
+            const w = Math.max(1, Math.round(img.width * scale));
+            const h = Math.max(1, Math.round(img.height * scale));
+            const cv = document.createElement("canvas");
+            cv.width = w; cv.height = h;
+            cv.getContext("2d").drawImage(img, 0, 0, w, h);
+            resolve(cv.toDataURL("image/jpeg", 0.82));
+          };
+          img.src = rd.result;
+        };
+        rd.readAsDataURL(file);
+      });
+    }
+    async function addFiles(files) {
+      for (const f of files) {
+        if (!f.type || !f.type.startsWith("image/")) continue;
+        if (UPLOADS.length >= MAX_UP) { toast(`최대 ${MAX_UP}장까지예요`); break; }
+        try { UPLOADS.push(await fileToDataURL(f)); } catch (e) {}
+      }
+      renderUploads();
+    }
+    function renderUploads() {
+      document.getElementById("upGrid").innerHTML = UPLOADS.map((u, i) =>
+        `<div class="up-cell"><img src="${u}" alt=""><span class="up-num">#${i + 1}</span>` +
+        `<button class="up-x" onclick="removeUpload(${i})" title="빼기">×</button></div>`).join("");
+    }
+    function removeUpload(i) { UPLOADS.splice(i, 1); renderUploads(); }
+
+    (function bindUpload() {
+      const dz = document.getElementById("dropZone");
+      const inp = document.getElementById("imgInput");
+      // 📱 폰(터치)에선 드래그·Ctrl+V 대신 '탭해서 갤러리 선택' 안내로 교체
+      const touch = window.matchMedia("(pointer: coarse)").matches || "ontouchstart" in window;
+      if (touch) {
+        const inner = dz.querySelector(".dz-inner");
+        if (inner) inner.innerHTML = "📱 <b>탭</b>해서 사진(갤러리)에서 캡처 선택<br><span style=\"font-size:11.5px;\">인기도 높은 순서대로 골라주세요 (최대 9장)</span>";
+      }
+      dz.onclick = () => inp.click();
+      inp.onchange = () => { addFiles([...inp.files]); inp.value = ""; };
+      dz.addEventListener("dragover", e => { e.preventDefault(); dz.classList.add("drag"); });
+      dz.addEventListener("dragleave", () => dz.classList.remove("drag"));
+      dz.addEventListener("drop", e => { e.preventDefault(); dz.classList.remove("drag");
+        if (e.dataTransfer && e.dataTransfer.files) addFiles([...e.dataTransfer.files]); });
+      document.addEventListener("paste", e => {
+        const items = (e.clipboardData || {}).items || [];
+        const imgs = [...items].filter(it => it.type && it.type.startsWith("image/")).map(it => it.getAsFile()).filter(Boolean);
+        if (imgs.length) { addFiles(imgs); toast(`📎 붙여넣기 ${imgs.length}장 추가`); }
+      });
+    })();
+
+    // ── 복사 저장소 + 헬퍼 ──
+    let COPY = [];
+    const stash = t => COPY.push(t) - 1;
+    function copyIdx(i, btn) {
+      navigator.clipboard.writeText(COPY[i] || "").then(() => {
+        toast("📋 복사했어요");
+        if (btn) { const o = btn.innerHTML; btn.innerHTML = "✓ 복사됨"; btn.classList.add("done");
+          setTimeout(() => { btn.innerHTML = o; btn.classList.remove("done"); }, 1200); }
+      });
+    }
+    function copyBlock(text, label, hot) {
+      if (!text || !String(text).trim()) return "";
+      const i = stash(String(text));
+      return `<div class="copy-block${hot ? " hot" : ""}">
+        <div class="copy-head"><span class="copy-label">${esc(label || "")}</span>
+          <button class="copy-btn" onclick="copyIdx(${i},this)">📋 복사</button></div>
+        <pre class="copy-pre">${esc(String(text))}</pre></div>`;
+    }
+    function ccChip(text) { const i = stash(String(text));
+      return `<span class="cc-chip" onclick="copyIdx(${i},this)" title="클릭하면 복사">${esc(text)}<span class="cc-ic">📋</span></span>`; }
+    function chipList(arr) { return `<div class="chips">${(arr || []).map(x => `<span class="chip">${esc(x)}</span>`).join("")}</div>`; }
+    function swatches(str) { const h = (str || "").match(/#[0-9a-fA-F]{6}/g) || [];
+      return h.length ? `<span class="sws">${h.map(c => `<span class="sw" style="background:${c}" title="${c}"></span>`).join("")}</span>` : ""; }
+    function kv(rows) { const r = rows.filter(x => x[1] && String(x[1]).trim());
+      return r.length ? `<div class="kv">${r.map(x => `<span class="kv-k">${esc(x[0])}</span><span class="kv-v">${esc(x[1])}</span>`).join("")}</div>` : ""; }
+    function scoreBar(lab, v) { v = +v || 0; const p = Math.max(0, Math.min(10, v)) * 10;
+      const col = v >= 8 ? "#22c55e" : v >= 6 ? "#f59e0b" : "#ef4444";
+      return `<div class="sc-row"><span class="sc-lab">${lab}</span><span class="sc-track"><span class="sc-fill" style="width:${p}%;background:${col}"></span></span><span class="sc-val">${v}</span></div>`; }
+    function scrollTo(id) { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }
+    function toggleCheck(el) { el.classList.toggle("done"); el.querySelector(".check-box").textContent = el.classList.contains("done") ? "✓" : ""; }
+
+    // ── 구조화 리포트 렌더러 ──
+    function renderReport(d, meta) {
+      COPY = [];
+      const secs = [];   // {id, label, html}
+      let benchSec = null;
+      const P = v => (v == null ? "" : String(v));
+
+      // 🎯 이미지 생성 시 모델이 '직접 볼' 레퍼런스 (업로드 캡처/유튜브 썸네일, 래스터만)
+      REF_THUMBS = (meta.thumbnails || []).map(t => t.thumb)
+        .filter(u => u && (u.startsWith("http") || /^data:image\/(png|jpe?g|webp)/i.test(u)))
+        .slice(0, 8);
+
+      // 0) 🖼️ 벤치마킹 — 인기순 썸네일 그리드 (이 도구의 핵심)
+      const thumbs = meta.thumbnails || [];
+      if (thumbs.length) {
+        const uploaded = meta.thumb_source === "upload";
+        const tiles = thumbs.map(t => {
+          const link = t.video_id ? `https://youtube.com/watch?v=${t.video_id}` : "";
+          const open = link ? `<a class="bt" href="${link}" target="_blank" rel="noopener">` : `<div class="bt">`;
+          const close = link ? `</a>` : `</div>`;
+          const viewsBadge = t.views ? `<span class="bt-views">👁 ${fmtCompact(t.views)}</span>` : "";
+          const metaRow = (t.title || t.published)
+            ? `<div class="bt-meta"><div class="bt-title">${esc(t.title)}</div><div class="bt-date">${esc(t.published || "")}</div></div>` : "";
+          return `${open}<img class="bt-img" src="${esc(t.thumb)}" loading="lazy" alt="">` +
+            `<span class="bt-rank">#${t.rank}</span>${viewsBadge}${metaRow}${close}`;
+        }).join("");
+        const visionBox = meta.vision ? `<div class="vision-box">
+            <div class="vision-h">👁 GPT Vision 실측 분석 <span class="vision-sub">— 위 ${thumbs.length}개 썸네일을 실제로 '보고' 뽑은 공통 시각 공식</span></div>
+            <div class="vision-body">${md(meta.vision)}</div></div>` : "";
+        const eyeBadge = meta.vision
+          ? `<span class="rp-chip" style="background:#dcfce7;color:#166534;">👁 이미지 실측${uploaded ? " (내 캡처)" : ""}</span>`
+          : `<span class="rp-chip demo">📝 제목·흐름 추정 (OpenAI 키 넣으면 이미지 실측)</span>`;
+        const headLabel = uploaded ? `내가 올린 캡처 ${thumbs.length}장` : `인기 썸네일 ${thumbs.length}개`;
+        const noteText = uploaded
+          ? `사장님이 인기도 순으로 올린 캡처예요. <b>GPT가 이 이미지들을 직접 보고</b> 공통 컬러·구도·오브젝트를 분석해 컨셉(유지 85% / 비틀 15%)과 대표 썸네일을 만들었어요.`
+          : `조회수 순 · 클릭하면 원본. 이 썸네일들의 <b>공통 컬러·구도·오브젝트</b>를 분석해 아래 컨셉(유지 85% / 비틀 15%)과 대표 썸네일을 만들었어요.`;
+        benchSec = { id: "sec-bench", label: "🖼️ 벤치마킹",
+          html: `<div class="rp-sec" id="sec-bench"><div class="rp-sec-h">🖼️ 벤치마킹 — ${headLabel} ${eyeBadge}</div>
+            <div style="font-size:12px;color:#8a80a5;margin-bottom:11px;">${noteText}</div>
+            <div class="bt-grid">${tiles}</div>${visionBox}</div>` };
+      }
+
+      // 1) 채널 분석
+      (d.channels || []).forEach((c, ci) => {
+        const id = ci === 0 ? "sec-analysis" : "sec-analysis-" + ci;
+        const b = c.branding || {};
+        const kw = c.keywords || {};
+        let h = "";
+        h += kv([
+          ["전체 무드", c.identity?.mood], ["세계관", c.identity?.world],
+          ["타겟", c.identity?.target], ["시청 목적", c.identity?.purpose],
+          ["감정 포인트", c.identity?.emotion], ["근거", c.identity?.evidence],
+        ]);
+        // 브랜딩 점수
+        if (b.total != null || b.consistency != null) {
+          const tot = b.total != null ? b.total : (["consistency","differentiation","memorability","scalability","clickability"].reduce((a,k)=>a+(+b[k]||0),0));
+          const tc = tot >= 40 ? "#059669" : tot >= 30 ? "#d97706" : "#dc2626";
+          h += `<div class="rp-block" style="margin-top:14px;"><div class="rp-block-h">🏆 브랜딩 점수</div>
+            <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;">
+              <div style="flex:1;min-width:220px;">
+                ${scoreBar("일관성", b.consistency)}${scoreBar("차별성", b.differentiation)}${scoreBar("기억용이", b.memorability)}${scoreBar("확장성", b.scalability)}${scoreBar("클릭유도", b.clickability)}
+              </div>
+              <div class="sc-total" style="background:${tc};">${tot}<small>/50</small></div>
+            </div>${b.one_liner ? `<div class="one-liner">${esc(b.one_liner)}</div>` : ""}</div>`;
+        }
+        // 상세분석 (접기)
+        let det = "";
+        det += kv([["컬러", c.thumbnail?.color], ["인물", c.thumbnail?.person], ["구도", c.thumbnail?.composition], ["근거", c.thumbnail?.evidence]]);
+        if (c.thumbnail?.estimated) det += `<div style="font-size:11.5px;color:#b45309;margin-top:4px;">※ 썸네일 이미지 미첨부 — 시각 분석은 (추정)</div>`;
+        if (P(c.views)) det += `<div class="rp-block" style="margin-top:12px;"><div class="rp-block-h">③ 조회수 패턴</div><div style="font-size:13px;color:#334155;line-height:1.7;">${esc(c.views)}</div></div>`;
+        const ev = c.evolution || {};
+        if (ev.early || ev.diagnosis) det += `<div class="rp-block"><div class="rp-block-h">④ 썸네일 변화</div>${kv([["초기",ev.early],["중기",ev.mid],["최근",ev.recent],["진단",ev.diagnosis]])}</div>`;
+        det += `<div class="rp-block"><div class="rp-block-h">⑤ 제목 키워드</div>`;
+        if ((kw.repeated||[]).length) det += `<div style="margin-bottom:6px;"><span style="font-size:12px;color:#8a80a5;">반복</span> ${chipList(kw.repeated)}</div>`;
+        if ((kw.emotional||[]).length) det += `<div style="margin-bottom:6px;"><span style="font-size:12px;color:#8a80a5;">감성</span> ${chipList(kw.emotional)}</div>`;
+        det += kv([["장소·시간", kw.place_time], ["장르", (kw.genre||[]).join(", ")], ["문형", kw.pattern], ["제목 구조", kw.structure]]);
+        det += `</div>`;
+        h += `<details style="margin-top:12px;"><summary style="cursor:pointer;font-size:13px;font-weight:700;color:#7c3aed;">🔎 썸네일·조회수·키워드 상세 분석 ${(d.channels||[]).length>1?"("+esc(c.name)+")":""}</summary><div style="margin-top:10px;">${det}</div></details>`;
+
+        secs.push({ id, label: (d.channels||[]).length>1 ? "📊 "+P(c.name) : "📊 채널 분석",
+          html: `<div class="rp-sec" id="${id}"><div class="rp-sec-h">📊 채널 분석 <span class="rp-sec-note">${esc(P(c.name))}</span></div>${h}</div>` });
+      });
+
+      // 융합 (다채널)
+      if (P(d.fusion)) {
+        secs[secs.length-1].html = secs[secs.length-1].html.replace("</div>\n", "");
+      }
+
+      // 2) 신규 컨셉안
+      if ((d.concepts || []).length) {
+        let h = P(d.fusion) ? `<div class="rationale" style="margin-bottom:12px;">🔗 <b>융합 비율</b> — ${esc(d.fusion)}</div>` : "";
+        (d.concepts).forEach(cn => {
+          const mb = cn.moodboard || {};
+          h += `<div class="concept-card">
+            <div class="concept-name">💡 ${esc(cn.name)}</div>
+            <div class="concept-def">${esc(cn.definition)}</div>
+            ${kv([["색감", mb.colors ? mb.colors : ""], ["분위기", mb.atmosphere]])}${mb.colors ? `<div style="margin:6px 0;">${swatches(mb.colors)}</div>` : ""}
+            ${(mb.ref_words||[]).length ? `<div style="margin:8px 0;">${chipList(mb.ref_words)}</div>` : ""}
+            <div class="two-col">
+              <div class="col-box col-keep"><div class="col-h">✓ 유지한 85%</div><ul>${(cn.keep_85||[]).map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>
+              <div class="col-box col-twist"><div class="col-h">✦ 비튼 15%</div><ul>${(cn.twist_15||[]).map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>
+            </div>
+            ${(cn.differentiation||[]).length ? `<div class="rp-block-h" style="margin-top:6px;">차별화 포인트</div><ul style="font-size:12.5px;color:#334155;margin:0;padding-left:18px;line-height:1.6;">${(cn.differentiation||[]).map(x=>`<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+            ${cn.rationale ? `<div class="rationale">🧭 ${esc(cn.rationale)}</div>` : ""}
+          </div>`;
+        });
+        secs.push({ id:"sec-concept", label:"💡 컨셉안",
+          html:`<div class="rp-sec" id="sec-concept"><div class="rp-sec-h">💡 신규 컨셉안</div>${h}</div>` });
+      }
+
+      // 3) 채널 세팅 — 복사 자산
+      const su = d.setup || {};
+      if (Object.keys(su).length) {
+        let h = `<div style="font-size:12px;color:#8a80a5;margin-bottom:12px;">아래 회색 블록은 <b>📋 버튼 한 번</b>이면 그대로 복사돼요 — 유튜브 설정에 붙여넣기만 하세요.</div>`;
+        if ((su.names||[]).length) h += `<div class="rp-block"><div class="rp-block-h">채널 이름 후보 <span style="font-weight:400;color:#a99fc0;">(클릭 복사)</span></div><div class="chips">${su.names.map(ccChip).join("")}</div></div>`;
+        if ((su.handles||[]).length) h += `<div class="rp-block"><div class="rp-block-h">채널 핸들 후보 <span style="font-weight:400;color:#a99fc0;">(클릭 복사)</span></div><div class="chips">${su.handles.map(ccChip).join("")}</div>${su.handle_note?`<div style="font-size:11.5px;color:#b45309;margin-top:6px;">⚠️ ${esc(su.handle_note)}</div>`:""}</div>`;
+        h += copyBlock(su.description, "채널 설명문", true);
+        h += copyBlock(su.keywords, "채널 키워드", true);
+        h += copyBlock(su.title_template, "고정 제목 템플릿");
+        h += copyBlock(su.desc_template, "기본 영상 설명문 템플릿");
+        h += copyBlock(su.tags, "기본 태그");
+        if ((su.hashtags||[]).length) h += copyBlock(su.hashtags.join(" "), "해시태그");
+        secs.push({ id:"sec-setup", label:"⚙️ 채널세팅",
+          html:`<div class="rp-sec" id="sec-setup"><div class="rp-sec-h">⚙️ 유튜브 채널 세팅 <span class="rp-sec-note">복붙용</span></div>${h}</div>` });
+      }
+
+      // 4) 미리보기 (+ 로고·배너 GPT 생성)
+      const pv = d.preview || {};
+      if (pv.profile || pv.banner || pv.thumbnail) {
+        const card = (title, o, rows) => o ? `<div class="mini-card"><h4>${title}</h4>${kv(rows)}</div>` : "";
+        let h = `<div class="mini-grid">
+          ${card("👤 프로필", pv.profile, [["형태",pv.profile?.form],["컬러",pv.profile?.color],["오브젝트",pv.profile?.objects],["분위기",pv.profile?.mood],["피할 것",pv.profile?.avoid]])}
+          ${card("🖼️ 배너", pv.banner, [["배경",pv.banner?.background],["오브젝트",pv.banner?.object],["텍스트",pv.banner?.text],["여백",pv.banner?.margin],["분위기",pv.banner?.mood]])}
+          ${card("🎬 썸네일", pv.thumbnail, [["구도",pv.thumbnail?.composition],["컬러",pv.thumbnail?.color],["규칙",pv.thumbnail?.object_rule],["텍스트",pv.thumbnail?.text],["클릭",pv.thumbnail?.click_point]])}
+        </div>`;
+        // 🎨 새 로고 그리기
+        if (pv.profile && pv.profile.image_prompt) {
+          const li = stash(pv.profile.image_prompt);
+          h += `<div class="rp-block" style="margin-top:14px;"><div class="rp-block-h">🎨 새 채널 로고 미리보기 <span style="font-weight:400;color:#8a80a5;font-size:11.5px;">— 새 컨셉의 시그니처로</span></div>
+            <button class="btn-gen" onclick="genImage(${li},'genLogoBox',this,'1024x1024','로고')">🎨 새 로고 그려서 미리보기</button>
+            <div id="genLogoBox" style="margin-top:10px;"></div></div>`;
+        }
+        // 🎨 새 배너 그리기
+        if (pv.banner && pv.banner.image_prompt) {
+          const bi = stash(pv.banner.image_prompt);
+          h += `<div class="rp-block"><div class="rp-block-h">🎨 새 채널 배너 미리보기 <span style="font-weight:400;color:#8a80a5;font-size:11.5px;">— 인기 컨셉 참고, 새 장면으로</span></div>
+            <button class="btn-gen" onclick="genImage(${bi},'genBannerBox',this,'1536x1024','배너')">🎨 새 배너 그려서 미리보기</button>
+            <div id="genBannerBox" style="margin-top:10px;"></div></div>`;
+        }
+        secs.push({ id:"sec-preview", label:"🖼️ 미리보기",
+          html:`<div class="rp-sec" id="sec-preview"><div class="rp-sec-h">🖼️ 채널 미리보기 방향 <span class="rp-sec-note">로고·배너도 GPT로 그려봐요</span></div>${h}</div>` });
+      }
+
+      // 5) 대표 썸네일
+      const ht = d.hero_thumbnail || {};
+      if (ht.concept || ht.image_prompt) {
+        let h = ht.concept ? `<div style="font-size:14px;color:#1e1b2e;font-weight:700;line-height:1.6;margin-bottom:4px;">🎯 ${esc(ht.concept)}</div>` : "";
+        if (ht.reason) h += `<div class="rationale" style="margin-bottom:10px;">${esc(ht.reason)}</div>`;
+        h += kv([["구도",ht.composition],["컬러 코드",ht.color_codes],["폰트",ht.font],["오브젝트 규칙",ht.object_rule],["텍스트 배치",ht.text_placement],["금지 요소",ht.forbidden]]);
+        if (ht.color_codes) h += `<div style="margin:8px 0;">${swatches(ht.color_codes)}</div>`;
+        // 🎨 GPT 미리보기 (이미지 실제 생성)
+        if (ht.image_prompt) {
+          const gi = stash(ht.image_prompt);
+          h += `<div class="rp-block-h" style="margin-top:14px;">🎨 GPT 썸네일 미리보기 <span style="font-weight:400;color:#8a80a5;font-size:11.5px;">— 캡처를 베끼지 않고 새 컨셉으로 그려요</span></div>
+            <button class="btn-gen" onclick="genImage(${gi},'genThumbBox',this,'1536x1024','썸네일')">🎨 이 컨셉으로 <b>새</b> 썸네일 그려서 미리보기</button>
+            <div class="gen-note">참고 이미지를 <b>그대로 복제하지 않고</b>, 무드·색감은 살리되 신규 컨셉의 시그니처로 <b>새롭게</b> 그려요. OpenAI(GPT) 키 필요(설정 → 🔑 연결키 저장). 미드저니로 뽑으려면 아래 <b>미드저니 프롬프트</b> 복사.</div>
+            <div id="genThumbBox" style="margin-top:10px;"></div>`;
+        }
+        if (ht.midjourney_prompt) h += copyBlock(ht.midjourney_prompt, "🖌️ 미드저니 프롬프트 (Midjourney 에 그대로 붙여넣기)", true);
+        h += copyBlock(ht.image_prompt, "🖼️ 이미지 프롬프트 (DALL·E·기타 툴용 · 파라미터 없음)");
+        secs.push({ id:"sec-hero", label:"🎯 대표썸네일",
+          html:`<div class="rp-sec" id="sec-hero"><div class="rp-sec-h">🎯 대표 썸네일 안 <span class="rp-sec-note">벤치마킹 → 컨셉 → 이미지</span></div>${h}</div>` });
+      }
+
+      // 6) 🎬 썸네일+제목 세트 (제목과 이미지가 한 몸) — 없으면 구형 제목 리스트
+      const sets = d.title_sets || [];
+      if (sets.length) {
+        const cards = sets.map((s, i) => {
+          const ti = stash(s.title || "");
+          const fi = stash(s.full_image_prompt || s.image_prompt || "");
+          let det = copyBlock(s.full_image_prompt || s.image_prompt, "🖼️ 이미지 프롬프트 (문구 오버레이 포함 · GPT용)");
+          if (s.midjourney_prompt) det += copyBlock(s.midjourney_prompt, "🖌️ 미드저니 프롬프트 (장면만 — 한글 문구는 캡컷 등에서 얹기)");
+          return `<div class="set-card">
+            <div class="set-imgcol" id="setBox${i}">
+              <div class="set-slot"><button class="btn-gen" style="font-size:12.5px;padding:9px 16px;" onclick="genImage(${fi},'setBox${i}',this,'1536x1024','세트${i + 1} 썸네일')">🎨 그리기</button></div>
+            </div>
+            <div class="set-body">
+              <div class="set-head"><span class="title-no">${i + 1}</span>
+                <span class="set-title">${esc(s.title || "")}</span>
+                <button class="title-cp" onclick="copyIdx(${ti},this)">제목 복사</button></div>
+              ${s.thumb_text ? `<div class="set-overlay">🔤 이미지 위 문구: <b>${esc(s.thumb_text).replace(/\n/g, " / ")}</b> <span style="color:#a99fc0;">(그릴 때 이미지에 함께 새겨져요)</span></div>` : ""}
+              <details class="set-det"><summary>프롬프트 보기·복사</summary>${det}</details>
+            </div></div>`;
+        }).join("");
+        const allIdx = stash(sets.map((s, i) => `${i + 1}. ${s.title || ""}${s.thumb_text ? `\n   썸네일 문구: ${(s.thumb_text || "").replace(/\n/g, " / ")}` : ""}`).join("\n"));
+        secs.push({ id:"sec-sets", label:"🎬 세트10",
+          html:`<div class="rp-sec" id="sec-sets"><div class="rp-sec-h">🎬 썸네일+제목 세트 ${sets.length}개 <span class="rp-sec-note">제목이 곧 썸네일 장면 — 문구까지 이미지에 새겨서 그려요</span> <button class="rp-copy-all" onclick="copyIdx(${allIdx},this)">📋 제목·문구 전체 복사</button></div>
+            <div style="font-size:11.5px;color:#8a80a5;margin-bottom:11px;">각 세트의 🎨 그리기를 누르면 <b>그 제목의 장면 + 한글 문구</b>가 함께 들어간 썸네일을 최고화질로 그려요. 장당 비용이 있으니 마음에 드는 세트부터.</div>${cards}</div>` });
+      } else if ((d.titles||[]).length) {
+        const rows = d.titles.map((t,i)=>{ const idx=stash(String(t));
+          return `<div class="title-row"><span class="title-no">${i+1}</span><span class="title-txt">${esc(t)}</span><button class="title-cp" onclick="copyIdx(${idx},this)">복사</button></div>`; }).join("");
+        const allIdx = stash(d.titles.join("\n"));
+        secs.push({ id:"sec-titles", label:"✍️ 제목10",
+          html:`<div class="rp-sec" id="sec-titles"><div class="rp-sec-h">✍️ 신규 제목 ${d.titles.length}개 <button class="rp-copy-all" onclick="copyIdx(${allIdx},this)">📋 전체 복사</button></div>${rows}</div>` });
+      }
+
+      // 7) Suno
+      const s = d.suno || {};
+      if (s.style_prompt || (s.song_pack||[]).length) {
+        let h = "";
+        if (s.song_type) h += `<div style="margin-bottom:8px;"><span class="badge-song">${s.song_type==="lyric"?"🎤 가사곡":"🎹 연주곡"}</span></div>`;
+        if (s.type_reason) h += `<div class="rationale" style="margin-bottom:10px;">${esc(s.type_reason)}</div>`;
+        if (s.concept) h += `<div style="font-size:13px;color:#334155;line-height:1.7;margin-bottom:10px;">${esc(s.concept)}</div>`;
+        h += copyBlock(s.style_prompt, "🎵 Suno 스타일 프롬프트 (Style of Music 에 붙여넣기)", true);
+        if ((s.structure||[]).length) h += `<div class="rp-block"><div class="rp-block-h">곡 구조</div><div class="tl">${s.structure.map(x=>`<div class="tl-item"><span class="tl-sec">${esc(x.section)}</span> <span class="tl-desc">${esc(x.desc)}</span></div>`).join("")}</div></div>`;
+        if (P(s.lyrics)) h += copyBlock(s.lyrics, "🎤 가사 (Suno Custom 가사란에 붙여넣기)", true);
+        if ((s.title_candidates||[]).length) h += `<div class="rp-block"><div class="rp-block-h">곡 제목 후보 <span style="font-weight:400;color:#a99fc0;">(클릭 복사)</span></div><div class="chips">${s.title_candidates.map(ccChip).join("")}</div></div>`;
+        if (s.yt_title_example) h += copyBlock(s.yt_title_example, "유튜브 제목 연결 예시");
+        if ((s.song_pack||[]).length) {
+          h += `<div class="rp-block"><div class="rp-block-h">📀 곡 묶음 ${s.song_pack.length}곡</div>`;
+          h += s.song_pack.map(p=>`<div class="mini-card" style="margin-bottom:8px;"><h4>#${esc(P(p.no))} ${esc(p.title)}</h4>${kv([["무드",p.mood],["스타일",p.style],["연결",p.link]])}</div>`).join("");
+          h += `</div>`;
+        }
+        secs.push({ id:"sec-suno", label:"🎵 Suno",
+          html:`<div class="rp-sec" id="sec-suno"><div class="rp-sec-h">🎵 Suno AI 곡 패키지</div>${h}</div>` });
+      }
+
+      // 8) 체크리스트
+      if ((d.checklist||[]).length) {
+        const items = d.checklist.map(x=>`<div class="check-item" onclick="toggleCheck(this)"><span class="check-box"></span><span class="check-txt">${esc(x)}</span></div>`).join("");
+        secs.push({ id:"sec-check", label:"✅ 체크리스트",
+          html:`<div class="rp-sec" id="sec-check"><div class="rp-sec-h">✅ 다음 실행 체크리스트</div>${items}</div>` });
+      }
+
+      // 벤치마킹 섹션을 최상단으로
+      if (benchSec) secs.unshift(benchSec);
+
+      // 헤더 + 네비 + 입력가정
+      const chChips = (meta.channels||[]).map(c=>`<span class="rp-chip">${esc(c.title)} · 구독 ${fmtCompact(c.subscribers)} · 영상 ${c.videos}개${c.demo?" · 데모":""}</span>`).join("");
+      const nav = secs.map(x=>`<span class="rp-pill" onclick="scrollTo('${x.id}')">${x.label}</span>`).join("");
+      const exportIdx = stash(buildExport(d, meta));
+      let assume = "";
+      if ((d.input_assumptions||[]).length) assume = `<div class="rp-assumptions"><ul style="margin:0;padding-left:16px;">${d.input_assumptions.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>`;
+
+      const top = `<div class="rp-top">
+        <div class="rp-top-row"><span class="rp-title">📋 컨셉 리포트</span>
+          <span class="rp-chip ${meta.engine==="demo"?"demo":""}">엔진: ${esc(meta.engine)}</span>${chChips}</div>
+        <div class="rp-nav">${nav}<button class="rp-copy-all" onclick="copyIdx(${exportIdx},this)">📋 전체 복사</button></div>
+      </div>`;
+
+      document.getElementById("resultBox").innerHTML = top + (assume?`<div class="rp-sec">${assume}</div>`:"") + secs.map(x=>x.html).join("");
+      if (meta.engine === "demo") showDemoBanner(true);
+    }
+
+    // 🎨 GPT 이미지 생성 + 미리보기 (썸네일·로고·배너 공용)
+    // 🎯 레퍼런스 썸네일을 그리는 모델에 '직접' 넣어 무드를 이식 (ChatGPT 앱 방식)
+    let REF_THUMBS = [];
+    async function genImage(promptIdx, boxId, btn, size, label) {
+      const prompt = (COPY[promptIdx] || "").trim();
+      if (!prompt) return toast("이미지 프롬프트가 비어 있어요");
+      label = label || "이미지";
+      const box = document.getElementById(boxId);
+      btn.disabled = true; const o = btn.textContent; btn.textContent = "🎨 그리는 중… (20~60초)";
+      const refNote = REF_THUMBS.length ? ` — 레퍼런스 ${REF_THUMBS.length}장을 직접 보면서` : "";
+      box.innerHTML = `<div class="spin">🎨 GPT가${esc(refNote)} ${esc(label)}를 그리는 중… (20~60초)</div>`;
+      try {
+        const r = await api("/api/concept/thumbnail", { method: "POST", body: JSON.stringify({ prompt, size: size || "1536x1024", refs: REF_THUMBS }) });
+        const moodChip = r.refs_used
+          ? `<span class="rp-chip" style="background:#f3e8ff;color:#6d28d9;">🎯 레퍼런스 ${r.refs_used}장 무드 반영</span>` : "";
+        box.innerHTML = `<div class="gen-wrap"><img class="gen-img" src="${r.data_url}" alt="생성된 ${esc(label)}">
+          <div class="gen-actions">
+            <a class="gen-dl" href="${r.data_url}" download="${esc(label)}.png">⬇️ ${esc(label)} 다운로드</a>
+            <button class="gen-re" onclick="genImage(${promptIdx},'${boxId}',this,'${size || "1536x1024"}','${esc(label)}')">🔄 다시 그리기</button>
+            <span class="rp-chip" style="background:#dcfce7;color:#166534;">✨ 최고화질 · ${esc(r.model || "")}</span>${moodChip}</div></div>`;
+        toast(`✅ ${label} 완성${r.refs_used ? " — 레퍼런스 무드 반영됨" : ""}`);
+      } catch (e) {
+        box.innerHTML = `<div style="color:#b91c1c;font-size:13px;line-height:1.65;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:10px 13px;">⚠️ ${esc(e.message)}</div>`;
+      }
+      btn.disabled = false; btn.textContent = o;
+    }
+
+    // 전체 복사용 텍스트 빌더
+    function buildExport(d, meta) {
+      const L = [];
+      L.push("■ 플리 컨셉 리포트 (엔진: " + meta.engine + ")");
+      (d.input_assumptions||[]).forEach(x=>L.push("- " + x));
+      (d.channels||[]).forEach(c=>{
+        L.push("\n【채널 분석】 " + (c.name||""));
+        const id=c.identity||{}; L.push(`무드:${id.mood||""} / 타겟:${id.target||""} / 목적:${id.purpose||""}`);
+        const b=c.branding||{}; if(b.total!=null) L.push(`브랜딩 점수: ${b.total}/50 — ${b.one_liner||""}`);
+      });
+      if (d.fusion) L.push("\n융합: " + d.fusion);
+      (d.concepts||[]).forEach(cn=>{ L.push("\n【컨셉안】 " + cn.name); L.push(cn.definition||""); });
+      const su=d.setup||{};
+      if(Object.keys(su).length){
+        L.push("\n【채널 세팅】");
+        if((su.names||[]).length) L.push("이름: " + su.names.join(" / "));
+        if((su.handles||[]).length) L.push("핸들: " + su.handles.join(" / "));
+        if(su.description) L.push("\n설명문:\n" + su.description);
+        if(su.keywords) L.push("\n키워드:\n" + su.keywords);
+        if(su.title_template) L.push("\n제목 템플릿:\n" + su.title_template);
+        if(su.desc_template) L.push("\n설명 템플릿:\n" + su.desc_template);
+        if(su.tags) L.push("\n태그:\n" + su.tags);
+        if((su.hashtags||[]).length) L.push("\n해시태그: " + su.hashtags.join(" "));
+      }
+      const ht=d.hero_thumbnail||{};
+      if(ht.image_prompt) L.push("\n【대표 썸네일 이미지 프롬프트】\n" + ht.image_prompt);
+      if((d.title_sets||[]).length) L.push("\n【썸네일+제목 세트】\n" + d.title_sets.map((s,i)=>`${i+1}. ${s.title||""}${s.thumb_text?`\n   썸네일 문구: ${(s.thumb_text||"").replace(/\n/g," / ")}`:""}`).join("\n"));
+      else if((d.titles||[]).length) L.push("\n【제목 10】\n" + d.titles.map((t,i)=>(i+1)+". "+t).join("\n"));
+      const s=d.suno||{};
+      if(s.style_prompt) L.push("\n【Suno 스타일】\n" + s.style_prompt);
+      if(s.lyrics) L.push("\n【가사】\n" + s.lyrics);
+      if((s.structure||[]).length) L.push("\n【곡 구조】\n" + s.structure.map(x=>x.section+" "+x.desc).join("\n"));
+      if((d.checklist||[]).length) L.push("\n【체크리스트】\n" + d.checklist.map(x=>"[ ] "+x).join("\n"));
+      return L.join("\n");
+    }
+
+    // ── 마크다운 폴백 (JSON 파싱 실패 시) ──
+    function md(src) {
+      const lines = (src || "").split("\n");
+      let html = "", inTable = false, inList = false;
+      const inline = s => esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/`([^`]+)`/g, "<code>$1</code>");
+      const closeAll = () => { if (inTable) { html += "</table>"; inTable = false; } if (inList) { html += "</ul>"; inList = false; } };
+      for (let raw of lines) {
+        const ln = raw.trimEnd();
+        if (/^\|.*\|$/.test(ln.trim())) {
+          const cells = ln.trim().slice(1, -1).split("|").map(c => c.trim());
+          if (cells.every(c => /^:?-{2,}:?$/.test(c))) continue;
+          if (!inTable) { closeAll(); html += "<table>"; inTable = true; html += "<tr>" + cells.map(c => `<th>${inline(c)}</th>`).join("") + "</tr>"; }
+          else html += "<tr>" + cells.map(c => `<td>${inline(c)}</td>`).join("") + "</tr>";
+          continue;
+        }
+        if (inTable) { html += "</table>"; inTable = false; }
+        if (/^#{1,3}\s/.test(ln)) { closeAll(); const lvl = ln.match(/^(#{1,3})/)[1].length; html += `<h${lvl}>${inline(ln.replace(/^#{1,3}\s*/, ""))}</h${lvl}>`; }
+        else if (/^[-*]\s/.test(ln.trim())) { if (!inList) { html += "<ul>"; inList = true; } html += `<li>${inline(ln.trim().replace(/^[-*]\s*/, ""))}</li>`; }
+        else if (/^-{3,}$/.test(ln.trim())) { closeAll(); html += "<hr>"; }
+        else if (ln.trim() === "") closeAll();
+        else { closeAll(); html += `<p style="margin:5px 0;">${inline(ln)}</p>`; }
+      }
+      closeAll();
+      return html;
+    }
+
+    // 응답(생성/저장리포트 공용) → 화면 렌더
+    function showResponse(r) {
+      const box = document.getElementById("resultBox");
+      const meta = { channels: r.channels, engine: r.engine, thumbnails: r.thumbnails || [], vision: r.vision || "", thumb_source: r.thumb_source || "" };
+      let result = r.result;
+      if (!result && r.markdown) {
+        try {
+          const t = r.markdown.trim().replace(/^```[a-z]*\s*/i, "").replace(/\s*```$/, "");
+          const s = t.indexOf("{"), e = t.lastIndexOf("}");
+          if (s !== -1 && e > s) { const o = JSON.parse(t.slice(s, e + 1)); if (o && typeof o === "object") result = o; }
+        } catch (_) {}
+      }
+      if (result) {
+        renderReport(result, meta);
+      } else {
+        const chips = (r.channels || []).map(c => `<span class="rp-chip">${esc(c.title)} · 구독 ${fmtCompact(c.subscribers)}${c.demo ? " · 데모" : ""}</span>`).join("");
+        box.innerHTML = `<div class="rp-sec"><div class="rp-sec-h">📋 컨셉 리포트 <span class="rp-chip">엔진: ${esc(r.engine)}</span>${chips}
+          <button class="rp-copy-all" onclick="navigator.clipboard.writeText(${JSON.stringify(r.markdown || "")}).then(()=>toast('📋 복사'))">📋 전체 복사</button></div>
+          <div class="report">${md(r.markdown || "결과가 비어 있어요.")}</div></div>`;
+        if (r.engine === "demo") showDemoBanner(true);
+      }
+    }
+
+    document.getElementById("goBtn").onclick = async () => {
+      const chans = ["ch1", "ch2", "ch3"].map(id => document.getElementById(id).value.trim()).filter(Boolean);
+      const popTitles = document.getElementById("popTitles").value;
+      if (!chans.length && !UPLOADS.length && !popTitles.trim())
+        return toast("채널 URL · 썸네일 캡처 · 제목 중 하나는 넣어주세요");
+      const box = document.getElementById("resultBox");
+      const busyMsg = UPLOADS.length
+        ? `🎨 올린 캡처 ${UPLOADS.length}장을 GPT가 직접 보고 분석 중… (30초~1분)`
+        : '🎨 채널 수집 + 지침 v1.4 분석 중… (30초~1분 걸릴 수 있어요)';
+      box.innerHTML = `<div class="cm-panel spin">${busyMsg}</div>`;
+      try {
+        const r = await api("/api/concept/analyze", { method: "POST", body: JSON.stringify({
+          channels: chans, song_type: state.song_type, num_songs: state.num_songs,
+          extra_notes: document.getElementById("notes").value,
+          images: UPLOADS, titles: popTitles }) });
+        showResponse(r);
+        loadReports();            // 방금 저장된 리포트를 목록에 반영
+      } catch (e) {
+        box.innerHTML = `<div class="cm-panel" style="color:#b91c1c;">오류: ${esc(e.message)}</div>`;
+      }
+    };
+
+    // 📂 최근 리포트 (서버 저장 — 폰에서 만든 것도 집 데스크톱에서 열림)
+    function fmtWhen(ts) { if (!ts) return ""; const d = new Date(ts * 1000); const p = n => String(n).padStart(2, "0");
+      return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+    async function loadReports() {
+      const panel = document.getElementById("historyPanel");
+      try {
+        const r = await api("/api/concept/reports");
+        const list = r.reports || [];
+        if (!list.length) { panel.style.display = "none"; return; }
+        document.getElementById("reportList").innerHTML = list.map(x => {
+          const chans = (x.channels || []).map(c => esc(c.title)).join(", ") || "캡처/제목";
+          const src = x.thumb_source === "upload" ? "📎 내 캡처" : x.thumb_source === "youtube" ? "🔗 URL수집" : "";
+          return `<div class="rep-item">
+            <div style="min-width:0;flex:1;cursor:pointer;" onclick="openReport('${x.id}')">
+              <div style="font-weight:700;font-size:13.5px;color:#1e1b2e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(x.title || "컨셉 리포트")}</div>
+              <div style="font-size:11.5px;color:#8a80a5;">${chans} · ${esc(x.engine)} ${src} · ${fmtWhen(x.created)}</div></div>
+            <button class="rep-open" onclick="openReport('${x.id}')">열기</button>
+            <button class="rep-del" onclick="delReport('${x.id}',event)" title="삭제">🗑</button></div>`;
+        }).join("");
+        panel.style.display = "block";
+      } catch (e) { panel.style.display = "none"; }
+    }
+    async function openReport(id) {
+      const box = document.getElementById("resultBox");
+      box.innerHTML = '<div class="cm-panel spin">📂 저장된 리포트 여는 중…</div>';
+      try { showResponse(await api("/api/concept/reports/" + id)); box.scrollIntoView({ behavior: "smooth", block: "start" }); }
+      catch (e) { box.innerHTML = `<div class="cm-panel" style="color:#b91c1c;">오류: ${esc(e.message)}</div>`; }
+    }
+    async function delReport(id, ev) {
+      ev.stopPropagation();
+      if (!confirm("이 리포트를 삭제할까요?")) return;
+      try { await api("/api/concept/reports/" + id, { method: "DELETE" }); loadReports(); } catch (e) {}
+    }
+
+    (async () => {
+      try {
+        const s = await api("/api/concept/status");
+        if (!s.gemini && !s.openai) showDemoBanner(true);
+      } catch (e) {}
+      loadReports();
+    })();
+  </script>
+</body>
+</html>

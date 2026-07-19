@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>북마크 · RefTracker</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <div class="sidebar-brand">RefTracker</div>
+        <div class="sidebar-brand-sub">레퍼런스 채널 추적</div>
+      </div>
+      <nav class="nav-section">
+        <a href="trend.html" class="nav-item">🔥 트렌드 피드</a>
+        <a href="youtube_discover.html" class="nav-item">🌐 YouTube 발굴</a>
+        <a href="search.html" class="nav-item">🔍 검색</a>
+        <a href="source_finder.html" class="nav-item">🕵️ 원본 소스 찾기</a>
+        <a href="channels.html" class="nav-item">📺 레퍼런스 채널</a>
+        <a href="collections.html" class="nav-item">📁 컬렉션</a>
+        <a href="bookmarks.html" class="nav-item active">⭐ 북마크</a>
+        <a href="notifications.html" class="nav-item">🔔 알림</a>
+        <a href="settings.html" class="nav-item">⚙️ 설정</a>
+      </nav>
+      <div class="nav-divider"></div>
+      <nav class="nav-section">
+        <a href="index.html" class="nav-item-secondary"><span>🏠 포털 메인</span><span>›</span></a>
+        <a href="translator.html" class="nav-item-secondary"><span>🌸 일본어 번역봇</span><span>›</span></a>
+        <a href="editor.html" class="nav-item-secondary"><span>✂️ 자동 컷편집</span><span>›</span></a>
+      </nav>
+      <div class="version">v0.4.0</div>
+    </aside>
+
+    <main class="main">
+      <div class="page-header-row">
+        <div>
+          <span class="badge-dot">북마크</span>
+          <h1 class="page-title"><span class="gradient-text">⭐ 북마크</span> 모아보기</h1>
+          <p class="page-sub">트렌드 피드·검색·YouTube 발굴 어디서 별을 눌러도 여기에 모입니다</p>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <div class="result-count" id="resultCount">불러오는 중…</div>
+        <div class="legend-row">
+          <span class="legend-dot registered">✓ 이미 등록된 채널</span>
+          <span class="legend-dot new-add">+ 새로 추가할 채널</span>
+        </div>
+      </div>
+
+      <div class="card-grid" id="grid"></div>
+    </main>
+  </div>
+
+  <script src="assets/api.js"></script>
+  <script>
+    window.BOOKMARK_PAGE = true;   /* 별 해제 시 카드 즉시 제거 */
+
+    async function loadBookmarks() {
+      try {
+        const { cards } = await api("/api/bookmarks");
+        cards.forEach(c => (c.bookmarked = true));
+        renderGrid(document.getElementById("grid"), cards);
+        document.getElementById("resultCount").textContent = cards.length
+          ? `⭐ ${cards.length}개 저장됨`
+          : "아직 북마크가 없어요 — 검색·발굴 카드의 별을 눌러보세요";
+      } catch (e) {
+        document.getElementById("grid").innerHTML =
+          `<div class="loading-row">⚠️ ${esc(e.message)} — 백엔드 서버 확인</div>`;
+      }
+    }
+    loadBookmarks();
+  </script>
+</body>
+</html>

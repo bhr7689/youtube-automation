@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>레퍼런스 채널 · RefTracker</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <div class="sidebar-brand">RefTracker</div>
+        <div class="sidebar-brand-sub">레퍼런스 채널 추적</div>
+      </div>
+      <nav class="nav-section">
+        <a href="trend.html" class="nav-item">🔥 트렌드 피드</a>
+        <a href="youtube_discover.html" class="nav-item">🌐 YouTube 발굴</a>
+        <a href="search.html" class="nav-item">🔍 검색</a>
+        <a href="source_finder.html" class="nav-item">🕵️ 원본 소스 찾기</a>
+        <a href="channels.html" class="nav-item active">📺 레퍼런스 채널</a>
+        <a href="collections.html" class="nav-item">📁 컬렉션</a>
+        <a href="bookmarks.html" class="nav-item">⭐ 북마크</a>
+        <a href="notifications.html" class="nav-item">🔔 알림</a>
+        <a href="settings.html" class="nav-item">⚙️ 설정</a>
+      </nav>
+      <div class="nav-divider"></div>
+      <nav class="nav-section">
+        <a href="index.html" class="nav-item-secondary"><span>🏠 포털 메인</span><span>›</span></a>
+        <a href="translator.html" class="nav-item-secondary"><span>🌸 일본어 번역봇</span><span>›</span></a>
+        <a href="editor.html" class="nav-item-secondary"><span>✂️ 자동 컷편집</span><span>›</span></a>
+      </nav>
+      <div class="version">v0.4.0</div>
+    </aside>
+
+    <main class="main">
+      <div class="page-header-row">
+        <div>
+          <span class="badge-dot">레퍼런스 채널</span>
+          <h1 class="page-title"><span class="gradient-text">참고할 채널</span> 모음</h1>
+          <p class="page-sub" id="chCount">불러오는 중…</p>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn-secondary" onclick="exportCsv()">📋 CSV</button>
+        </div>
+      </div>
+
+      <div class="card-grid cols-4" id="chGrid"></div>
+    </main>
+  </div>
+
+  <script src="assets/api.js"></script>
+  <script>
+    let CHANNELS = [];
+
+    function chAvatar(t) {
+      return (t || "?").trim().slice(0, 2);
+    }
+
+    function renderChannels() {
+      const grid = document.getElementById("chGrid");
+      grid.innerHTML = CHANNELS.length ? CHANNELS.map(ch => `
+        <div class="channel-card" data-cid="${esc(ch.channel_id)}">
+          <div class="channel-card-top">
+            <div class="channel-card-avatar" style="background:${avatarColor(ch.title)};color:#fff;font-size:13px;">${esc(chAvatar(ch.title))}</div>
+            <div class="channel-card-actions">
+              <span title="채널 열기" onclick="window.open('https://www.youtube.com/channel/${esc(ch.channel_id)}','_blank')">🔗</span>
+              <span title="이 채널 영상 검색" onclick="location.href='search.html?q='+encodeURIComponent(${JSON.stringify("")}+'${esc(ch.title)}')">🔍</span>
+              <span title="등록 해제" onclick="removeChannel('${esc(ch.channel_id)}','${esc(ch.title)}')">×</span>
+            </div>
+          </div>
+          <div style="font-weight:700;font-size:14px;margin:6px 0;">${esc(ch.title)}</div>
+          <div class="channel-card-stats">
+            <div class="stat-box"><div class="stat-label">평균 조회</div><div class="stat-value">${ch.avg_views ? fmtViews(ch.avg_views).replace("조회 ", "") : "—"}</div></div>
+            <div class="stat-box"><div class="stat-label">개설</div><div class="stat-value">${ch.age_months != null && ch.age_months < 900 ? ch.age_months + "개월" : "—"}</div></div>
+          </div>
+        </div>`).join("")
+        : '<div class="loading-row" style="grid-column:1/-1;">아직 등록된 채널이 없어요 — 검색·발굴 카드의 [+ 추가]를 눌러보세요</div>';
+      document.getElementById("chCount").innerHTML = `총 <strong>${CHANNELS.length}개</strong> 채널 추적 중 — 이 채널들의 영상엔 ×배수가 표시됩니다`;
+    }
+
+    async function loadChannels() {
+      try {
+        CHANNELS = (await api("/api/channels")).channels;
+        renderChannels();
+      } catch (e) {
+        document.getElementById("chGrid").innerHTML = `<div class="loading-row">⚠️ ${esc(e.message)}</div>`;
+      }
+    }
+
+    async function removeChannel(cid, title) {
+      if (!confirm(`'${title}' 채널 등록을 해제할까요?`)) return;
+      await api(`/api/channels/${cid}`, { method: "DELETE" });
+      toast("등록 해제됨");
+      loadChannels();
+    }
+
+    function exportCsv() {
+      const rows = [["channel_id", "title", "avg_views", "age_months"]]
+        .concat(CHANNELS.map(c => [c.channel_id, c.title, c.avg_views || "", c.age_months ?? ""]));
+      const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob(["\ufeff" + csv], { type: "text/csv" }));
+      a.download = "reference_channels.csv";
+      a.click();
+      toast("📋 CSV 다운로드");
+    }
+
+    loadChannels();
+  </script>
+</body>
+</html>

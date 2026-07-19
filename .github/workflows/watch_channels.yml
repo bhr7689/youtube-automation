@@ -1,0 +1,46 @@
+name: 🔔 벤치마킹 채널 감시 → 카톡 알림
+
+# 북마크+알림 ON 채널(watch_channels.json)의 새 영상을 RSS 로 감지 →
+# 제목 자동 분석 → 카카오톡 '나에게 보내기' 발송. PC 꺼져 있어도 작동.
+#
+# 준비:
+#  1) 앱 🔔 탭에서 '알림목록 내보내기' → watch_channels.json 커밋·푸시
+#  2) Secrets 등록: KAKAO_REST_API_KEY, KAKAO_REFRESH_TOKEN
+#     (YOUTUBE_API_KEY 는 핸들→channelId 해석에 있으면 좋음. 없으면 /channel/UC.. URL 만 감시)
+on:
+  schedule:
+    - cron: '0 */3 * * *'    # 3시간마다 (UTC)
+  workflow_dispatch:          # 수동 실행
+
+permissions:
+  contents: write             # watch_state.json 커밋용
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 의존성 설치
+        run: pip install google-api-python-client
+
+      - name: 감시 + 카톡 발송
+        env:
+          YOUTUBE_API_KEY:     ${{ secrets.YOUTUBE_API_KEY }}
+          KAKAO_REST_API_KEY:  ${{ secrets.KAKAO_REST_API_KEY }}
+          KAKAO_REFRESH_TOKEN: ${{ secrets.KAKAO_REFRESH_TOKEN }}
+        run: python channel_watcher.py --notify
+
+      - name: 감시 상태 저장(커밋)
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add watch_state.json || true
+          git commit -m "chore: watch_state 갱신 [skip ci]" || echo "변경 없음"
+          git push || echo "푸시 스킵"

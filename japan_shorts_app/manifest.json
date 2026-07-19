@@ -1,0 +1,15 @@
+{
+  "name": "일본쇼츠 자동 프로그램",
+  "short_name": "일본쇼츠",
+  "description": "레퍼런스 발굴·대본·번역·컷편집·컨셉 제조 통합 도구",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#faf5ff",
+  "theme_color": "#7c3aed",
+  "icons": [
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

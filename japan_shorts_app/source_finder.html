@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>원본 소스 찾기 · RefTracker</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <style>
+    .stage-list { display: flex; flex-direction: column; gap: 8px; }
+    .stage-item { display: flex; align-items: center; gap: 10px; font-size: 13.5px; }
+    .stage-item .note { color: var(--c-text-light); font-size: 12px; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap; max-width: 640px; }
+    .verdict-box { background: #f4f0fc; border: 1.5px solid #cbb9ee; border-radius: 14px;
+      padding: 16px 20px; margin-bottom: 16px; }
+    .verdict-box .v-row { font-size: 14px; margin-bottom: 7px; }
+    .verdict-box .v-row b { color: #6d28d9; }
+    .vd-headline { border-radius: 14px; padding: 15px 18px; margin-bottom: 14px; }
+    .vd-headline.strong { background: #dcfce7; border: 1.5px solid #86efac; }
+    .vd-headline.medium { background: #fef9c3; border: 1.5px solid #fde047; }
+    .vd-headline.weak { background: #fee2e2; border: 1.5px solid #fca5a5; }
+    .vd-title { font-size: 17px; font-weight: 800; margin-bottom: 4px; }
+    .vd-headline.strong .vd-title { color: #166534; }
+    .vd-headline.medium .vd-title { color: #854d0e; }
+    .vd-headline.weak .vd-title { color: #991b1b; }
+    .vd-sum { font-size: 13px; color: #374151; line-height: 1.6; }
+    .vd-conf { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 9px;
+      border-radius: 999px; background: rgba(255,255,255,.7); margin-left: 6px; }
+    .best-link { display: flex; align-items: center; gap: 10px; background: #fff;
+      border: 1.5px solid #cbb9ee; border-radius: 11px; padding: 11px 14px; margin-bottom: 8px;
+      text-decoration: none; color: inherit; }
+    .best-link:hover { border-color: #7c3aed; box-shadow: 0 2px 10px rgba(124,58,237,.12); }
+    .best-link .bl-open { margin-left: auto; font-weight: 700; color: #7c3aed; font-size: 12.5px; flex: 0 0 auto; }
+    .best-link .bl-url { font-size: 12px; color: #8b5cf6; word-break: break-all; }
+    .bl-copy { border: none; background: #f3e8ff; color: #7e22ce; font-weight: 700; font-size: 11.5px;
+      padding: 5px 10px; border-radius: 8px; cursor: pointer; flex: 0 0 auto; }
+    .route-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+    .route-btn { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px;
+      background: #fff; border: 1.5px solid #e8e2f4; border-radius: 16px;
+      padding: 6px 13px; text-decoration: none; color: inherit; }
+    .route-btn:hover { border-color: #8b5cf6; }
+    .img-row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+    .img-row figure { margin: 0; }
+    .img-row img { max-width: 100%; border-radius: 12px; border: 1px solid #e8e2f4; }
+    .img-row figcaption { font-size: 12px; color: var(--c-text-light); margin-top: 4px; }
+    .job-row { display: flex; justify-content: space-between; align-items: center;
+      background: #fff; border: 1px solid #e8e2f4; border-radius: 12px; padding: 10px 14px;
+      margin-bottom: 8px; font-size: 13px; cursor: pointer; }
+    .job-row:hover { border-color: #8b5cf6; }
+    .hint-row { display: flex; gap: 8px; margin-top: 8px; }
+    .hint-row input { flex: 1; border: 1.5px solid #e8e2f4; border-radius: 10px;
+      padding: 8px 12px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <div class="sidebar-brand">RefTracker</div>
+        <div class="sidebar-brand-sub">레퍼런스 채널 추적</div>
+      </div>
+      <nav class="nav-section">
+        <a href="trend.html" class="nav-item">🔥 트렌드 피드</a>
+        <a href="youtube_discover.html" class="nav-item">🌐 YouTube 발굴</a>
+        <a href="search.html" class="nav-item">🔍 검색</a>
+        <a href="source_finder.html" class="nav-item active">🕵️ 원본 소스 찾기</a>
+        <a href="channels.html" class="nav-item">📺 레퍼런스 채널</a>
+        <a href="collections.html" class="nav-item">📁 컬렉션</a>
+        <a href="bookmarks.html" class="nav-item">⭐ 북마크</a>
+        <a href="notifications.html" class="nav-item">🔔 알림</a>
+        <a href="settings.html" class="nav-item">⚙️ 설정</a>
+      </nav>
+      <div class="nav-divider"></div>
+      <nav class="nav-section">
+        <a href="index.html" class="nav-item-secondary"><span>🏠 포털 메인</span><span>›</span></a>
+        <a href="translator.html" class="nav-item-secondary"><span>🌸 일본어 번역봇</span><span>›</span></a>
+        <a href="editor.html" class="nav-item-secondary"><span>✂️ 자동 컷편집</span><span>›</span></a>
+      </nav>
+      <div class="version">v0.4.0</div>
+    </aside>
+
+    <main class="main">
+      <div class="page-header-row">
+        <div>
+          <span class="badge-dot">원본 소스 찾기</span>
+          <h1 class="page-title"><span class="gradient-text">쇼츠의 원본</span> 출처 역추적</h1>
+          <p class="page-sub">URL 한 줄 → 프레임 추출·워터마크 단서 → YouTube · Instagram · TikTok · 샤오홍슈 · 더우인 확인 루트</p>
+        </div>
+      </div>
+
+      <div class="search-box">
+        <span class="icon">🕵️</span>
+        <input type="text" id="urlInput" placeholder="쇼츠 URL 붙여넣기 — 예: https://www.youtube.com/shorts/..." />
+        <button class="btn-primary" style="border-radius:12px;" onclick="startJob()">추적 시작</button>
+      </div>
+      <div class="hint-row">
+        <input type="text" id="hintTitle" placeholder="(선택) 제목 수동 입력 — 메타 수집이 막힐 때 검색 단서로 사용" />
+        <input type="text" id="hintHandle" placeholder="(선택) 워터마크 @핸들 — 예: @kimdy804" style="max-width:260px;" />
+      </div>
+
+      <div class="filter-block" id="stageBox" style="display:none;margin-top:16px;">
+        <div class="filter-block-title">진행 상황 <span id="stageStatus" style="font-weight:400;color:var(--c-text-light);"></span></div>
+        <div class="stage-list" id="stageList"></div>
+      </div>
+
+      <div id="resultBox" style="display:none;">
+        <div id="headlineBox"></div>
+        <div id="bestLinksWrap" style="margin-bottom:16px;"></div>
+        <div class="verdict-box" id="verdictBox"></div>
+
+        <div class="filter-block">
+          <div class="filter-block-title">확인 루트 — 5플랫폼 (클릭해서 같은 장면 직접 대조)</div>
+          <div class="route-grid" id="profileRoutes"></div>
+          <div class="route-grid" id="searchRoutes"></div>
+          <div class="route-grid" id="autoRoutes"></div>
+          <div style="font-size:12px;color:var(--c-text-light);margin-top:4px;">
+            ⚠️ TikTok 비공개/임베드 차단 · Instagram 비로그인 · 샤오홍슈/더우인 로그인 장벽으로 자동 수집이 막힐 수 있어요 —
+            위 루트에서 <b>같은 장면</b>과 <b>게시일</b>을 직접 확인하는 게 최종 판정이에요.
+          </div>
+        </div>
+
+        <div class="img-row" id="imgRow"></div>
+
+        <div style="display:flex;gap:8px;margin-bottom:24px;">
+          <a class="btn-secondary" id="reportLink" target="_blank" style="text-decoration:none;">📄 report.md 열기</a>
+        </div>
+      </div>
+
+      <div class="filter-block">
+        <div class="filter-block-title">🗂️ 과거 추적 기록</div>
+        <div id="jobList"><span style="font-size:13px;color:var(--c-text-light);">불러오는 중…</span></div>
+      </div>
+    </main>
+  </div>
+
+  <script src="assets/api.js"></script>
+  <script>
+    const STAGE_LABEL = {
+      meta: "1️⃣ 메타 수집 (제목·채널·업로드시각)",
+      download: "2️⃣ 영상 다운로드 (yt-dlp)",
+      frames: "3️⃣ 프레임 24장 + contact sheet + 워터마크 스트립",
+      handles: "4️⃣ @핸들 단서 추출",
+      candidates: "5️⃣ 5플랫폼 후보 생성",
+      report: "6️⃣ 판정·보고서",
+    };
+    const ICON = { ok: "✅", fail: "⚠️", skip: "⏭️", pending: "⏳" };
+    let pollTimer = null;
+
+    async function startJob() {
+      const url = document.getElementById("urlInput").value.trim();
+      if (!url.startsWith("http")) { toast("쇼츠 URL을 붙여넣어 주세요"); return; }
+      const hints = {};
+      const ht = document.getElementById("hintTitle").value.trim();
+      const hh = document.getElementById("hintHandle").value.trim();
+      if (ht) hints.title = ht;
+      if (hh) hints.handle = hh.startsWith("@") ? hh : "@" + hh;
+      document.getElementById("resultBox").style.display = "none";
+      document.getElementById("stageBox").style.display = "";
+      document.getElementById("stageList").innerHTML =
+        '<div class="stage-item"><span class="spinner"></span>작업 시작 중…</div>';
+      try {
+        const { job_id } = await api("/api/source-finder", {
+          method: "POST", body: JSON.stringify({ url, hints }),
+        });
+        poll(job_id);
+      } catch (e) { toast("오류: " + e.message); }
+    }
+
+    function poll(jobId) {
+      clearInterval(pollTimer);
+      pollTimer = setInterval(async () => {
+        try {
+          const job = await api(`/api/source-finder/${jobId}`);
+          renderStages(job);
+          if (job.status !== "running") {
+            clearInterval(pollTimer);
+            renderResult(job);
+            loadJobs();
+          }
+        } catch (e) { /* 다음 폴링에서 재시도 */ }
+      }, 1500);
+    }
+
+    function renderStages(job) {
+      document.getElementById("stageStatus").textContent =
+        job.status === "running" ? "— 실행 중 (다운로드는 1~3분 걸릴 수 있어요)" : "— 완료";
+      document.getElementById("stageList").innerHTML = Object.keys(STAGE_LABEL).map(s => {
+        const st = job.stages[s] || { status: "pending", note: "" };
+        const spin = job.status === "running" && st.status === "pending" && job.stage === s;
+        return `<div class="stage-item">${spin ? '<span class="spinner"></span>' : ICON[st.status] || "·"}
+          <span>${STAGE_LABEL[s]}</span><span class="note">${esc(st.note)}</span></div>`;
+      }).join("");
+    }
+
+    function copyText(t, btn) {
+      navigator.clipboard.writeText(t).then(() => { if (btn) { const o = btn.textContent; btn.textContent = "✓"; setTimeout(() => btn.textContent = o, 1000); } });
+    }
+    function renderResult(job) {
+      const v = job.verdict || {};
+      const m = job.meta || {};
+
+      // 🎯 한 줄 결론 배너 (찾았다/못 찾았다)
+      const cls = v.found === "strong" ? "strong" : v.found === "weak" ? "weak" : "medium";
+      document.getElementById("headlineBox").innerHTML = v.headline ? `
+        <div class="vd-headline ${cls}">
+          <div class="vd-title">${esc(v.headline)}<span class="vd-conf">신뢰도 ${esc(v.confidence || "?")}</span></div>
+          <div class="vd-sum">${esc(v.summary || "")}</div>
+        </div>` : "";
+
+      // 🔗 바로 볼 링크 (정확한 후보 URL)
+      const bl = v.best_links || [];
+      document.getElementById("bestLinksWrap").innerHTML = bl.length ? `
+        <div class="filter-block-title" style="margin-bottom:8px;">🔗 바로 볼 링크 — 이 링크에서 같은 장면·게시일을 확인하세요</div>
+        ${bl.map(b => `<a class="best-link" href="${esc(b.url)}" target="_blank" rel="noopener">
+          <span>🔗</span><span style="min-width:0;"><b>${esc(b.label)}</b><br><span class="bl-url">${esc(b.url)}</span></span>
+          <button class="bl-copy" onclick="event.preventDefault();copyText('${esc(b.url).replace(/'/g, "\\'")}',this)">📋 복사</button>
+          <span class="bl-open">열기 →</span></a>`).join("")}` : "";
+
+      document.getElementById("verdictBox").innerHTML = `
+        <div class="v-row">🎬 <b>${esc(m.title || (job.hints || {}).title || "(제목 미확보)")}</b>
+          — ${esc(m.channel || "?")} ${esc(m.channel_handle || "")}</div>
+        <div class="v-row">📅 업로드: ${esc(m.upload_kst || m.upload_utc || "?")} · 조회수 ${m.view_count ? Number(m.view_count).toLocaleString() : "?"}</div>
+        <hr style="border:none;border-top:1px dashed #cbb9ee;margin:10px 0;">
+        <div class="v-row">YouTube 원본 가능성: <b>${esc(v.yt_original_likelihood || "?")}</b></div>
+        <div class="v-row">가장 강한 단서: <b>${esc(v.strongest_clue || "?")}</b></div>
+        <div class="v-row">원본 플랫폼 1순위: <b>${esc(v.platform_first || "?")}</b></div>
+        <div class="v-row">가장 이른 공개 후보: ${esc(v.earliest_publication || "?")}</div>
+        <div class="v-row">원본 촬영 후보: <b>${esc(v.original_creator || "?")}</b></div>`;
+
+      const c = job.candidates || {};
+      const P_ICON = { TikTok: "🎵", Instagram: "📸", Douyin: "🇨🇳", Xiaohongshu: "📕", "웹 전체": "🌐" };
+      document.getElementById("profileRoutes").innerHTML = (c.profiles || []).map(p =>
+        `<a class="route-btn" href="${esc(p.url)}" target="_blank">${P_ICON[p.platform] || "🔗"} ${esc(p.platform)} @${esc(p.handle)} <span style="color:#b9a8dd;">(${esc(p.probe)})</span></a>`).join("");
+      document.getElementById("searchRoutes").innerHTML = (c.searches || []).slice(0, 12).map(s =>
+        `<a class="route-btn" href="${esc(s.url)}" target="_blank">🔍 ${P_ICON[s.platform] || ""} ${esc(s.platform)} 검색</a>`).join("");
+      document.getElementById("autoRoutes").innerHTML = (c.auto_found || []).map(a =>
+        `<a class="route-btn" href="${esc(a.url)}" target="_blank">🤖 자동 발견: ${esc(a.url.slice(0, 60))}</a>`).join("");
+
+      const imgs = [];
+      if ((job.files || []).includes("contact_sheet.jpg"))
+        imgs.push(["contact_sheet.jpg", "프레임 시트 — 장면 전체 훑기"]);
+      if ((job.files || []).includes("watermark_strip.jpg"))
+        imgs.push(["watermark_strip.jpg", "워터마크 스트립 — 하단 확대 (@핸들 육안 확인)"]);
+      document.getElementById("imgRow").innerHTML = imgs.map(([f, cap]) =>
+        `<figure style="flex:1;min-width:280px;"><img src="/api/source-finder/${job.job_id}/file/${f}" alt="">
+         <figcaption>${cap}</figcaption></figure>`).join("")
+        || '<div style="font-size:13px;color:var(--c-text-light);">프레임 미확보 — 다운로드가 막힌 환경이에요. 사용자 PC에서 실행하면 프레임 시트가 생성됩니다.</div>';
+      document.getElementById("reportLink").href = `/api/source-finder/${job.job_id}/file/report.md`;
+      document.getElementById("resultBox").style.display = "";
+    }
+
+    async function loadJobs() {
+      try {
+        const { jobs } = await api("/api/source-finder");
+        document.getElementById("jobList").innerHTML = jobs.length ? jobs.map(j =>
+          `<div class="job-row" onclick="openJob('${esc(j.job_id)}')">
+             <span>${j.status === "done" ? "✅" : j.status === "running" ? "⏳" : "⚠️"}
+               ${esc(j.title || j.url)}</span>
+             <span style="color:var(--c-text-light);">${esc(j.created_at)} ${j.handles && j.handles.length ? "· @" + esc(j.handles[0]) : ""}</span>
+           </div>`).join("")
+          : '<span style="font-size:13px;color:var(--c-text-light);">아직 기록이 없어요</span>';
+      } catch (e) { /* 서버 미기동 */ }
+    }
+
+    async function openJob(jobId) {
+      const job = await api(`/api/source-finder/${jobId}`);
+      document.getElementById("stageBox").style.display = "";
+      renderStages(job);
+      if (job.status !== "running") renderResult(job);
+      else poll(jobId);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    /* URL 파라미터 진입 (카드 "🕵️ 원본찾기" 액션 연동) */
+    (function () {
+      const q = new URLSearchParams(location.search).get("url");
+      if (q) { document.getElementById("urlInput").value = q; startJob(); }
+      loadJobs();
+    })();
+  </script>
+</body>
+</html>

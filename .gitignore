@@ -27,3 +27,22 @@ cron.log
 
 # 음악 이어붙이기 앱의 사용자 라이브러리 (자연 소리·이미지)
 music_merger/library/
+
+# 가사 생성기 — 오늘의 시그니처 (사용자별 로컬 상태, day_count 등)
+daily_signature.json
+
+# 가사 생성기 — 나라별 작사 도서관 (사용자가 편집한 로컬 상태, 시드는 nation_prompts.py 안)
+nation_prompts.json
+
+# 채널 브랜드 브리프 (사용자 편집 로컬 상태, 시드는 channel_brief.py 안)
+channel_brief.json
+thumb_title_lab.json
+keys.json
+analysis_cache.json
+japan_shorts_app/screenshots/
+
+# jpshorts 런타임 데이터
+jpshorts/backend/data/
+jpshorts/frontend/node_modules/
+jpshorts/frontend/.next/
+server_ip.txt
