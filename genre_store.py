@@ -245,3 +245,16 @@ def remove_from_basket(name: str, index: int) -> dict:
 
 def get_basket(name: str) -> list[dict]:
     return load_state()["projects"].get(name, {}).get("basket", [])
+
+
+# ── 채널 정체성(장르 공식 프롬프트) ───────────────────────────
+def set_identity(name: str, identity: dict) -> dict:
+    st = load_state()
+    if name in st["projects"]:
+        st["projects"][name]["identity"] = identity
+        save_state(st)
+    return st
+
+
+def get_identity(name: str) -> dict:
+    return load_state()["projects"].get(name, {}).get("identity", {})

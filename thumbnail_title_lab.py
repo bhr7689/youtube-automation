@@ -33,6 +33,7 @@ import tier_lab as T
 import genre_store as G
 import thumb_overlay as OV
 import link_classifier as LC
+import pattern_analyzer as PA
 
 st.set_page_config(page_title="🎬 썸네일·제목 연구소", page_icon="🎬", layout="wide")
 
@@ -350,20 +351,91 @@ if page == "🔬 구간 분석":
 # 🎯 일치성 검사
 # ═══════════════════════════════════════════════════════════════
 if page == "🎯 일치성":
-    st.subheader("🎯 썸네일 ↔ 제목 일치성 검사")
-    st.caption("감정·주제는 맞고, 문구는 새 정보를 줄 때 최고점. 실전에서 '불일치=노출저하'.")
-    title = st.text_input("제목", placeholder="비 오는 새벽, 창가에서 듣는 재즈 ☔")
-    thumb_text = st.text_input("썸네일 문구(이미지 위 글자)", placeholder="눈물이 나요")
-    tags = st.text_input("썸네일 태그(쉼표, 선택)", placeholder="새벽, 재즈, 창가, 딥블루")
-    if st.button("일치성 채점") and title.strip():
-        r = T.consistency_heuristic(title, thumb_text, [t.strip() for t in tags.split(",") if t.strip()])
-        color = "🟢" if r["total"] >= 75 else ("🟠" if r["total"] >= 55 else "🔴")
-        st.markdown(f"## {color} {r['total']} / 100")
-        c = st.columns(4)
-        c[0].metric("감정 일치", r["emotion"]); c[1].metric("주제 일치", r["topic"])
-        c[2].metric("정보 상보", r["complement"]); c[3].metric("타깃 일치", r["target"])
-        for n in r["notes"]:
-            st.write("• " + n)
+    st.subheader("🎯 일치성 + 패턴 분석 → 자동 프롬프트")
+    st.caption("링크 여러 개 → GPT가 실제 썸네일 보고 제목 읽어 → 일치성 채점 + 썸네일·제목 패턴 → 재사용 프롬프트.")
+
+    src = st.radio("분석 대상", ["📺 현재 장르 벤치마크", "🔗 링크 직접 입력"],
+                   horizontal=True, key="pa_src")
+    pa_urls = []
+    if src == "📺 현재 장르 벤치마크":
+        pa_urls = [b["url"] for b in proj["benchmarks"]]
+        st.caption(f"'{cur}' 벤치마크 {len(pa_urls)}개 중 아래 개수만큼 Vision 분석")
+    else:
+        _t = st.text_area("링크 (여러 줄)", height=110, key="pa_links",
+                          placeholder="https://youtu.be/xxxx\nhttps://youtu.be/yyyy")
+        pa_urls = LC.split_links(_t)
+    n_limit = st.slider("Vision 분석 개수(비용·속도)", 3, 9, 6)
+
+    if st.button("🔍 패턴 분석 실행", type="primary"):
+        if not pa_urls:
+            st.warning("분석할 링크가 없어요.")
+        else:
+            with st.spinner(f"{min(len(pa_urls), n_limit)}개 수집 + GPT Vision 분석 중…"):
+                st.session_state["pa_res"] = PA.analyze(pa_urls[:n_limit], cur)
+
+    res = st.session_state.get("pa_res")
+    if res:
+        st.caption(f"엔진: {res['engine']} · {res['n']}개 분석")
+        cons = res.get("consistency", {})
+        score = int(cons.get("avg_score", 0) or 0)
+        color = "🟢" if score >= 75 else ("🟠" if score >= 55 else "🔴")
+        st.markdown(f"### {color} 일치성 {score} / 100")
+        if cons.get("note"):
+            st.write(cons["note"])
+
+        pv = {p.get("i"): p for p in res.get("per_video", [])}
+        metas = res.get("metas", [])
+        if metas:
+            cols = st.columns(min(len(metas), n_limit) if metas else 1)
+            for i, m in enumerate(metas[:n_limit]):
+                with cols[i % len(cols)]:
+                    if m.get("thumb"):
+                        st.image(m["thumb"], use_container_width=True)
+                    p = pv.get(i + 1, {})
+                    if p:
+                        st.caption(f"일치 {p.get('score','-')} · {p.get('note','')[:30]}")
+                    st.caption((m.get("title", "") or "")[:32])
+
+        tp = res.get("thumbnail_pattern", {})
+        st.markdown("#### 🖼 썸네일 패턴")
+        st.write(f"- **구도**: {tp.get('composition','')} / **각도**: {tp.get('angle','')}")
+        st.write(f"- **인물·오브젝트**: {tp.get('subject','')}")
+        st.write(f"- **색상**: {'  '.join(tp.get('colors',[]))}  · **무드**: {tp.get('mood','')}")
+        st.write(f"- **문구 스타일**: {tp.get('text_overlay','')} · **배경**: {tp.get('background','')}")
+
+        tt = res.get("title_pattern", {})
+        st.markdown("#### ✍️ 제목 패턴")
+        st.write(f"- **고정문구**: {', '.join(tt.get('fixed_phrases',[])) or '-'} · **이모지**: {tt.get('emoji','')}")
+        st.write(f"- **상황**: {tt.get('situation','')} · **감각어**: {', '.join(tt.get('sensory',[]))}")
+        st.write(f"- **구조/톤**: {tt.get('structure','')} / {tt.get('tone','')}")
+
+        gp = res.get("generation_prompt", {})
+        st.markdown("#### ✨ 자동 생성 프롬프트 (복붙 가능)")
+        st.caption("🖼 썸네일 이미지 프롬프트")
+        st.code(gp.get("thumbnail_prompt", ""), language=None)
+        st.caption("✍️ 제목 공식")
+        st.code(gp.get("title_template", ""), language=None)
+        if gp.get("example_titles"):
+            st.caption("예시 제목")
+            st.code("\n".join(gp["example_titles"]), language=None)
+
+        if st.button(f"💾 이 프롬프트를 '{cur}' 장르 공식으로 저장", type="primary"):
+            G.set_identity(cur, {"thumbnail_pattern": tp, "title_pattern": tt,
+                                 "generation_prompt": gp})
+            st.success("저장 완료! ✨ 생성 탭에서 이 공식이 자동 적용됩니다.")
+
+    with st.expander("✍️ 수동 채점 (제목·문구 직접 입력)"):
+        title = st.text_input("제목", placeholder="비 오는 새벽, 창가에서 듣는 재즈 ☔", key="man_title")
+        thumb_text = st.text_input("썸네일 문구", placeholder="눈물이 나요", key="man_thumb")
+        tags = st.text_input("썸네일 태그(쉼표)", placeholder="새벽, 재즈, 창가", key="man_tags")
+        if st.button("일치성 채점") and title.strip():
+            r = T.consistency_heuristic(title, thumb_text, [t.strip() for t in tags.split(",") if t.strip()])
+            c = st.columns(4)
+            c[0].metric("감정", r["emotion"]); c[1].metric("주제", r["topic"])
+            c[2].metric("상보", r["complement"]); c[3].metric("타깃", r["target"])
+            st.markdown(f"**합계 {r['total']}/100**")
+            for nn in r["notes"]:
+                st.write("• " + nn)
 
 # ═══════════════════════════════════════════════════════════════
 # ✨ 생성
@@ -376,15 +448,23 @@ if page == "✨ 생성":
     basket = G.get_basket(cur)
     refs = [b["thumb"] for b in basket if b.get("thumb")]
     st.caption(f"🧺 바구니 레퍼런스 {len(refs)}장 무드 반영 예정")
+    ident = G.get_identity(cur) or {}
+    igp = ident.get("generation_prompt", {})
+    if igp.get("title_template") or igp.get("thumbnail_prompt"):
+        st.info("💡 일치성 탭에서 저장한 **장르 공식**이 적용됩니다 (썸네일 프롬프트 + 제목 공식).")
 
     if st.button("✨ 제목·썸네일 세트 생성", type="primary"):
-        rep = st.session_state.get("report_" + cur)
         formula = ""
-        if rep:
-            for label in ("10만+", "5만+", "3만+", "1만+", "5천+"):
-                if rep["tiers"][label]["count"]:
-                    formula = f"[{label} 공식] " + rep["tiers"][label]["formula"]; break
-        ref_titles = [b["title"] for b in basket if b.get("title")][:6]
+        if igp.get("title_template"):          # 저장된 장르 공식 우선
+            formula = "[저장된 장르 공식] " + igp["title_template"]
+        if not formula:
+            rep = st.session_state.get("report_" + cur)
+            if rep:
+                for label in ("10만+", "5만+", "3만+", "1만+", "5천+"):
+                    if rep["tiers"][label]["count"]:
+                        formula = f"[{label} 공식] " + rep["tiers"][label]["formula"]; break
+        ref_titles = (igp.get("example_titles", []) +
+                      [b["title"] for b in basket if b.get("title")])[:6]
         sets = _generate_sets(cur, content, n, formula, ref_titles)
         st.session_state["gen_" + cur] = sets
 
@@ -396,7 +476,10 @@ if page == "✨ 생성":
         box.caption("🎬 장면: " + s.get("scene", ""))
         if CM and box.button("🎨 썸네일 그리기(최고화질)", key=f"draw_{i}"):
             with st.spinner("생성 중… (씬 이미지 → 글자 얹기)"):
-                out = CM.generate_thumbnail_image(s.get("scene", content), size="1536x1024", refs=refs[:6])
+                scene = s.get("scene", content)
+                if igp.get("thumbnail_prompt"):    # 저장된 장르 이미지 패턴 반영
+                    scene = igp["thumbnail_prompt"] + " — " + scene
+                out = CM.generate_thumbnail_image(scene, size="1536x1024", refs=refs[:6])
                 if out.get("data_url"):
                     final = OV.overlay_title(out["data_url"], s.get("thumb_text", ""))
                     box.image(final, use_container_width=True)
