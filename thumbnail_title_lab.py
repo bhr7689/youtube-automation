@@ -90,6 +90,12 @@ def _save_keys(keys: dict):
     except Exception:                   # noqa: BLE001
         pass
 
+# ── 페이지 네비게이션 ─────────────────────────────────────────
+PAGES = ["🏠 대시보드", "🗂 자동분류", "🔬 구간 분석", "🎯 일치성", "✨ 생성",
+         "🧺 레퍼런스 바구니", "🔔 감시/알림", "⚙️ 설정"]
+if "_goto" in st.session_state:          # 다른 화면에서 넘어온 이동 요청(위젯 생성 전 반영)
+    st.session_state["nav"] = st.session_state.pop("_goto")
+
 # ── 사이드바: 프로젝트(장르) 선택 ─────────────────────────────
 state = G.load_state()
 projects = list(state["projects"].keys())
@@ -97,6 +103,8 @@ projects = list(state["projects"].keys())
 with st.sidebar:
     st.markdown("## 🎬 썸네일·제목 연구소")
     st.caption("여러 장르 채널 공장 — 분석↔생성")
+    page = st.radio("메뉴", PAGES, key="nav", label_visibility="collapsed")
+    st.divider()
     cur = st.selectbox("📺 채널(장르) 선택", projects,
                        index=projects.index(state["current"]) if state["current"] in projects else 0)
     if cur != state["current"]:
@@ -128,13 +136,12 @@ with st.sidebar:
     st.caption("발행 6개월 이내 · 구간 1천~30만+")
 
 
-tabs = st.tabs(["🏠 대시보드", "🗂 자동분류", "🔬 구간 분석", "🎯 일치성", "✨ 생성",
-                "🧺 레퍼런스 바구니", "🔔 감시/알림", "⚙️ 설정"])
+# (탭 → 사이드바 메뉴 전환: page 값으로 각 화면 표시)
 
 # ═══════════════════════════════════════════════════════════════
 # 🏠 대시보드
 # ═══════════════════════════════════════════════════════════════
-with tabs[0]:
+if page == "🏠 대시보드":
     st.subheader("🏠 채널(장르) 대시보드")
     st.caption("장르마다 독립 채널 프로젝트. 새 장르 진입엔 **분석이 곧 설계도**입니다.")
     cols = st.columns(3)
@@ -146,13 +153,15 @@ with tabs[0]:
             box.markdown(f"### {'⭐ ' if name == cur else ''}{name}")
             box.caption((p.get("note") or "")[:70])
             box.write(f"벤치 {len(p['benchmarks'])}개 · 🔖{bm} · 🔔{al} · 🧺{len(p['basket'])}")
-            if box.button("선택", key=f"pick_{i}", use_container_width=True):
-                G.set_current(name); st.rerun()
+            if box.button("🔬 선택 → 구간분석 보기", key=f"pick_{i}", use_container_width=True):
+                G.set_current(name)
+                st.session_state["_goto"] = "🔬 구간 분석"   # 바로 분석 화면으로 이동
+                st.rerun()
 
 # ═══════════════════════════════════════════════════════════════
 # 🗂 자동분류
 # ═══════════════════════════════════════════════════════════════
-with tabs[1]:
+if page == "🗂 자동분류":
     st.subheader("🗂 미분류 대량 링크 자동분류")
     st.caption("링크 뭉치 붙여넣기 → 유튜브에서 제목 읽어 장르통으로 자동 정렬 → "
                "**드롭다운으로 직접 옮긴 뒤** 각 장르에 추가.")
@@ -245,7 +254,7 @@ with tabs[1]:
 # ═══════════════════════════════════════════════════════════════
 # 🔬 구간 분석
 # ═══════════════════════════════════════════════════════════════
-with tabs[2]:
+if page == "🔬 구간 분석":
     st.subheader(f"🔬 구간 분석 — {cur}")
     st.caption("벤치마킹 채널의 6개월 이내 영상 → 구간별(1천~30만+) 승리 공식.")
 
@@ -340,7 +349,7 @@ with tabs[2]:
 # ═══════════════════════════════════════════════════════════════
 # 🎯 일치성 검사
 # ═══════════════════════════════════════════════════════════════
-with tabs[3]:
+if page == "🎯 일치성":
     st.subheader("🎯 썸네일 ↔ 제목 일치성 검사")
     st.caption("감정·주제는 맞고, 문구는 새 정보를 줄 때 최고점. 실전에서 '불일치=노출저하'.")
     title = st.text_input("제목", placeholder="비 오는 새벽, 창가에서 듣는 재즈 ☔")
@@ -359,7 +368,7 @@ with tabs[3]:
 # ═══════════════════════════════════════════════════════════════
 # ✨ 생성
 # ═══════════════════════════════════════════════════════════════
-with tabs[4]:
+if page == "✨ 생성":
     st.subheader(f"✨ 생성 — {cur}")
     st.caption("장르 공식 + 🧺 바구니 무드 + 내 콘텐츠 → 썸네일·제목 세트. 씬은 이미지, 글자는 코드로.")
     content = st.text_input("이번 영상 소재", placeholder="파리 카페의 비 오는 아침, 스텔라장 스타일 피아노")
@@ -398,7 +407,7 @@ with tabs[4]:
 # ═══════════════════════════════════════════════════════════════
 # 🧺 레퍼런스 바구니
 # ═══════════════════════════════════════════════════════════════
-with tabs[5]:
+if page == "🧺 레퍼런스 바구니":
     st.subheader(f"🧺 레퍼런스 바구니 — {cur}")
     st.caption("체크해 담은 썸네일(이미지+제목). 생성 시 무드·제목 공식으로 자동 반영.")
     up = st.file_uploader("내 캡처 이미지 추가(바구니에 합류)", type=["png", "jpg", "jpeg", "webp"],
@@ -426,7 +435,7 @@ with tabs[5]:
 # ═══════════════════════════════════════════════════════════════
 # 🔔 감시/알림
 # ═══════════════════════════════════════════════════════════════
-with tabs[6]:
+if page == "🔔 감시/알림":
     st.subheader("🔔 감시 / 카톡 알림")
     st.caption("🔖 북마크 + 🔔 알림 ON 채널만 새 영상 감지 → 자동 분석 → 카톡(나에게 보내기).")
     wl = G.watch_list()
@@ -447,7 +456,7 @@ with tabs[6]:
 # ═══════════════════════════════════════════════════════════════
 # ⚙️ 설정
 # ═══════════════════════════════════════════════════════════════
-with tabs[7]:
+if page == "⚙️ 설정":
     st.subheader("⚙️ 설정 — 연결 키")
     st.caption("이 PC의 .env 에 저장됩니다. .env 는 gitignore — 절대 업로드 안 됨.")
     yk = st.text_input("YOUTUBE_API_KEY", type="password")
