@@ -34,6 +34,7 @@ import genre_store as G
 import thumb_overlay as OV
 import link_classifier as LC
 import pattern_analyzer as PA
+import analysis_cache as AC
 
 st.set_page_config(page_title="🎬 썸네일·제목 연구소", page_icon="🎬", layout="wide")
 
@@ -109,11 +110,28 @@ def _mj_prompt(scene: str) -> str:
             pass
     return (scene or "").split(" --")[0].strip() + " --ar 16:9 --style raw --v 6"
 
+
+def _ss_set(key: str, value) -> None:
+    """세션 + 디스크 캐시에 동시 저장(새로고침해도 복원)."""
+    st.session_state[key] = value
+    AC.set(key, value)
+
+
+def _ss_del(key: str) -> None:
+    st.session_state.pop(key, None)
+    AC.delete(key)
+
 # ── 페이지 네비게이션 ─────────────────────────────────────────
 PAGES = ["🏠 대시보드", "🗂 자동분류", "🔬 구간 분석", "🎯 일치성", "✨ 생성",
          "🧺 레퍼런스 바구니", "🔔 감시/알림", "⚙️ 설정"]
 if "_goto" in st.session_state:          # 다른 화면에서 넘어온 이동 요청(위젯 생성 전 반영)
     st.session_state["nav"] = st.session_state.pop("_goto")
+
+# 디스크 캐시 → 세션 복원 (새로고침해도 분석/생성 결과 유지)
+if "_hydrated" not in st.session_state:
+    for _k, _v in AC.load_all().items():
+        st.session_state.setdefault(_k, _v)
+    st.session_state["_hydrated"] = True
 
 # ── 사이드바: 프로젝트(장르) 선택 ─────────────────────────────
 state = G.load_state()
@@ -209,7 +227,7 @@ if page == "🗂 자동분류":
             st.warning("링크를 찾지 못했어요. (붙여넣기 또는 인벤토리 확인)")
         else:
             with st.spinner(f"{len(urls)}개 수집·분류 중… (유튜브 제목 읽는 중)"):
-                st.session_state["cls_res"] = LC.classify(urls, state["projects"], use_llm=use_llm)
+                _ss_set("cls_res", LC.classify(urls, state["projects"], use_llm=use_llm))
 
     res = st.session_state.get("cls_res")
     if res:
@@ -265,7 +283,7 @@ if page == "🗂 자동분류":
                     G.add_benchmarks(LC.UNSORTED, [mm["url"]]); un += 1
                 if mm.get("jp"):                                  # 일본어면 일본채널함에도
                     G.add_benchmarks(LC.JP_BUCKET, [mm["url"]]); jp += 1
-            st.session_state.pop("cls_res", None)
+            _ss_del("cls_res")
             st.success(f"장르 배정 {added} · 미분류함 {un} · 🇯🇵 일본채널 {jp} 저장 완료! "
                        "일본 채널은 장르통과 🇯🇵일본채널함 양쪽에 들어갔어요.")
             st.rerun()
@@ -311,7 +329,7 @@ if page == "🔬 구간 분석":
                         allvids.append({**v, "source": data.get("title", url), "bench_url": url})
                     prog.progress((i + 1) / len(chans), f"수집 {i+1}/{len(chans)}")
                 prog.empty()
-                st.session_state["report_" + cur] = T.tier_report(allvids)
+                _ss_set("report_" + cur, T.tier_report(allvids))
                 if any(CM.collect_channel(u).get("demo") for u in chans[:1]):
                     st.warning("⚠️ YouTube 키가 없어 데모 데이터로 시연 중입니다. (사장님 PC에선 실데이터)")
 
@@ -393,11 +411,11 @@ if page == "🎯 일치성":
                     allv += rep["tiers"][label]["videos"]
                 allv = sorted(allv, key=lambda v: v.get("views", 0), reverse=True)[:n_limit]
                 if allv:
-                    st.session_state["pa_res"] = PA.analyze_videos(allv, cur)
+                    _ss_set("pa_res", PA.analyze_videos(allv, cur))
                 else:
                     st.warning("수집된 영상이 없어요. 🔬 구간분석에서 [분석 실행]을 먼저.")
             elif pa_urls:
-                st.session_state["pa_res"] = PA.analyze(pa_urls[:n_limit], cur)
+                _ss_set("pa_res", PA.analyze(pa_urls[:n_limit], cur))
             else:
                 st.warning("분석할 링크가 없어요.")
 
@@ -494,7 +512,7 @@ if page == "✨ 생성":
         ref_titles = (igp.get("example_titles", []) +
                       [b["title"] for b in basket if b.get("title")])[:6]
         sets = _generate_sets(cur, content, n, formula, ref_titles)
-        st.session_state["gen_" + cur] = sets
+        _ss_set("gen_" + cur, sets)
 
     gens = st.session_state.get("gen_" + cur, [])
     if gens:
@@ -521,13 +539,13 @@ if page == "✨ 생성":
         do_draw = bool(CM) and b1.button("🎨 그리기(최고화질)" if not imgval else "🔄 다시 그리기",
                                          key=f"draw_{i}", use_container_width=True)
         if b2.button("🗑 이미지 삭제", key=f"del_{i}", disabled=not imgval, use_container_width=True):
-            st.session_state.pop(img_key, None); st.rerun()
+            _ss_del(img_key); st.rerun()
         if do_draw:
             with st.spinner("생성 중… (씬 이미지 → 글자 얹기)"):
                 out = CM.generate_thumbnail_image(scene, size="1536x1024", refs=refs[:6])
             if out.get("data_url"):
                 final = OV.overlay_title(out["data_url"], s.get("thumb_text", ""))
-                st.session_state[img_key] = OV.to_data_url(final)
+                _ss_set(img_key, OV.to_data_url(final))
                 st.rerun()
             else:
                 box.error(out.get("error", "생성 실패 — OpenAI 키 필요(설정)."))
