@@ -91,6 +91,24 @@ def _save_keys(keys: dict):
     except Exception:                   # noqa: BLE001
         pass
 
+
+def _dataurl_bytes(durl: str) -> bytes:
+    """data:image URL → 다운로드용 bytes."""
+    import base64
+    if isinstance(durl, str) and durl.startswith("data:"):
+        return base64.b64decode(durl.split(",", 1)[1])
+    return b""
+
+
+def _mj_prompt(scene: str) -> str:
+    """씬 → 미드저니 프롬프트."""
+    if CM is not None:
+        try:
+            return CM._midjourney(scene)
+        except Exception:               # noqa: BLE001
+            pass
+    return (scene or "").split(" --")[0].strip() + " --ar 16:9 --style raw --v 6"
+
 # ── 페이지 네비게이션 ─────────────────────────────────────────
 PAGES = ["🏠 대시보드", "🗂 자동분류", "🔬 구간 분석", "🎯 일치성", "✨ 생성",
          "🧺 레퍼런스 바구니", "🔔 감시/알림", "⚙️ 설정"]
@@ -478,24 +496,46 @@ if page == "✨ 생성":
         sets = _generate_sets(cur, content, n, formula, ref_titles)
         st.session_state["gen_" + cur] = sets
 
-    for i, s in enumerate(st.session_state.get("gen_" + cur, [])):
+    gens = st.session_state.get("gen_" + cur, [])
+    if gens:
+        st.caption("💾 생성 이미지는 저장돼 탭을 옮겨도 남아요. 프롬프트는 📋로 복사해 ChatGPT·Gemini·미드저니에서도 쓸 수 있어요.")
+    for i, s in enumerate(gens):
         box = st.container(border=True)
         box.markdown(f"**세트 {i+1}**")
+        box.caption("📋 제목")
         box.code(s["title"], language=None)
-        box.caption("🖼 썸네일 문구: " + s.get("thumb_text", ""))
-        box.caption("🎬 장면: " + s.get("scene", ""))
-        if CM and box.button("🎨 썸네일 그리기(최고화질)", key=f"draw_{i}"):
+        box.caption("🖼 썸네일 문구(이미지 위 글자): " + s.get("thumb_text", ""))
+
+        # 외부 도구용 프롬프트 (복붙)
+        scene = s.get("scene", content)
+        if igp.get("thumbnail_prompt"):        # 저장된 장르 이미지 패턴 반영
+            scene = igp["thumbnail_prompt"] + " — " + scene
+        box.caption("📋 이미지 프롬프트 (ChatGPT · Gemini · DALL·E)")
+        box.code(scene, language=None)
+        box.caption("📋 미드저니 프롬프트")
+        box.code(_mj_prompt(scene), language=None)
+
+        img_key = f"img_{cur}_{i}"
+        imgval = st.session_state.get(img_key)
+        b1, b2 = box.columns(2)
+        do_draw = bool(CM) and b1.button("🎨 그리기(최고화질)" if not imgval else "🔄 다시 그리기",
+                                         key=f"draw_{i}", use_container_width=True)
+        if b2.button("🗑 이미지 삭제", key=f"del_{i}", disabled=not imgval, use_container_width=True):
+            st.session_state.pop(img_key, None); st.rerun()
+        if do_draw:
             with st.spinner("생성 중… (씬 이미지 → 글자 얹기)"):
-                scene = s.get("scene", content)
-                if igp.get("thumbnail_prompt"):    # 저장된 장르 이미지 패턴 반영
-                    scene = igp["thumbnail_prompt"] + " — " + scene
                 out = CM.generate_thumbnail_image(scene, size="1536x1024", refs=refs[:6])
-                if out.get("data_url"):
-                    final = OV.overlay_title(out["data_url"], s.get("thumb_text", ""))
-                    box.image(final, use_container_width=True)
-                    box.caption("✅ 씬 이미지 + 코드로 얹은 또렷한 문구")
-                else:
-                    box.error(out.get("error", "생성 실패 — OpenAI 키 필요(설정)."))
+            if out.get("data_url"):
+                final = OV.overlay_title(out["data_url"], s.get("thumb_text", ""))
+                st.session_state[img_key] = OV.to_data_url(final)
+                st.rerun()
+            else:
+                box.error(out.get("error", "생성 실패 — OpenAI 키 필요(설정)."))
+        if imgval:
+            box.image(imgval, use_container_width=True)
+            box.download_button("⬇️ 이미지 다운로드 (PNG)", data=_dataurl_bytes(imgval),
+                                file_name=f"{cur}_{i+1}.png", mime="image/png",
+                                key=f"dl_{i}", use_container_width=True)
 
 # ═══════════════════════════════════════════════════════════════
 # 🧺 레퍼런스 바구니
