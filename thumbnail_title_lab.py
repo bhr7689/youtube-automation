@@ -185,11 +185,20 @@ with tabs[1]:
 
     res = st.session_state.get("cls_res")
     if res:
+        import collections
         names = list(state["projects"].keys()) + [LC.UNSORTED]
         n_sorted = sum(1 for m in res if m.get("genre") != LC.UNSORTED)
         st.success(f"분류 결과 {len(res)}개 · 장르 배정 {n_sorted}개 · 미분류 {len(res)-n_sorted}개")
         if not any(m.get("title") for m in res):
             st.warning("⚠️ 제목을 못 읽었어요. YouTube 키가 없거나(설정 탭) 링크가 비공개일 수 있어요.")
+        # 장르별 배정 개수 미리보기
+        cnt = collections.Counter(m["genre"] for m in res)
+        st.caption("📦 배정 미리보기 — " + " · ".join(f"{g} {c}" for g, c in cnt.most_common()))
+
+        CONFIRM = "✅ 확정 — 분류는 각 장르로, 미분류는 미분류함에 저장"
+        do_confirm = st.button(CONFIRM, type="primary", key="confirm_top")
+        st.caption("↑ 위 버튼으로 바로 확정하거나, 아래에서 드롭다운으로 장르를 고친 뒤 확정하세요.")
+
         # 장르별로 묶어 표시(같은 장르끼리 모임)
         order = {g: i for i, g in enumerate(names)}
         for idx, m in enumerate(sorted(range(len(res)), key=lambda k: order.get(res[k]["genre"], 99))):
@@ -203,7 +212,10 @@ with tabs[1]:
                                    index=names.index(mm["genre"]) if mm["genre"] in names else len(names) - 1,
                                    key=f"cls_sel_{m}", label_visibility="collapsed")
             res[m]["genre"] = sel
-        if st.button("✅ 확정 — 분류는 각 장르로, 미분류는 미분류함에", type="primary"):
+        if st.button(CONFIRM, type="primary", key="confirm_bottom"):
+            do_confirm = True
+
+        if do_confirm:
             # 미분류함 · 일본채널함이 없으면 생성 (현재 선택 장르는 그대로)
             stt = G.load_state()
             if LC.UNSORTED not in stt["projects"]:
