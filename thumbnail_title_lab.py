@@ -316,7 +316,7 @@ if page == "🔬 구간 분석":
                 else:
                     vids = sorted(info["videos"], key=lambda v: v.get("views", 0), reverse=True)
                 grid = st.columns(4)
-                for j, v in enumerate(vids[:8]):
+                for j, v in enumerate(vids):        # 구간 내 전체 표시
                     with grid[j % 4]:
                         card = st.container(border=True, height=360)  # 고정 높이 → 열 맞춤
                         vid = v.get("video_id", "")
