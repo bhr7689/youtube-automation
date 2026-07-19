@@ -25,9 +25,11 @@ def load_all() -> dict:
 
 
 def _save_all(data: dict) -> None:
-    try:
-        with open(CACHE_PATH, "w", encoding="utf-8") as f:
+    try:                                # 원자적 저장(쓰기 중단돼도 안 깨지게)
+        tmp = CACHE_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False)
+        os.replace(tmp, CACHE_PATH)
     except OSError:
         pass
 

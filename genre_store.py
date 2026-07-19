@@ -83,12 +83,16 @@ def set_benchmark_channel(name: str, url: str, channel_id: str, channel: str) ->
 
 
 def _load_raw() -> dict:
-    if os.path.exists(STORE_PATH):
-        try:
-            with open(STORE_PATH, encoding="utf-8") as f:
-                return json.load(f)
-        except (json.JSONDecodeError, OSError):
-            pass
+    # 본 파일이 깨졌으면 백업(.bak)에서 복구 시도
+    for p in (STORE_PATH, STORE_PATH + ".bak"):
+        if os.path.exists(p):
+            try:
+                with open(p, encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict) and data.get("projects"):
+                    return data
+            except (json.JSONDecodeError, OSError):
+                continue
     return {}
 
 
@@ -113,8 +117,20 @@ def load_state() -> dict:
 
 
 def save_state(state: dict) -> None:
-    with open(STORE_PATH, "w", encoding="utf-8") as f:
+    """원자적 저장 + 백업 (쓰기 중단돼도 파일이 깨지지 않게)."""
+    if not (isinstance(state, dict) and state.get("projects")):
+        return                          # 빈 상태로 덮어써서 날리는 사고 방지
+    # 직전 정상본을 .bak 으로 보존
+    if os.path.exists(STORE_PATH):
+        try:
+            import shutil
+            shutil.copy2(STORE_PATH, STORE_PATH + ".bak")
+        except OSError:
+            pass
+    tmp = STORE_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, STORE_PATH)          # 원자적 교체
 
 
 # ── 프로젝트(장르) ────────────────────────────────────────────
