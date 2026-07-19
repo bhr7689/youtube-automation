@@ -15,10 +15,24 @@ CRIT = ["focal", "contrast", "emotion", "readability", "title_match"]
 LAB = {"focal": "시선집중", "contrast": "대비·색팝", "emotion": "감정·무드",
        "readability": "소형가독성", "title_match": "제목일치"}
 
-# 고CTR 썸네일 생성 지시 (생성 프롬프트에 주입)
-CTR_DIRECTIVE = ("High-CTR YouTube thumbnail: ONE clear focal subject, bold high contrast, "
-                 "vivid pop colors, strong mood and emotion, clean uncluttered composition "
-                 "that reads instantly at tiny mobile size, cinematic lighting.")
+# 폰 피드에서 스크롤을 멈추게 하는 공통 원칙 (모든 스타일 공통)
+_BASE = ("High-CTR MOBILE YouTube thumbnail. Must stop the scroll on a small phone screen: "
+         "ONE core focal point only, NOT cluttered, strong color contrast, reads instantly at "
+         "tiny size. Remove busy details — one clear idea.")
+
+# 썸네일 공격 스타일 (사용자 선택 → 생성 프롬프트에 주입)
+STYLES: dict[str, str] = {
+    "🎯 강대비 포인트": _BASE + " Bold single subject with an extreme color-contrast accent "
+                    "(one pop color against muted background), dramatic lighting, punchy.",
+    "😜 병맛·펀": _BASE + " Quirky, unexpected, humorous pattern-interrupt: exaggerated expression "
+              "or absurd object, playful meme energy, one surprising focal gag, vivid colors.",
+    "🌸 감성 미학": _BASE + " Aesthetic cohesive mood, soft cinematic warm/cool grade, cozy and "
+                "tasteful, still ONE clear focal subject that pops gently.",
+    "✨ 미니멀": _BASE + " Minimalist: one subject, generous negative space, clean, all attention "
+              "on the single element with strong contrast.",
+}
+DEFAULT_STYLE = "🎯 강대비 포인트"
+CTR_DIRECTIVE = STYLES[DEFAULT_STYLE]   # 하위호환
 
 
 def _is_img(u: str) -> bool:
@@ -36,11 +50,12 @@ def score(image_ref: str, title: str, genre: str = "", pattern: dict | None = No
 사람이 클릭할지를 냉정히 채점하라. 제목: "{title}"
 이 장르 승리 썸네일 패턴: {brief}
 
+폰으로 보는 사람이 대부분이다. 작은 화면에서 스크롤을 멈추게 하는 '한 방'을 본다.
 5기준(각 0-20):
-- focal: 시선집중(0.5초에 눈이 어디로 가나, 초점 하나로 명확한가)
-- contrast: 대비·색팝(피드에서 튀는가, 경쟁 썸네일 사이에서 눈에 띄나)
-- emotion: 감정·무드(정서가 살아있나, 분위기가 전달되나)
-- readability: 소형 가독성(폰 작은 크기에서도 뭔지 읽히나, 안 뭉개지나)
+- focal: 시선집중·단순함(핵심 포인트 하나로 명확한가. 볼거리가 잡다하면 크게 감점)
+- contrast: 대비·색팝·스크롤정지력(폰 피드에서 확 튀어 스크롤을 멈추게 하나)
+- emotion: 감정·무드·개성(정서 훅 또는 병맛/유머 등 뇌를 자극하는 포인트가 있나)
+- readability: 소형 가독성(폰 작은 크기에서도 뭔지 즉시 읽히나, 안 뭉개지나)
 - title_match: 제목과의 일치(이미지가 제목이 말하는 장면·감정과 맞나)
 
 JSON만:

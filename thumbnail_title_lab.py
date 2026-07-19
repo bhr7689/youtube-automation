@@ -497,7 +497,11 @@ if page == "✨ 생성":
     st.subheader(f"✨ 생성 — {cur}")
     st.caption("장르 공식 + 🧺 바구니 무드 + 내 콘텐츠 → 썸네일·제목 세트. 씬은 이미지, 글자는 코드로.")
     content = st.text_input("이번 영상 소재", placeholder="파리 카페의 비 오는 아침, 스텔라장 스타일 피아노")
-    n = st.slider("만들 세트 수", 1, 5, 3)
+    gc1, gc2 = st.columns(2)
+    n = gc1.slider("만들 세트 수", 1, 5, 3)
+    thumb_style = gc2.selectbox("🎨 썸네일 공격 스타일", list(TS.STYLES),
+                                help="폰에서 스크롤 멈추는 한 방. 강대비/병맛/감성/미니멀 중 선택")
+    st.caption("💡 폰 화면 기준 — 핵심 포인트 하나 + 강한 대비. 잡다한 건 감점돼요.")
     basket = G.get_basket(cur)
     refs = [b["thumb"] for b in basket if b.get("thumb")]
     st.caption(f"🧺 바구니 레퍼런스 {len(refs)}장 무드 반영 예정")
@@ -561,8 +565,8 @@ if page == "✨ 생성":
             _ss_del(img_key); st.rerun()
         if do_draw:
             with st.spinner("생성 중… (씬 이미지 → 글자 얹기)"):
-                # 고CTR 썸네일 원칙 주입 (단일 초점·강한 대비·소형 가독)
-                out = CM.generate_thumbnail_image(TS.CTR_DIRECTIVE + " " + scene,
+                # 선택한 공격 스타일 + 고CTR 원칙 주입 (단일 초점·강한 대비·소형 가독)
+                out = CM.generate_thumbnail_image(TS.STYLES[thumb_style] + " " + scene,
                                                   size="1536x1024", refs=refs[:6])
             if out.get("data_url"):
                 final = OV.overlay_title(out["data_url"], s.get("thumb_text", ""))
