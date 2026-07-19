@@ -11,10 +11,20 @@ from __future__ import annotations
 import os
 import sys
 
-# .env 를 환경변수로 로드 (concept_maker/youtube_client import 전에 해야 키가 잡힘)
+# .env + keys.json 를 환경변수로 로드 (concept_maker/youtube_client import 전에)
+_HERE = os.path.dirname(os.path.abspath(__file__))
+KEYS_JSON = os.path.join(_HERE, "keys.json")
 try:
     from dotenv import load_dotenv
-    load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+    load_dotenv(os.path.join(_HERE, ".env"))
+except Exception:                       # noqa: BLE001
+    pass
+try:                                    # keys.json 이 최우선(다른 툴이 .env 건드려도 안 풀림)
+    import json as _json
+    if os.path.exists(KEYS_JSON):
+        for _k, _v in _json.load(open(KEYS_JSON, encoding="utf-8")).items():
+            if _v:
+                os.environ[_k] = _v
 except Exception:                       # noqa: BLE001
     pass
 
@@ -91,6 +101,18 @@ def _save_keys(keys: dict):
     with open(path, "w", encoding="utf-8") as f:
         for k, v in lines.items():
             f.write(f"{k}={v}\n")
+    # keys.json 에도 저장 (영구·견고 — .env 가 지워져도 여기서 복원)
+    try:
+        import json
+        cur = {}
+        if os.path.exists(KEYS_JSON):
+            cur = json.load(open(KEYS_JSON, encoding="utf-8"))
+        for k, v in keys.items():
+            if v.strip():
+                cur[k] = v.strip()
+        json.dump(cur, open(KEYS_JSON, "w", encoding="utf-8"), ensure_ascii=False)
+    except Exception:                   # noqa: BLE001
+        pass
     # 유튜브 모듈이 시작 시 캐시한 키를 즉시 갱신 (재시작 없이 반영)
     try:
         if CM and keys.get("YOUTUBE_API_KEY", "").strip():
@@ -431,15 +453,15 @@ if page == "🎯 일치성":
                     allv += rep["tiers"][label]["videos"]
                 allv = sorted(allv, key=lambda v: v.get("views", 0), reverse=True)[:n_limit]
                 if allv:
-                    _ss_set("pa_res", PA.analyze_videos(allv, cur))
+                    _ss_set("pa_" + cur, PA.analyze_videos(allv, cur))
                 else:
                     st.warning("수집된 영상이 없어요. 🔬 구간분석에서 [분석 실행]을 먼저.")
             elif pa_urls:
-                _ss_set("pa_res", PA.analyze(pa_urls[:n_limit], cur))
+                _ss_set("pa_" + cur, PA.analyze(pa_urls[:n_limit], cur))
             else:
                 st.warning("분석할 링크가 없어요.")
 
-    res = st.session_state.get("pa_res")
+    res = st.session_state.get("pa_" + cur)
     if res:
         st.caption(f"엔진: {res['engine']} · {res['n']}개 분석")
         cons = res.get("consistency", {})
@@ -822,10 +844,18 @@ if page == "🔔 감시/알림":
 # ═══════════════════════════════════════════════════════════════
 if page == "⚙️ 설정":
     st.subheader("⚙️ 설정 — 연결 키")
-    st.caption("이 PC의 .env 에 저장됩니다. .env 는 gitignore — 절대 업로드 안 됨.")
-    yk = st.text_input("YOUTUBE_API_KEY", type="password")
-    ok = st.text_input("OPENAI_API_KEY (GPT·이미지생성)", type="password")
-    gk = st.text_input("GEMINI_API_KEY (선택)", type="password")
+    st.caption("이 PC의 .env + keys.json 에 영구 저장. 둘 다 gitignore — 절대 업로드 안 됨. "
+               "다른 툴이 .env 를 지워도 keys.json 에서 복원돼요.")
+
+    def _mask(k):
+        v = os.environ.get(k, "")
+        return f"저장됨 ••••{v[-4:]}" if v else "미설정"
+    st.write(f"현재 상태 — 🎬 YouTube: **{_mask('YOUTUBE_API_KEY')}** · "
+             f"🤖 OpenAI: **{_mask('OPENAI_API_KEY')}** · ✨ Gemini: **{_mask('GEMINI_API_KEY')}**")
+
+    yk = st.text_input("YOUTUBE_API_KEY", type="password", placeholder="바꿀 때만 입력(빈칸=유지)")
+    ok = st.text_input("OPENAI_API_KEY (GPT·이미지생성)", type="password", placeholder="바꿀 때만 입력(빈칸=유지)")
+    gk = st.text_input("GEMINI_API_KEY (선택)", type="password", placeholder="바꿀 때만 입력(빈칸=유지)")
     if st.button("💾 저장"):
         _save_keys({"YOUTUBE_API_KEY": yk, "OPENAI_API_KEY": ok, "GEMINI_API_KEY": gk})
         st.success("저장 완료 — 즉시 적용. (일부는 앱 재시작 후 반영)")
