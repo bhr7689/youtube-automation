@@ -92,7 +92,22 @@ PAN_MODES = {
     "왔다 갔다 (오→왼→오 부드럽게)": "bounce_rl",
     "모두 왼쪽 → 오른쪽": "all_ltr",
     "모두 오른쪽 → 왼쪽": "all_rtl",
+    "다양하게 자동 (매 이미지 다른 효과)": "variety",
+    "대각선 좌상→우하": "all_diag_lt_rb",
+    "대각선 우상→좌하": "all_diag_rt_lb",
+    "천천히 드리프트 (미묘한 흔들림)": "all_drift",
 }
+
+# variety 모드에서 이미지마다 순회할 효과 목록
+VARIETY_ROTATION = [
+    "ltr",
+    "bounce_rl",
+    "diagonal_lt_rb",
+    "rtl",
+    "drift_slow",
+    "bounce_lr",
+    "diagonal_rt_lb",
+]
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 VID_EXTS = {".mp4", ".mov", ".webm", ".mkv", ".m4v"}
 
@@ -330,7 +345,10 @@ def preprocess_to_segment(input_path, output_path, fixed_duration=None, pan_dire
     영상 파일은 무시(원본 모션 유지)."""
     if is_image(input_path):
         duration = fixed_duration or IMG_INTERVAL
-        if pan_direction in ("ltr", "rtl", "bounce_lr", "bounce_rl"):
+        MOVEMENT_DIRS = ("ltr", "rtl", "bounce_lr", "bounce_rl",
+                         "diagonal_lt_rb", "diagonal_rt_lb", "drift_slow")
+        if pan_direction in MOVEMENT_DIRS:
+            y_override = None  # 세로 움직임 있는 효과만 세팅
             if pan_direction == "ltr":
                 x_expr = f"(iw-1280)*t/{duration}"
             elif pan_direction == "rtl":
@@ -338,8 +356,18 @@ def preprocess_to_segment(input_path, output_path, fixed_duration=None, pan_dire
             elif pan_direction == "bounce_lr":
                 # 왼→오→왼 부드러운 왕복 (cos 곡선)
                 x_expr = f"(iw-1280)*(0.5-0.5*cos(2*PI*t/{duration}))"
-            else:  # bounce_rl: 오→왼→오
+            elif pan_direction == "bounce_rl":  # 오→왼→오
                 x_expr = f"(iw-1280)*(0.5+0.5*cos(2*PI*t/{duration}))"
+            elif pan_direction == "diagonal_lt_rb":
+                # 좌상 → 우하 대각선
+                x_expr = f"(iw-1280)*t/{duration}"
+                y_override = f"(ih-720)*t/{duration}"
+            elif pan_direction == "diagonal_rt_lb":
+                # 우상 → 좌하 대각선
+                x_expr = f"(iw-1280)*(1-t/{duration})"
+                y_override = f"(ih-720)*t/{duration}"
+            else:  # drift_slow: 가운데 근처를 아주 살짝 사인파로 좌우 드리프트
+                x_expr = f"(iw-1280)*(0.5+0.3*sin(2*PI*t/{duration}))"
 
             # 파노라마 친화: 가로가 충분히 긴 이미지면 전체 폭을 그대로 패닝.
             # 일반 비율은 캔버스를 키워 패닝 여백을 만든다.
@@ -351,14 +379,16 @@ def preprocess_to_segment(input_path, output_path, fixed_duration=None, pan_dire
             except Exception:
                 scaled_w_at_720h = 0
 
-            if scaled_w_at_720h > 1280:
-                # 파노라마 또는 가로로 긴 이미지: 높이만 720으로 맞추고 전체 폭 가로지름
+            # 대각선/드리프트 세로 움직임이 있는 효과는 항상 큰 캔버스가 필요
+            needs_vertical = y_override is not None
+            if scaled_w_at_720h > 1280 and not needs_vertical:
+                # 파노라마: 높이 720 맞추고 전체 폭 가로지름
                 scale_str = "scale=-2:720"
                 y_expr = "0"
             else:
-                # 일반/세로 이미지: 캔버스 확대 후 패닝 여백 확보
+                # 일반/세로 이미지 또는 대각선: 캔버스 확대 후 패닝 여백 확보
                 scale_str = "scale=2240:1260:force_original_aspect_ratio=increase"
-                y_expr = "(ih-720)/2"
+                y_expr = y_override if y_override else "(ih-720)/2"
 
             vf = (
                 f"{scale_str},"
@@ -417,56 +447,104 @@ def format_timestamp(seconds):
     return f"{s // 3600}:{(s % 3600) // 60:02d}:{s % 60:02d}"
 
 
-def build_tracklist_text(music_items, target_seconds):
+def build_tracklist_text(music_items, target_seconds, crossfade_sec=0):
     """유튜브 설명란용 트랙리스트 텍스트.
 
-    music_items: [(safe_path, original_name), ...] — 재생 순서대로.
-    target_seconds: 영상 총 길이.
-
-    유튜브 챕터 자동 인식 조건:
-      - 첫 줄이 0:00 또는 00:00 으로 시작
-      - 각 챕터 10초 이상
-      - 최소 3개 챕터
+    crossfade_sec>0 이면 각 곡 간 겹침(계단식)을 반영해서 다음 곡 시작 시각을 앞당김.
     """
     if not music_items:
         return ""
-    durations = []
-    for path, _ in music_items:
-        d = max(_probe_duration(path), 1.0)
-        durations.append(d)
+    durations = [max(_probe_duration(p), 1.0) for p, _ in music_items]
+    n = len(music_items)
 
     lines = []
     t = 0.0
     while t < target_seconds:
-        for (_, orig_name), dur in zip(music_items, durations):
+        for i, ((_, orig_name), dur) in enumerate(zip(music_items, durations)):
             if t >= target_seconds:
                 break
             time_str = format_timestamp(t)
-            display = Path(orig_name).stem  # 확장자 제거
+            display = Path(orig_name).stem
             lines.append(f"{time_str} {display}")
-            t += dur
+            # 크로스페이드가 있으면 다음 곡은 crossfade_sec 초 겹침 시작
+            if crossfade_sec > 0 and i < n - 1:
+                t += max(1.0, dur - crossfade_sec)
+            else:
+                t += dur
     return "\n".join(lines)
+
+
+def _build_crossfade_sequence(music_paths, crossfade_sec, workdir):
+    """acrossfade 체인으로 음악을 부드럽게 이어붙인 한 시퀀스 파일 생성.
+    앞 곡의 끝과 다음 곡의 처음을 crossfade_sec 초 동안 겹침 (계단식)."""
+    seq = workdir / "sequence_xfade.mp3"
+    if len(music_paths) == 1:
+        import shutil as _sh
+        _sh.copyfile(music_paths[0], seq)
+        return seq
+
+    inputs = []
+    for p in music_paths:
+        inputs.extend(["-i", str(p)])
+
+    filter_parts = []
+    last_label = "[0:a]"
+    for i in range(1, len(music_paths)):
+        new_label = f"[a{i:03d}]"
+        filter_parts.append(
+            f"{last_label}[{i}:a]acrossfade=d={crossfade_sec}:c1=tri:c2=tri{new_label}"
+        )
+        last_label = new_label
+
+    cmd = [
+        "ffmpeg", "-y",
+        *inputs,
+        "-filter_complex", ";".join(filter_parts),
+        "-map", last_label,
+        "-c:a", "libmp3lame", "-b:a", "192k",
+        str(seq),
+    ]
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode != 0:
+        raise RuntimeError(res.stderr[-800:])
+    return seq
 
 
 def build_audio(music_paths, total_seconds, workdir,
                 nature_path=None, nature_volume=0.3,
-                nature_on_sec=0, nature_off_sec=0):
+                nature_on_sec=0, nature_off_sec=0,
+                join_mode="concat", crossfade_sec=8):
     """음악들을 이어붙여 정확한 길이의 mp3로 만든다. 자연의 소리가 있으면 위에 깐다.
 
+    join_mode:
+      - 'concat'    — 그대로 순차 이어붙이기 (기본)
+      - 'crossfade' — 계단식 크로스페이드로 부드럽게 겹쳐 넘김
+
     nature_off_sec > 0 이면 on_sec 동안 들리고 off_sec 동안 쉬는 패턴 반복."""
-    # 각 곡 길이를 미리 재서 총 길이 산출 → 몇 번 반복해야 목표 길이를 덮는지 계산
+    # 사이클 길이 계산 (join_mode 에 따라 다름)
     per_song = [max(_probe_duration(p), 0.1) for p in music_paths]
-    cycle_sec = sum(per_song)
+    if join_mode == "crossfade" and len(music_paths) > 1:
+        # crossfade: 각 연결마다 crossfade_sec 초 겹침 → 총 길이가 짧아짐
+        cycle_sec = sum(per_song) - (len(music_paths) - 1) * crossfade_sec
+    else:
+        cycle_sec = sum(per_song)
     if cycle_sec <= 0:
-        raise RuntimeError("음악 파일에서 길이를 읽지 못했습니다.")
-    # 여유 있게 1번 더 반복
+        raise RuntimeError("음악 파일에서 길이를 읽지 못했거나 크로스페이드 시간이 너무 길어요.")
     loops = int(total_seconds // cycle_sec) + 2
 
     playlist = workdir / "playlist.txt"
-    with open(playlist, "w", encoding="utf-8") as f:
-        for _ in range(loops):
-            for p in music_paths:
-                f.write(f"file '{p.as_posix()}'\n")
+    if join_mode == "crossfade" and len(music_paths) > 1:
+        # 1) 한 시퀀스를 acrossfade 로 만들고 → 그 시퀀스를 반복
+        seq_path = _build_crossfade_sequence(music_paths, crossfade_sec, workdir)
+        with open(playlist, "w", encoding="utf-8") as f:
+            for _ in range(loops):
+                f.write(f"file '{seq_path.as_posix()}'\n")
+    else:
+        # 순차 concat: 곡들을 반복 나열
+        with open(playlist, "w", encoding="utf-8") as f:
+            for _ in range(loops):
+                for p in music_paths:
+                    f.write(f"file '{p.as_posix()}'\n")
 
     music_concat = workdir / "music_concat.mp3"
     cmd = [
@@ -522,17 +600,20 @@ def build_audio(music_paths, total_seconds, workdir,
 
 def build_video(media_paths, total_seconds, workdir, audio_path=None,
                 pan_enabled=True, pan_mode="alternate",
-                image_duration=None, progress_cb=None):
+                image_duration=None, image_durations=None, progress_cb=None):
     """이미지/영상 혼합을 핑퐁 순서로 잇고, 정해진 길이로 채우는 영상.
 
     pan_mode:
-      - alternate: 1번 LTR, 2번 RTL 번갈아 (기본)
-      - all_ltr:   모두 왼→오
-      - all_rtl:   모두 오→왼
-      - bounce_lr: 각 이미지 내에서 왼→오→왼 (cos 부드러운 왕복)
-      - bounce_rl: 각 이미지 내에서 오→왼→오
-    image_duration: 미리보기 등 이미지 표시 시간 조정용."""
-    img_dur = image_duration or IMG_INTERVAL
+      - alternate:     이미지마다 LTR/RTL 번갈아
+      - all_ltr:       모두 왼→오
+      - all_rtl:       모두 오→왼
+      - bounce_lr/rl:  각 이미지 내에서 왕복 (cos)
+      - variety:       매 이미지가 순회 목록에서 다른 효과 (다양하게)
+      - all_diag_lt_rb / all_diag_rt_lb: 대각선
+      - all_drift:     아주 살짝 사인파 드리프트
+    image_duration: 모든 이미지에 같은 길이 적용 (미리보기 등).
+    image_durations: [초1, 초2, ...] 이미지별 개별 길이 (곡 동기화용)."""
+    default_dur = image_duration or IMG_INTERVAL
     segments = []
     image_idx = 0
     for i, p in enumerate(media_paths):
@@ -543,12 +624,24 @@ def build_video(media_paths, total_seconds, workdir, audio_path=None,
                 direction = "ltr"
             elif pan_mode == "all_rtl":
                 direction = "rtl"
+            elif pan_mode == "all_diag_lt_rb":
+                direction = "diagonal_lt_rb"
+            elif pan_mode == "all_diag_rt_lb":
+                direction = "diagonal_rt_lb"
+            elif pan_mode == "all_drift":
+                direction = "drift_slow"
             elif pan_mode in ("bounce_lr", "bounce_rl"):
                 direction = pan_mode
-            else:  # alternate (default)
+            elif pan_mode == "variety":
+                direction = VARIETY_ROTATION[image_idx % len(VARIETY_ROTATION)]
+            else:  # alternate
                 direction = "ltr" if image_idx % 2 == 0 else "rtl"
             image_idx += 1
-        preprocess_to_segment(p, seg, fixed_duration=img_dur, pan_direction=direction)
+        # 이미지별 개별 길이 우선
+        this_dur = default_dur
+        if image_durations and i < len(image_durations):
+            this_dur = max(1.0, float(image_durations[i]))
+        preprocess_to_segment(p, seg, fixed_duration=this_dur, pan_direction=direction)
         segments.append(seg)
         if progress_cb:
             progress_cb(i + 1, len(media_paths))
@@ -784,12 +877,40 @@ duration_choice = st.radio(
     label_visibility="collapsed",
 )
 
-# 4) 순서
+# 4) 순서 + 이어붙이는 방식
 st.markdown('<div class="big-label">4️⃣ 재생 순서</div>', unsafe_allow_html=True)
 order_mode = st.radio(
     "재생 순서",
     ["순서대로 이어주기", "랜덤 섞기"],
     label_visibility="collapsed",
+)
+
+st.markdown(
+    '<div class="big-label" style="margin-top:1rem;">이어붙이는 방식</div>',
+    unsafe_allow_html=True,
+)
+join_mode_label = st.radio(
+    "이어붙이는 방식",
+    ["순차 (그대로 딱 잘라 이어붙임)", "계단식 (부드럽게 겹쳐서 크로스페이드)"],
+    label_visibility="collapsed",
+    help="계단식: 앞 곡의 마지막 몇 초와 다음 곡의 도입부 몇 초가 겹쳐 자연스럽게 넘어가요.",
+)
+join_mode = "crossfade" if "계단식" in join_mode_label else "concat"
+crossfade_sec_val = 8
+if join_mode == "crossfade":
+    crossfade_sec_val = st.slider(
+        "겹치는 시간 (초)",
+        min_value=3, max_value=15, value=8, step=1,
+        help="이 시간만큼 앞 곡 끝과 다음 곡 시작이 겹쳐요. 8초 정도가 자연스러워요.",
+    )
+    st.caption(f"🎚️ 계단식: **{crossfade_sec_val}초** 동안 부드럽게 겹쳐 다음 곡으로 넘어감")
+
+# 곡에 맞춰 이미지 자동 전환 (곡 수와 이미지 수를 맞추는 게 이상적)
+sync_images_to_songs = st.checkbox(
+    "🎯 곡에 맞춰 이미지 자동 전환 (곡이 바뀔 때마다 이미지도 전환)",
+    value=False,
+    help="체크하면 이미지가 4:30 고정이 아니라 각 곡 길이에 맞춰 바뀌어요. "
+         "곡과 이미지 수가 같을 때 이상적. 이미지가 적으면 순환 재사용.",
 )
 
 # 5) 배경 이미지·영상 (선택, 직접 업로드 + 라이브러리)
@@ -1400,13 +1521,16 @@ if go:
                     nature_volume=nature_volume_pct / 100.0,
                     nature_on_sec=nature_on_sec,
                     nature_off_sec=nature_off_sec,
+                    join_mode=join_mode,
+                    crossfade_sec=crossfade_sec_val,
                 )
                 st.session_state["audio_path"] = str(audio_out)
                 st.session_state["audio_label"] = duration_choice
-                # 유튜브 설명란용 트랙리스트 생성 (재생 순서 기준)
+                # 유튜브 설명란용 트랙리스트 생성 (크로스페이드 반영)
                 try:
                     st.session_state["tracklist_text"] = build_tracklist_text(
                         music_items, target_sec,
+                        crossfade_sec=(crossfade_sec_val if join_mode == "crossfade" else 0),
                     )
                 except Exception:
                     st.session_state["tracklist_text"] = ""
@@ -1462,11 +1586,29 @@ if go:
                     progress.progress(min(pct, 90), text=f"미디어 정규화 {done}/{total}...")
 
                 video_audio = audio_out if (bake_audio_in_video and audio_out) else None
+                # 곡 동기화: 각 이미지의 표시 시간을 곡 길이에 맞춤 (이미지가 적으면 순환)
+                img_durations = None
+                if sync_images_to_songs and has_music:
+                    try:
+                        song_durs = [max(_probe_duration(p), 1.0) for p, _ in music_items]
+                        if join_mode == "crossfade" and len(song_durs) > 1:
+                            # 크로스페이드로 겹치는 시간만큼 시간 차감 (마지막 곡 제외)
+                            song_durs = [
+                                d - crossfade_sec_val if i < len(song_durs) - 1 else d
+                                for i, d in enumerate(song_durs)
+                            ]
+                        # 이미지 수 만큼 곡 순환
+                        img_durations = [
+                            song_durs[i % len(song_durs)] for i in range(len(media_paths))
+                        ]
+                    except Exception:
+                        img_durations = None
                 video_out = build_video(
                     media_paths, target_sec, workdir,
                     audio_path=video_audio,
                     pan_enabled=pan_enabled,
                     pan_mode=pan_mode,
+                    image_durations=img_durations,
                     progress_cb=_prog,
                 )
                 st.session_state["video_path"] = str(video_out)
