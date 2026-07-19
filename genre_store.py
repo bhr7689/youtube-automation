@@ -17,8 +17,14 @@ import re
 STORE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                           "thumb_title_lab.json")
 
+FOCUS_BUCKET = "⭐ 집중 벤치마킹"
+
 # 분류 완료된 채널로 장르 프로젝트 시드 (인벤토리 기반)
 SEED_PROJECTS: dict[str, dict] = {
+    FOCUS_BUCKET: {
+        "note": "지금 집중 벤치마킹할 채널만 모음. 🔔알림 + 썸네일·제목 분석 → 내 채널 적용.",
+        "benchmarks": [],
+    },
     "파리샹송 (프렌치팝)": {
         "note": "🗼 주력 후보. 스텔라장·라따뚜이·에펠탑·프렌치팝. 여자 보컬 경쾌 재즈풍 피아노.",
         "benchmarks": ["https://www.youtube.com/@oaplaylist", "https://www.youtube.com/@Jayurhy",

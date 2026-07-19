@@ -365,10 +365,10 @@ if page == "🔬 구간 분석":
                                     unsafe_allow_html=True)
                             else:
                                 card.image(v["thumb"], use_container_width=True)
-                        # 카드에서 바로 🔖북마크 · 🔔알림 · 🧺바구니
+                        # 카드에서 바로 🔖북마크 · 🔔알림 · 🧺바구니 · ⭐집중
                         burl = v.get("bench_url", "")
                         b = bench_by_url.get(burl)
-                        a1, a2, a3 = card.columns(3)
+                        a1, a2, a3, a4 = card.columns(4)
                         if b is not None:
                             if a1.checkbox("🔖", value=b.get("bookmark"), key=f"bk_{label}_{j}",
                                            help="채널 북마크") != b.get("bookmark"):
@@ -379,6 +379,11 @@ if page == "🔬 구간 분석":
                         if a3.button("🧺", key=f"bsk_{label}_{j}", help="레퍼런스 바구니에 담기"):
                             G.add_to_basket(cur, v.get("thumb", ""), v.get("title", ""),
                                             v.get("source", "")); st.toast("바구니에 담음")
+                        if a4.button("⭐", key=f"fc_{label}_{j}", help="집중 벤치마킹에 추가 + 알림 ON",
+                                     disabled=(not burl or cur == G.FOCUS_BUCKET)):
+                            G.add_benchmarks(G.FOCUS_BUCKET, [burl])
+                            G.toggle_flag(G.FOCUS_BUCKET, burl, "alarm", True)
+                            st.toast("⭐ 집중 벤치마킹에 추가 + 🔔알림 ON")
                         card.caption(f"👁 {int(v.get('views',0)):,} · 📅 {v.get('published','')}")
                         card.caption(f"📺 {(v.get('source','') or '')[:22]}")
                         card.caption((v.get("title", "") or "")[:38])
