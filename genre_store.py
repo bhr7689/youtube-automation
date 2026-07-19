@@ -64,7 +64,22 @@ SEED_PROJECTS: dict[str, dict] = {
 
 
 def _blank_benchmark(url: str) -> dict:
-    return {"url": url.strip(), "bookmark": False, "alarm": False, "channel_id": "", "note": ""}
+    return {"url": url.strip(), "bookmark": False, "alarm": False,
+            "channel_id": "", "channel": "", "note": ""}
+
+
+def set_benchmark_channel(name: str, url: str, channel_id: str, channel: str) -> dict:
+    """벤치마크 링크에 채널 정보(id·이름) 저장 — 영상 링크→채널 파악."""
+    st = load_state()
+    p = st["projects"].get(name)
+    if p:
+        for b in p["benchmarks"]:
+            if b["url"] == url:
+                b["channel_id"] = channel_id
+                b["channel"] = channel
+                break
+        save_state(st)
+    return st
 
 
 def _load_raw() -> dict:

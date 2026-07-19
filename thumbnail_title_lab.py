@@ -37,6 +37,7 @@ import pattern_analyzer as PA
 import analysis_cache as AC
 import ctr_scorer as CS
 import thumb_scorer as TS
+import channel_watcher as W
 
 st.set_page_config(page_title="🎬 썸네일·제목 연구소", page_icon="🎬", layout="wide")
 
@@ -307,10 +308,19 @@ if page == "🔬 구간 분석":
     if not proj["benchmarks"]:
         st.info("위에서 이 장르의 벤치마킹 채널/영상 링크를 넣어주세요.")
     else:
-        with st.expander("🔖 북마크 · 🔔 알림 관리", expanded=False):
+        with st.expander("🔖 북마크 · 🔔 알림 관리 · 🔗 채널정보", expanded=False):
+            if st.button("🔗 채널 정보 채우기 (영상링크 → 채널명 파악)"):
+                filled = 0
+                with st.spinner("채널 정보 파악 중…"):
+                    for b in proj["benchmarks"]:
+                        if not b.get("channel"):
+                            cid, cname = W.resolve_channel_info(b["url"])
+                            if cid or cname:
+                                G.set_benchmark_channel(cur, b["url"], cid, cname); filled += 1
+                st.success(f"{filled}개 채널 정보 채움"); st.rerun()
             for b in proj["benchmarks"]:
                 c1, c2, c3, c4 = st.columns([6, 1, 1, 1])
-                c1.write(b["url"])
+                c1.write((f"📺 **{b['channel']}** · " if b.get("channel") else "") + b["url"])
                 if c2.checkbox("🔖", value=b.get("bookmark"), key="bk_" + b["url"]) != b.get("bookmark"):
                     G.toggle_flag(cur, b["url"], "bookmark"); st.rerun()
                 if c3.checkbox("🔔", value=b.get("alarm"), key="al_" + b["url"]) != b.get("alarm"):
@@ -461,6 +471,14 @@ if page == "🎯 일치성":
         st.write(f"- **고정문구**: {', '.join(tt.get('fixed_phrases',[])) or '-'} · **이모지**: {tt.get('emoji','')}")
         st.write(f"- **상황**: {tt.get('situation','')} · **감각어**: {', '.join(tt.get('sensory',[]))}")
         st.write(f"- **구조/톤**: {tt.get('structure','')} / {tt.get('tone','')}")
+
+        ts = res.get("title_stats", {})
+        if ts.get("top_tokens"):
+            st.markdown("#### 🔑 키워드 트렌드 (분석 영상 누적)")
+            st.write("· ".join(f"**{w}**({c})" for w, c in ts["top_tokens"][:12]))
+            st.caption(f"평균 제목길이 {ts.get('avg_length','-')}자 · 감각어 {ts.get('sensory_pct',0)}% · "
+                       f"상황어 {ts.get('situation_pct',0)}% · 이모지 {ts.get('emoji_pct',0)}%. "
+                       "링크를 더 모아 다시 분석하면 이 키워드·패턴이 갱신됩니다.")
 
         gp = res.get("generation_prompt", {})
         st.markdown("#### ✨ 자동 생성 프롬프트 (복붙 가능)")
@@ -654,7 +672,8 @@ if page == "🧺 레퍼런스 바구니":
 # ═══════════════════════════════════════════════════════════════
 if page == "🔔 감시/알림":
     st.subheader("🔔 감시 / 카톡 알림")
-    st.caption("🔖 북마크 + 🔔 알림 ON 채널만 새 영상 감지 → 자동 분석 → 카톡(나에게 보내기).")
+    st.caption("🔖 북마크 + 🔔 알림 ON 채널만 → ① 새 영상 즉시 알림 ② 72시간 후 성과 알림.")
+    st.caption("📊 새 영상이 뜨면 카톡, 그 영상이 72시간 뒤 얼마나 떴는지(조회수·일평균·판정) 다시 카톡으로 와요.")
     wl = G.watch_list()
     if not wl:
         st.info("구간 분석 탭에서 채널에 🔔 알림을 켜면 여기에 표시됩니다.")

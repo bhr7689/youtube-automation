@@ -9,6 +9,7 @@ GitHub Actions cron / 사장님 PC 에서 실행:
 """
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import os
 import re
@@ -91,6 +92,41 @@ def resolve_channel_id(url: str) -> str:
     return ""
 
 
+def resolve_channel_info(url: str) -> tuple[str, str]:
+    """URL(영상/채널/핸들) → (channel_id, channel_name). 키 있을 때."""
+    cid = resolve_channel_id(url)
+    if not cid:
+        return "", ""
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "jpshorts", "backend"))
+        import youtube_client as yc
+        if not yc.has_key():
+            return cid, ""
+        r = yc._yt().channels().list(part="snippet", id=cid).execute()
+        items = r.get("items", [])
+        return cid, (items[0]["snippet"]["title"] if items else "")
+    except Exception:                   # noqa: BLE001
+        return cid, ""
+
+
+def _video_views(video_ids: list[str]) -> dict[str, int]:
+    """영상 ID들 → 현재 조회수 (72시간 결과용)."""
+    out: dict[str, int] = {}
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "jpshorts", "backend"))
+        import youtube_client as yc
+        if not yc.has_key() or not video_ids:
+            return out
+        yt = yc._yt()
+        for k in range(0, len(video_ids), 50):
+            r = yt.videos().list(part="statistics", id=",".join(video_ids[k:k + 50])).execute()
+            for it in r.get("items", []):
+                out[it["id"]] = int(it.get("statistics", {}).get("viewCount", 0) or 0)
+    except Exception:                   # noqa: BLE001
+        pass
+    return out
+
+
 def _load_state() -> dict:
     if os.path.exists(STATE_PATH):
         try:
@@ -144,23 +180,72 @@ def run_once(notify: bool = False) -> list[dict]:
         if cid not in seen:
             seen[cid] = [e["video_id"] for e in entries][:15]
             continue
+        pend = state.setdefault("pending72", [])
+        now_iso = _dt.datetime.utcnow().isoformat()
         for e in fresh:
             e["project"] = w["project"]
             e["analysis"] = analyze_new_video(e)
             news.append(e)
+            pend.append({"video_id": e["video_id"], "title": e["title"],
+                         "project": e["project"], "detected_at": now_iso, "reported": False})
         seen[cid] = ([e["video_id"] for e in fresh] + seen.get(cid, []))[:15]
+
+    followups = _process_followups(state)   # 72시간 지난 것 성과 집계
     _save_state(state)
 
-    if notify and news:
+    if notify:
         try:
             import kakao_notify
             for e in news:
-                msg = (f"📺 [{e['project']}] 새 영상\n{e['title']}\n{e['analysis']}\n"
-                       f"▶ https://youtu.be/{e['video_id']}")
-                kakao_notify.send_to_me(msg, link=f"https://youtu.be/{e['video_id']}")
+                kakao_notify.send_to_me(
+                    f"📺 [{e['project']}] 새 영상\n{e['title']}\n{e['analysis']}\n"
+                    f"▶ https://youtu.be/{e['video_id']}", link=f"https://youtu.be/{e['video_id']}")
+            for f in followups:
+                kakao_notify.send_to_me(
+                    f"📊 72시간 결과 [{f['project']}]\n{f['title']}\n"
+                    f"👁 {f['views']:,}회 · 일평균 {f['vpd']:,}회 · {f['verdict']}\n"
+                    f"▶ https://youtu.be/{f['video_id']}", link=f"https://youtu.be/{f['video_id']}")
         except Exception as ex:          # noqa: BLE001
             print("카톡 발송 스킵:", ex)
-    return news
+    return news + followups
+
+
+def _process_followups(state: dict, hours: int = 72) -> list[dict]:
+    """감지 후 hours 지난 영상의 현재 조회수 집계 → 결과 목록(중복 방지)."""
+    pend = state.setdefault("pending72", [])
+    now = _dt.datetime.utcnow()
+    due = []
+    for p in pend:
+        if p.get("reported"):
+            continue
+        try:
+            det = _dt.datetime.fromisoformat(p["detected_at"])
+        except (ValueError, KeyError):
+            p["reported"] = True
+            continue
+        if (now - det).total_seconds() >= hours * 3600:
+            due.append(p)
+    out = []
+    if due:
+        views_map = _video_views([p["video_id"] for p in due])
+        for p in due:
+            v = views_map.get(p["video_id"], 0)
+            vpd = round(v / max(1, hours / 24))
+            verdict = "🔥 잘 먹힘" if vpd >= 5000 else ("👍 무난" if vpd >= 1000 else "😐 반응 약함")
+            out.append({**p, "views": v, "vpd": vpd, "verdict": verdict})
+            p["reported"] = True
+    # 오래된 reported 정리(30일)
+    cut = now - _dt.timedelta(days=30)
+    state["pending72"] = [p for p in pend if not (
+        p.get("reported") and _safe_before(p.get("detected_at"), cut))]
+    return out
+
+
+def _safe_before(iso: str, cut) -> bool:
+    try:
+        return _dt.datetime.fromisoformat(iso) < cut
+    except (ValueError, TypeError):
+        return True
 
 
 if __name__ == "__main__":
