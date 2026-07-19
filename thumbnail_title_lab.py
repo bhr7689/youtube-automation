@@ -35,6 +35,7 @@ import thumb_overlay as OV
 import link_classifier as LC
 import pattern_analyzer as PA
 import analysis_cache as AC
+import ctr_scorer as CS
 
 st.set_page_config(page_title="🎬 썸네일·제목 연구소", page_icon="🎬", layout="wide")
 
@@ -516,7 +517,9 @@ if page == "✨ 생성":
                         formula = f"[{label} 공식] " + rep["tiers"][label]["formula"]; break
         ref_titles = (igp.get("example_titles", []) +
                       [b["title"] for b in basket if b.get("title")])[:6]
-        sets = _generate_sets(cur, content, n, formula, ref_titles)
+        with st.spinner("세트 생성 + 🏆 CTR 예측 채점 중…"):
+            sets = _generate_sets(cur, content, n, formula, ref_titles)
+            sets = CS.score_sets(sets, cur, ident)     # 후보 채점 → 베스트 정렬
         _ss_set("gen_" + cur, sets)
 
     gens = st.session_state.get("gen_" + cur, [])
@@ -524,7 +527,17 @@ if page == "✨ 생성":
         st.caption("💾 생성 이미지는 저장돼 탭을 옮겨도 남아요. 프롬프트는 📋로 복사해 ChatGPT·Gemini·미드저니에서도 쓸 수 있어요.")
     for i, s in enumerate(gens):
         box = st.container(border=True)
-        box.markdown(f"**세트 {i+1}**")
+        sc = s.get("score", {})
+        if sc:
+            tot = sc.get("total", 0)
+            badge = "🏆 베스트 " if s.get("winner") else ""
+            dot = "🟢" if tot >= 75 else ("🟠" if tot >= 55 else "🔴")
+            box.markdown(f"### {badge}{dot} CTR 예측 {tot} / 100")
+            box.caption(" · ".join(f"{CS.LABELS[c]} {sc.get(c,0)}" for c in CS.CRITERIA))
+            if sc.get("reason"):
+                box.caption("💬 " + sc["reason"])
+        else:
+            box.markdown(f"**세트 {i+1}**")
         box.caption("📋 제목")
         box.code(s["title"], language=None)
         box.caption("🖼 썸네일 문구(이미지 위 글자): " + s.get("thumb_text", ""))
