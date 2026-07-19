@@ -36,6 +36,7 @@ import link_classifier as LC
 import pattern_analyzer as PA
 import analysis_cache as AC
 import ctr_scorer as CS
+import thumb_scorer as TS
 
 st.set_page_config(page_title="🎬 썸네일·제목 연구소", page_icon="🎬", layout="wide")
 
@@ -560,7 +561,9 @@ if page == "✨ 생성":
             _ss_del(img_key); st.rerun()
         if do_draw:
             with st.spinner("생성 중… (씬 이미지 → 글자 얹기)"):
-                out = CM.generate_thumbnail_image(scene, size="1536x1024", refs=refs[:6])
+                # 고CTR 썸네일 원칙 주입 (단일 초점·강한 대비·소형 가독)
+                out = CM.generate_thumbnail_image(TS.CTR_DIRECTIVE + " " + scene,
+                                                  size="1536x1024", refs=refs[:6])
             if out.get("data_url"):
                 final = OV.overlay_title(out["data_url"], s.get("thumb_text", ""))
                 _ss_set(img_key, OV.to_data_url(final))
@@ -572,6 +575,31 @@ if page == "✨ 생성":
             box.download_button("⬇️ 이미지 다운로드 (PNG)", data=_dataurl_bytes(imgval),
                                 file_name=f"{cur}_{i+1}.png", mime="image/png",
                                 key=f"dl_{i}", use_container_width=True)
+            # 📱 폰 피드 미리보기 (작게 봐도 읽히나 확인)
+            fp = box.columns([1, 2])
+            fp[0].image(imgval, width=180)
+            fp[1].caption("📱 폰 피드에서 이렇게 보여요")
+            fp[1].markdown(f"**{s['title'][:45]}**")
+            fp[1].caption("📺 내 채널 · 조회수 1.2만 · 방금")
+            # 👁 이미지 Vision 채점
+            sc_key = f"imgscore_{cur}_{i}"
+            imgsc = st.session_state.get(sc_key)
+            if box.button("👁 이 썸네일 이미지 채점 (Vision)", key=f"vs_{i}"):
+                with st.spinner("GPT Vision 이미지 채점 중…"):
+                    _r = TS.score(imgval, s.get("title", ""), cur, ident)
+                if _r:
+                    _ss_set(sc_key, _r); st.rerun()
+                else:
+                    box.warning("이미지 채점은 OpenAI 키가 필요해요(설정 탭).")
+            if imgsc:
+                _t = imgsc.get("total", 0)
+                _d = "🟢" if _t >= 75 else ("🟠" if _t >= 55 else "🔴")
+                box.markdown(f"**👁 {_d} 이미지 CTR {_t} / 100**")
+                box.caption(" · ".join(f"{TS.LAB[c]} {imgsc.get(c,0)}" for c in TS.CRIT))
+                if imgsc.get("verdict"):
+                    box.caption("💬 " + imgsc["verdict"])
+                for _tip in imgsc.get("tips", []):
+                    box.write("• " + _tip)
 
 # ═══════════════════════════════════════════════════════════════
 # 🧺 레퍼런스 바구니
