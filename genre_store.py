@@ -264,3 +264,12 @@ def set_identity(name: str, identity: dict) -> dict:
 
 def get_identity(name: str) -> dict:
     return load_state()["projects"].get(name, {}).get("identity", {})
+
+
+def set_signature(name: str, text: str) -> dict:
+    """우리 채널만의 '결'(색·아트스타일·모티프·톤·차별점). 복제 방지용."""
+    st = load_state()
+    if name in st["projects"]:
+        st["projects"][name].setdefault("identity", {})["signature"] = (text or "").strip()
+        save_state(st)
+    return st

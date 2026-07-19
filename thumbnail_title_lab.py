@@ -508,7 +508,17 @@ if page == "✨ 생성":
     ident = G.get_identity(cur) or {}
     igp = ident.get("generation_prompt", {})
     if igp.get("title_template") or igp.get("thumbnail_prompt"):
-        st.info("💡 일치성 탭에서 저장한 **장르 공식**이 적용됩니다 (썸네일 프롬프트 + 제목 공식).")
+        st.info("💡 일치성 탭에서 저장한 **장르 공식(원리)** 이 적용됩니다. + 아래 우리 시그니처로 원본화.")
+
+    with st.expander("🎨 우리 채널 시그니처 (우리만의 '결' — 복제 아닌 원본 만들기)", expanded=False):
+        st.caption("벤치마크에선 '원리'만 배우고, 여기 우리 고유 스타일을 입혀 복제가 아닌 원본으로.")
+        _sigv = ident.get("signature", "")
+        new_sig = st.text_area("색 · 아트스타일 · 모티프 · 톤 · 차별점", value=_sigv, key="sig_" + cur,
+                               placeholder="예: 파스텔 수채 일러스트 + 손글씨 로고 '별밤', 고양이 마스코트, "
+                                           "따뜻한 필름톤, 왼쪽 하단 브랜드 마크, 유럽 빈티지 무드")
+        if st.button("💾 시그니처 저장", key="save_sig"):
+            G.set_signature(cur, new_sig)
+            st.success("저장! 생성에 '우리만의 결'로 반영됩니다."); st.rerun()
 
     if st.button("✨ 제목·썸네일 세트 생성", type="primary"):
         formula = ""
@@ -547,11 +557,18 @@ if page == "✨ 생성":
         box.code(s["title"], language=None)
         box.caption("🖼 썸네일 문구(이미지 위 글자): " + s.get("thumb_text", ""))
 
-        # 외부 도구용 프롬프트 (복붙)
-        scene = s.get("scene", content)
-        if igp.get("thumbnail_prompt"):        # 저장된 장르 이미지 패턴 반영
-            scene = igp["thumbnail_prompt"] + " — " + scene
-        box.caption("📋 이미지 프롬프트 (ChatGPT · Gemini · DALL·E)")
+        # 외부 도구용 프롬프트 (복붙) — 공식(원리) + 우리 시그니처 + 복제 금지
+        base_scene = s.get("scene", content)
+        _p = [TS.STYLES[thumb_style]]
+        if igp.get("thumbnail_prompt"):        # 저장된 장르 공식 = 원리만 참고
+            _p.append("Winning pattern (principles only, do not copy): " + igp["thumbnail_prompt"])
+        _sig = ident.get("signature", "")
+        if _sig:
+            _p.append("OUR channel signature style (make it distinctly ours): " + _sig)
+        _p.append("Create an ORIGINAL scene in our own style — it must NOT look like a copy of any "
+                  "reference. Scene: " + base_scene)
+        scene = " . ".join(_p)
+        box.caption("📋 이미지 프롬프트 (ChatGPT · Gemini · DALL·E) — 우리 결 + 복제 방지 포함")
         box.code(scene, language=None)
         box.caption("📋 미드저니 프롬프트")
         box.code(_mj_prompt(scene), language=None)
@@ -565,9 +582,8 @@ if page == "✨ 생성":
             _ss_del(img_key); st.rerun()
         if do_draw:
             with st.spinner("생성 중… (씬 이미지 → 글자 얹기)"):
-                # 선택한 공격 스타일 + 고CTR 원칙 주입 (단일 초점·강한 대비·소형 가독)
-                out = CM.generate_thumbnail_image(TS.STYLES[thumb_style] + " " + scene,
-                                                  size="1536x1024", refs=refs[:6])
+                # scene 에 이미 공격스타일+공식+시그니처+복제금지 포함
+                out = CM.generate_thumbnail_image(scene, size="1536x1024", refs=refs[:6])
             if out.get("data_url"):
                 final = OV.overlay_title(out["data_url"], s.get("thumb_text", ""))
                 _ss_set(img_key, OV.to_data_url(final))
