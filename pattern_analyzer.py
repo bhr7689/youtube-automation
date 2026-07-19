@@ -143,3 +143,72 @@ def analyze_videos(videos: list[dict], genre: str = "") -> dict:
 def analyze(urls: list[str], genre: str = "", per_channel: int = 2) -> dict:
     """링크 N개(채널/영상 혼합) → 영상 썸네일로 확장 → 패턴 분석."""
     return analyze_videos(_gather(urls, per_channel), genre)
+
+
+_BRAND_SCHEMA = """아래 JSON 만(한국어 값):
+{"palette":["#hex","#hex","#hex"],"visual_style":"<전체 비주얼 스타일>",
+ "mood":"<지배 무드/정서>","logo_style":"<로고 특징>","banner_style":"<배너 특징>",
+ "thumbnail_consistency":"<썸네일들의 공통 결·일관성>","tone":"<채널 톤>",
+ "signature_summary":"<이 채널의 '결'을 한 문단으로 — 색·스타일·무드·정체성>"}"""
+
+
+def _brand_vision(logo, banner, thumbs, title, desc, keywords, genre):
+    key = os.environ.get("OPENAI_API_KEY", "").strip()
+    imgs = [u for u in ([logo, banner] + list(thumbs)) if _is_img(u)][:8]
+    if not key or not imgs:
+        return None
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=key)
+        head = (f"너는 유튜브 채널 브랜드 분석가다. 채널 '{title}'({genre})의 로고·배너·썸네일 "
+                f"이미지와 아래 텍스트를 보고 이 채널의 '결'(비주얼 정체성)을 종합 분석하라.\n"
+                f"설명글: {(desc or '')[:300]}\n채널 키워드/태그: {(keywords or '')[:200]}\n" + _BRAND_SCHEMA)
+        content = [{"type": "text", "text": head}]
+        labels = ["[로고]", "[배너]"] + ["[썸네일]"] * len(thumbs)
+        for lab, u in zip(labels, imgs):
+            content.append({"type": "text", "text": lab})
+            content.append({"type": "image_url", "image_url": {"url": u, "detail": "low"}})
+        r = client.chat.completions.create(
+            model="gpt-4o", messages=[{"role": "user", "content": content}],
+            temperature=0.4, max_tokens=900, response_format={"type": "json_object"})
+        return json.loads(r.choices[0].message.content or "{}")
+    except Exception:                   # noqa: BLE001
+        return None
+
+
+def channel_brand(url: str, genre: str = "") -> dict:
+    """채널 URL → 로고·배너·설명·태그·썸네일 수집 + Vision '결' 분석."""
+    try:
+        import youtube_client as yc
+        import channel_watcher as W
+        import concept_maker as CM
+    except Exception:                   # noqa: BLE001
+        return {"error": "모듈 로드 실패"}
+    if not yc.has_key():
+        return {"error": "YouTube 키가 필요해요(설정 탭)."}
+    cid = W.resolve_channel_id(url)
+    if not cid:
+        return {"error": f"채널을 찾지 못했어요: {url}"}
+    try:
+        r = yc._yt().channels().list(part="snippet,brandingSettings,statistics", id=cid).execute()
+        items = r.get("items", [])
+        if not items:
+            return {"error": "채널 정보 없음"}
+        it = items[0]
+        sn, bs = it["snippet"], it.get("brandingSettings", {})
+        th = sn.get("thumbnails", {})
+        logo = next((th[q]["url"] for q in ("high", "medium", "default") if th.get(q, {}).get("url")), "")
+        banner = bs.get("image", {}).get("bannerExternalUrl", "")
+        if banner:
+            banner = banner + "=w1280"
+        desc = sn.get("description", "")
+        keywords = bs.get("channel", {}).get("keywords", "")
+        data = CM.collect_channel(url)
+        thumbs = [v["thumb"] for v in data.get("videos", [])[:6] if v.get("thumb")]
+        vision = _brand_vision(logo, banner, thumbs, sn["title"], desc, keywords, genre)
+        return {"title": sn["title"], "description": desc, "keywords": keywords,
+                "logo": logo, "banner": banner, "thumbs": thumbs,
+                "subscribers": int(it.get("statistics", {}).get("subscriberCount", 0) or 0),
+                "vision": vision}
+    except Exception as e:              # noqa: BLE001
+        return {"error": f"수집 실패: {e}"}

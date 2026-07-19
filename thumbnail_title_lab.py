@@ -432,6 +432,42 @@ if page == "🎯 일치성":
     st.subheader("🎯 일치성 + 패턴 분석 → 자동 프롬프트")
     st.caption("링크 여러 개 → GPT가 실제 썸네일 보고 제목 읽어 → 일치성 채점 + 썸네일·제목 패턴 → 재사용 프롬프트.")
 
+    with st.expander("🎨 채널 전체 '결' 분석 (로고·배너·태그·설명·썸네일 통합)", expanded=False):
+        ch_url = st.text_input("유튜브 채널 URL", key="brand_url",
+                               placeholder="https://www.youtube.com/@channel")
+        if st.button("🎨 채널 결 분석") and ch_url.strip():
+            with st.spinner("채널 브랜드(로고·배너·태그·설명·썸네일) 수집 + GPT Vision…"):
+                _ss_set("brand_" + cur, PA.channel_brand(ch_url, cur))
+        bd = st.session_state.get("brand_" + cur)
+        if bd:
+            if bd.get("error"):
+                st.warning(bd["error"])
+            else:
+                st.markdown(f"**{bd['title']}** · 구독자 {bd.get('subscribers',0):,}")
+                bc = st.columns(2)
+                if bd.get("logo"):
+                    bc[0].caption("로고"); bc[0].image(bd["logo"], width=120)
+                if bd.get("banner"):
+                    bc[1].caption("배너"); bc[1].image(bd["banner"], use_container_width=True)
+                if bd.get("thumbs"):
+                    st.caption("최근 썸네일")
+                    tcols = st.columns(min(6, len(bd["thumbs"])))
+                    for _i, _t in enumerate(bd["thumbs"][:6]):
+                        tcols[_i].image(_t, use_container_width=True)
+                st.caption("📝 설명글: " + (bd.get("description", "") or "")[:200])
+                st.caption("🏷 채널 키워드: " + (bd.get("keywords", "") or "-"))
+                vz = bd.get("vision") or {}
+                if vz:
+                    st.markdown("**🎨 채널 '결' (Vision 종합)**")
+                    st.write(f"- 팔레트: {'  '.join(vz.get('palette',[]))} · 무드: {vz.get('mood','')}")
+                    st.write(f"- 비주얼: {vz.get('visual_style','')} · 톤: {vz.get('tone','')}")
+                    st.write(f"- 로고: {vz.get('logo_style','')} · 배너: {vz.get('banner_style','')}")
+                    st.write(f"- 썸네일 일관성: {vz.get('thumbnail_consistency','')}")
+                    st.info("🧬 " + vz.get("signature_summary", ""))
+                    if st.button("💾 이 결을 참고해 우리 시그니처로 저장"):
+                        G.set_signature(cur, vz.get("signature_summary", ""))
+                        st.success("우리 시그니처로 저장! ✨ 생성에 반영됩니다."); st.rerun()
+
     src = st.radio("분석 대상", ["📺 현재 장르 벤치마크", "🔗 링크 직접 입력"],
                    horizontal=True, key="pa_src")
     pa_urls = []
