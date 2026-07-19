@@ -232,6 +232,21 @@ if page == "🗂 자동분류":
     st.subheader("🗂 미분류 대량 링크 자동분류")
     st.caption("링크 뭉치 붙여넣기 → 유튜브에서 제목 읽어 장르통으로 자동 정렬 → "
                "**드롭다운으로 직접 옮긴 뒤** 각 장르에 추가.")
+
+    with st.container(border=True):
+        st.markdown("**🔧 데이터 복구** — 인벤토리의 모든 링크를 '📦 복구함'으로 되살리기 (분류·API 불필요)")
+        _invn = len(LC.load_inventory_urls(videos_only=False))
+        if st.button(f"🔧 인벤토리 전체 복구 ({_invn}개 링크)", type="primary"):
+            _urls = LC.load_inventory_urls(videos_only=False)
+            if _urls:
+                G.add_project("📦 복구함", "인벤토리에서 되살린 링크 — 여기서 자동분류로 정리하세요.")
+                G.add_benchmarks("📦 복구함", _urls)
+                st.success(f"{len(_urls)}개 링크를 '📦 복구함'에 복구했어요! "
+                           "이제 아래 '📂 미분류함 다시 분류' 대신 이 장르를 선택해 자동분류하거나, "
+                           "구간분석에서 바로 보세요.")
+                st.rerun()
+            else:
+                st.warning("인벤토리 파일을 못 찾았어요.")
     cls_txt = st.text_area("링크 붙여넣기 (여러 줄, 섞여 있어도 OK)", height=130, key="cls_input",
                            placeholder="https://youtu.be/xxxx\nhttps://youtu.be/yyyy ...")
     use_llm = st.checkbox("🤖 GPT 정밀분류", value=True, help="OpenAI/Gemini 키 있을 때 더 정확. 없으면 키워드 분류.")
