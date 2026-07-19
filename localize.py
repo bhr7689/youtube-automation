@@ -79,29 +79,8 @@ def _coerce(d, n: int) -> dict[int, str]:
     return {k: v for k, v in out.items() if 0 <= k < n and v}
 
 
-def localize_batch(texts: list[str], target: str = "KR",
-                   context: str = "유튜브 음악 플레이리스트 제목") -> dict[int, str]:
-    """문구들을 target 나라의 현지 실사용 정서로 번안. 키 없으면 빈 dict."""
-    name = REGION_NAME.get(target, target)
-    try:
-        import concept_maker as CM
-    except Exception:                   # noqa: BLE001
-        return {}
-    if not (CM.llm_status().get("openai") or CM.llm_status().get("gemini")):
-        return {}
-    idxed = [(i, t) for i, t in enumerate(texts) if (t or "").strip()]
-    if not idxed:
-        return {}
-    items = "\n".join(f"{i}. {t}" for i, t in idxed)
-    prompt = (
-        f"너는 {name} 원어민 카피라이터다. 다음 {context}들을 **{name}로 번안**하라.\n"
-        f"⚠️ 절대 직역·기계번역식으로 옮기지 마라. {name}권 현지인이 실제로 검색하고, "
-        f"현지 유튜브 음악 채널이 실제로 쓰는 감성적이고 자연스러운 표현·말투·정서로 다시 써라. "
-        f"계절·날씨·시간대·감정의 현지 뉘앙스를 살리고, 이모지·기호는 원문 느낌을 해치지 않는 선에서 유지해도 된다.\n"
-        f"각 항목의 번호(i)를 그대로 유지하고, 모든 항목을 빠짐없이 번안하라.\n\n"
-        f"원문:\n{items}\n\n"
-        f"반드시 이 JSON만 출력: {{\"t\":[{{\"i\":0,\"tx\":\"번안된 {name} 문구\"}}]}}")
-    raw = CM._llm(prompt, json_mode=True)
+def _parse(raw: str, n: int) -> dict[int, str]:
+    """LLM 원문 → {index: 번안}. 여러 파싱 경로로 방어."""
     if not raw:
         return {}
     d = None
@@ -109,6 +88,7 @@ def localize_batch(texts: list[str], target: str = "KR",
         d = json.loads(raw)
     except Exception:                   # noqa: BLE001
         try:
+            import concept_maker as CM
             d = CM._parse_json(raw)
         except Exception:               # noqa: BLE001
             d = None
@@ -119,7 +99,54 @@ def localize_batch(texts: list[str], target: str = "KR",
                 d = json.loads(m.group(0))
             except Exception:           # noqa: BLE001
                 d = None
-    return _coerce(d, len(texts))
+    return _coerce(d, n)
+
+
+def _call_chunk(pairs: list[tuple[int, str]], name: str, context: str) -> dict[int, str]:
+    """(원본인덱스, 원문) 묶음 하나를 번안 → {원본인덱스: 번안}. 로컬 0..k 로 번호 매겨 안정 매핑."""
+    import concept_maker as CM
+    local = [t for _, t in pairs]
+    items = "\n".join(f"{i}. {t}" for i, t in enumerate(local))
+    prompt = (
+        f"너는 {name} 원어민 카피라이터다. 아래 {len(local)}개의 {context}를 **{name}로 번안**하라.\n"
+        f"⚠️ 절대 직역·기계번역식으로 옮기지 마라. {name}권 현지인이 실제로 검색하고, "
+        f"현지 유튜브 음악 채널이 실제로 쓰는 감성적이고 자연스러운 표현·말투·정서로 다시 써라. "
+        f"계절·날씨·시간대·감정의 현지 뉘앙스를 살리고, 이모지·기호는 원문 느낌을 해치지 않는 선에서 유지해도 된다.\n"
+        f"⚠️ 반드시 {len(local)}개 **전부**, 각 번호(i)를 그대로 붙여 빠짐없이 번안하라. 하나도 빼먹지 마라.\n\n"
+        f"원문:\n{items}\n\n"
+        f"반드시 이 JSON만 출력: {{\"t\":[{{\"i\":0,\"tx\":\"번안된 {name} 문구\"}}]}}")
+    got = _parse(CM._llm(prompt, json_mode=True), len(local))
+    return {pairs[li][0]: tx for li, tx in got.items() if 0 <= li < len(pairs) and tx}
+
+
+def localize_batch(texts: list[str], target: str = "KR",
+                   context: str = "유튜브 음악 플레이리스트 제목",
+                   chunk: int = 6) -> dict[int, str]:
+    """문구들을 target 나라의 현지 실사용 정서로 번안. 키 없으면 빈 dict.
+
+    큰 목록에서 LLM이 일부 항목을 누락하는 문제를 막기 위해 작은 덩어리로 나눠 호출하고,
+    그래도 빠진 인덱스는 한 번 더 재시도한다.
+    """
+    name = REGION_NAME.get(target, target)
+    try:
+        import concept_maker as CM
+    except Exception:                   # noqa: BLE001
+        return {}
+    if not (CM.llm_status().get("openai") or CM.llm_status().get("gemini")):
+        return {}
+    idxed = [(i, t) for i, t in enumerate(texts) if (t or "").strip()]
+    if not idxed:
+        return {}
+
+    out: dict[int, str] = {}
+    for k in range(0, len(idxed), chunk):        # 작은 덩어리로 안정 호출
+        out.update(_call_chunk(idxed[k:k + chunk], name, context))
+
+    missing = [p for p in idxed if p[0] not in out]   # 누락 인덱스 1회 재시도(더 잘게)
+    if missing:
+        for k in range(0, len(missing), 3):
+            out.update(_call_chunk(missing[k:k + 3], name, context))
+    return out
 
 
 def localize(text: str, target: str = "KR") -> str:
