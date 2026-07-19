@@ -39,6 +39,7 @@ import ctr_scorer as CS
 import thumb_scorer as TS
 import channel_watcher as W
 import trend_radar as TR
+import chat_editor as CE
 
 st.set_page_config(page_title="🎬 썸네일·제목 연구소", page_icon="🎬", layout="wide")
 
@@ -127,7 +128,7 @@ def _ss_del(key: str) -> None:
 
 # ── 페이지 네비게이션 ─────────────────────────────────────────
 PAGES = ["🏠 대시보드", "🗂 자동분류", "🔬 구간 분석", "🎯 일치성", "✨ 생성",
-         "🌊 트렌드 레이더", "🧺 레퍼런스 바구니", "🔔 감시/알림", "⚙️ 설정"]
+         "🤖 AI 편집", "🌊 트렌드 레이더", "🧺 레퍼런스 바구니", "🔔 감시/알림", "⚙️ 설정"]
 if "_goto" in st.session_state:          # 다른 화면에서 넘어온 이동 요청(위젯 생성 전 반영)
     st.session_state["nav"] = st.session_state.pop("_goto")
 
@@ -639,6 +640,73 @@ if page == "✨ 생성":
                     box.caption("💬 " + imgsc["verdict"])
                 for _tip in imgsc.get("tips", []):
                     box.write("• " + _tip)
+
+# ═══════════════════════════════════════════════════════════════
+# 🤖 AI 편집 대화
+# ═══════════════════════════════════════════════════════════════
+if page == "🤖 AI 편집":
+    st.subheader(f"🤖 AI 편집 대화 — {cur}")
+    st.caption("나랑 대화하듯 고쳐요. 예: '제목 더 궁금하게', '대비 강하게 고양이 추가', '문구를 한 줄로'.")
+    wk_key, hk_key, imgk = f"chat_work_{cur}", f"chat_hist_{cur}", f"chatimg_{cur}"
+    work = st.session_state.get(wk_key, {"title": "", "thumb_text": "", "scene": ""})
+    hist = st.session_state.get(hk_key, [])
+    ci_ident = G.get_identity(cur) or {}
+    ci_igp = ci_ident.get("generation_prompt", {})
+    brief = " | ".join(filter(None, [ci_ident.get("signature", ""), ci_igp.get("title_template", "")]))
+
+    with st.expander("✏️ 편집 시작 (소재 입력 또는 생성 세트 불러오기)", expanded=not work.get("title")):
+        seed = st.text_input("소재/초안 제목", key="chat_seed")
+        cgens = st.session_state.get("gen_" + cur, [])
+        copts = [f"세트 {i+1}: {g.get('title','')[:28]}" for i, g in enumerate(cgens)]
+        cA, cB = st.columns(2)
+        if cA.button("이 소재로 시작", use_container_width=True) and seed.strip():
+            _ss_set(wk_key, {"title": seed, "thumb_text": "", "scene": seed})
+            _ss_set(hk_key, []); st.session_state.pop(imgk, None); st.rerun()
+        pick = cB.selectbox("생성 세트 불러오기", ["(선택)"] + copts, label_visibility="collapsed") if copts else "(선택)"
+        if copts and pick != "(선택)":
+            g = cgens[copts.index(pick)]
+            if cB.button("불러오기", use_container_width=True):
+                _ss_set(wk_key, {"title": g.get("title", ""), "thumb_text": g.get("thumb_text", ""),
+                                 "scene": g.get("scene", "")})
+                _ss_set(hk_key, []); st.session_state.pop(imgk, None); st.rerun()
+
+    st.markdown("**현재 작업물**")
+    st.code(work.get("title", ""), language=None)
+    st.caption("🖼 문구: " + (work.get("thumb_text", "") or "-"))
+    st.caption("🎬 장면: " + (work.get("scene", "") or "-")[:80])
+
+    for m in hist:
+        with st.chat_message("user" if m["role"] == "user" else "assistant"):
+            st.write(m["content"])
+    if prompt := st.chat_input("어떻게 고칠까요?"):
+        hist2 = hist + [{"role": "user", "content": prompt}]
+        with st.spinner("AI 편집 중…"):
+            r = CE.chat(hist2, work, cur, brief)
+        _ss_set(wk_key, {"title": r["title"], "thumb_text": r["thumb_text"], "scene": r["scene"]})
+        _ss_set(hk_key, hist2 + [{"role": "assistant", "content": r["reply"]}])
+        st.rerun()
+
+    cst = st.selectbox("🎨 썸네일 스타일", list(TS.STYLES), key="chat_style")
+    if CM and work.get("scene") and st.button("🎨 현재 작업물로 썸네일 그리기", type="primary"):
+        _p = [TS.STYLES[cst]]
+        if ci_igp.get("thumbnail_prompt"):
+            _p.append("Winning pattern (principles only): " + ci_igp["thumbnail_prompt"])
+        if ci_ident.get("signature"):
+            _p.append("OUR signature (distinctly ours): " + ci_ident["signature"])
+        _p.append("Original scene, not a copy. Scene: " + work["scene"])
+        with st.spinner("생성 중…"):
+            out = CM.generate_thumbnail_image(" . ".join(_p), size="1536x1024",
+                                              refs=[b["thumb"] for b in G.get_basket(cur) if b.get("thumb")][:6])
+        if out.get("data_url"):
+            _ss_set(imgk, OV.to_data_url(OV.overlay_title(out["data_url"], work.get("thumb_text", ""))))
+            st.rerun()
+        else:
+            st.error(out.get("error", "생성 실패 — OpenAI 키 필요."))
+    ci = st.session_state.get(imgk)
+    if ci:
+        st.image(ci, use_container_width=True)
+        st.download_button("⬇️ 다운로드 (PNG)", data=_dataurl_bytes(ci),
+                           file_name=f"{cur}_chat.png", mime="image/png")
 
 # ═══════════════════════════════════════════════════════════════
 # 🌊 트렌드 레이더
