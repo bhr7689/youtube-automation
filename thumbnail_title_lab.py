@@ -835,6 +835,8 @@ if page == "🌊 트렌드 레이더":
     st.subheader("🌊 트렌드 레이더 — 장르 불문 '지금 터지는 제목'")
     st.caption("터지는 제목 = [상황]+[장르]. 상황 구조는 장르를 초월해요. 다른 장르 급상승 제목을 "
                "가져와 **장르만 우리 걸로** 바꿔 쓰면 됩니다.")
+    if "_radar_kw" in st.session_state:        # 키워드 칩 클릭 → 검색어 반영(위젯 생성 전)
+        st.session_state["radar_kw"] = st.session_state.pop("_radar_kw")
     rc1, rc2 = st.columns([1, 2])
     region_name = rc1.selectbox("🌍 나라", list(TR.REGIONS), key="radar_region")
     region = TR.REGIONS[region_name]
@@ -859,6 +861,30 @@ if page == "🌊 트렌드 레이더":
         _plist = list(state["projects"].keys())
         rtarget = st.selectbox("📁 담을 장르 (아래 버튼이 이 장르로 저장돼요)", _plist,
                                index=_plist.index(cur) if cur in _plist else 0, key="radar_target")
+
+        # 🔑 떠오르는 키워드 (결과 제목에서 추출 → 데이터화)
+        _rtitles = [v.get("title_ko") or v.get("title", "") for v in rr["videos"]]
+        _rdg = TD.digest(_rtitles)
+        if _rdg.get("top_tokens"):
+            st.markdown("**🔑 떠오르는 키워드** (급상승 제목에서 추출 — 클릭하면 그 키워드로 재검색)")
+            kcols = st.columns(6)
+            for _ki, (w, c) in enumerate(_rdg["top_tokens"][:6]):
+                if kcols[_ki].button(f"{w} ({c})", key=f"radar_kwchip_{_ki}"):
+                    st.session_state["_radar_kw"] = w; st.rerun()
+        # 📺 급상승 채널 (새로 뜨는 채널 발굴 → 담기)
+        import collections as _col
+        _chc = _col.Counter(v.get("channel", "") for v in rr["videos"] if v.get("channel"))
+        if _chc:
+            st.markdown("**📺 급상승 채널** (담으면 원채널로 추적)")
+            for _ci, (chname, ccnt) in enumerate(_chc.most_common(5)):
+                _cc = st.columns([3, 1])
+                _cc[0].caption(f"📺 {chname} · 급상승 {ccnt}개")
+                _vu = next((f"https://youtu.be/{v['video_id']}" for v in rr["videos"]
+                            if v.get("channel") == chname and not str(v.get("video_id", "")).startswith("demo")), "")
+                if _vu and _cc[1].button("📌 담기", key=f"radar_chadd_{_ci}"):
+                    G.add_benchmarks(rtarget, [_vu]); st.toast(f"'{rtarget}'에 채널 담음(원채널 확장)")
+        st.divider()
+
         for i, v in enumerate(rr["videos"]):
             box = st.container(border=True)
             cc = box.columns([1, 3])
