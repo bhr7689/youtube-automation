@@ -546,10 +546,10 @@ if page == "🔬 구간 분석":
                                     unsafe_allow_html=True)
                             else:
                                 card.image(v["thumb"], use_container_width=True)
-                        # 카드에서 바로 🔖북마크 · 🔔알림 · ⭐집중
+                        # 카드에서 바로 🔖북마크 · 🔔알림 · ⭐집중 · 🗑삭제
                         burl = v.get("bench_url", "")
                         b = bench_by_url.get(burl)
-                        a1, a2, a3 = card.columns(3)
+                        a1, a2, a3, a4 = card.columns(4)
                         if b is not None:
                             if a1.checkbox("🔖", value=b.get("bookmark"), key=f"bk_{label}_{j}",
                                            help="채널 북마크") != b.get("bookmark"):
@@ -562,6 +562,15 @@ if page == "🔬 구간 분석":
                             G.add_benchmarks(G.FOCUS_BUCKET, [burl])
                             G.toggle_flag(G.FOCUS_BUCKET, burl, "alarm", True)
                             st.toast("⭐ 집중 벤치마킹에 추가 + 🔔알림 ON")
+                        if a4.button("🗑", key=f"del_{label}_{j}", help="잘못 수집된 링크 삭제 (이 소스 링크 + 카드 즉시 제거)",
+                                     disabled=not burl):
+                            G.remove_benchmark(cur, burl)                 # 원본 소스 링크 제거
+                            info["videos"] = [x for x in info["videos"]  # 이 소스의 카드 즉시 제거
+                                              if x.get("bench_url") != burl]
+                            info["count"] = len(info["videos"])
+                            rep["total"] = sum(t["count"] for t in rep["tiers"].values())
+                            _ss_set("report_" + cur, rep)
+                            st.toast("🗑 잘못 수집 링크 삭제됨"); st.rerun()
                         card.caption(f"👁 {int(v.get('views',0)):,} · 📅 {v.get('published','')}")
                         card.caption(f"📺 {(v.get('source','') or '')[:22]}")
                         card.caption((v.get("title", "") or "")[:38])
