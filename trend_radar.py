@@ -48,25 +48,9 @@ def _vpd(views: int, published: str) -> float:
 
 
 def _translate_titles(titles: list[str]) -> dict[int, str]:
-    """제목들 → 자연스러운 한국어 번역(배치). 키 없으면 빈 dict."""
-    try:
-        import concept_maker as CM
-    except Exception:                   # noqa: BLE001
-        return {}
-    if not (CM.llm_status().get("openai") or CM.llm_status().get("gemini")):
-        return {}
-    items = "\n".join(f"{i}. {t}" for i, t in enumerate(titles))
-    prompt = ("다음 유튜브 제목들을 자연스러운 한국어로 번역해. 의미가 통하게, 유튜브 제목답게.\n"
-              f"{items}\n\nJSON만: {{\"t\":[{{\"i\":0,\"ko\":\"한국어 번역\"}}]}}")
-    raw = CM._llm(prompt, json_mode=True)
-    if not raw:
-        return {}
-    try:
-        import json
-        d = json.loads(raw) if raw.strip().startswith("{") else (CM._parse_json(raw) or {})
-        return {int(x["i"]): x.get("ko", "") for x in d.get("t", []) if "i" in x}
-    except Exception:                   # noqa: BLE001
-        return {}
+    """외국어 제목 → 한국어 '번안'(직역 아님, 현지 정서→우리 정서)."""
+    import localize
+    return localize.localize_batch(titles, target="KR")
 
 
 def strip_genre_template(title: str, my_genre_word: str = "우리 장르") -> str:

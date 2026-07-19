@@ -40,6 +40,7 @@ import thumb_scorer as TS
 import channel_watcher as W
 import trend_radar as TR
 import chat_editor as CE
+import localize as LZ
 
 st.set_page_config(page_title="🎬 썸네일·제목 연구소", page_icon="🎬", layout="wide")
 
@@ -517,11 +518,14 @@ if page == "✨ 생성":
     st.subheader(f"✨ 생성 — {cur}")
     st.caption("장르 공식 + 🧺 바구니 무드 + 내 콘텐츠 → 썸네일·제목 세트. 씬은 이미지, 글자는 코드로.")
     content = st.text_input("이번 영상 소재", placeholder="파리 카페의 비 오는 아침, 스텔라장 스타일 피아노")
-    gc1, gc2 = st.columns(2)
+    gc1, gc2, gc3 = st.columns(3)
     n = gc1.slider("만들 세트 수", 1, 5, 3)
     thumb_style = gc2.selectbox("🎨 썸네일 공격 스타일", list(TS.STYLES),
                                 help="폰에서 스크롤 멈추는 한 방. 강대비/병맛/감성/미니멀 중 선택")
-    st.caption("💡 폰 화면 기준 — 핵심 포인트 하나 + 강한 대비. 잡다한 건 감점돼요.")
+    _tgt_names = {LZ.REGION_NAME[k]: k for k in LZ.REGION_NAME}
+    gen_target = _tgt_names[gc3.selectbox("🌐 타깃 언어(현지 정서)", list(_tgt_names),
+                                          help="그 나라 현지인이 실제 검색·사용하는 말투로 '번안'. 직역 아님")]
+    st.caption("💡 폰 기준 — 핵심 포인트 하나 + 강한 대비. 🌐 타깃 언어면 현지 정서로 번안(제목+한국어 병기).")
     basket = G.get_basket(cur)
     refs = [b["thumb"] for b in basket if b.get("thumb")]
     st.caption(f"🧺 바구니 레퍼런스 {len(refs)}장 무드 반영 예정")
@@ -555,6 +559,14 @@ if page == "✨ 생성":
         with st.spinner("세트 생성 + 🏆 CTR 예측 채점 중…"):
             sets = _generate_sets(cur, content, n, formula, ref_titles)
             sets = CS.score_sets(sets, cur, ident)     # 후보 채점 → 베스트 정렬
+            if gen_target != "KR":                     # 타깃 언어면 현지 정서로 번안(+한국어 병기)
+                _tl = LZ.localize_batch([s["title"] for s in sets], gen_target)
+                _xl = LZ.localize_batch([s.get("thumb_text", "") for s in sets], gen_target)
+                for _i, _s in enumerate(sets):
+                    if _tl.get(_i):
+                        _s["title_ko"] = _s["title"]; _s["title"] = _tl[_i]
+                    if _xl.get(_i):
+                        _s["thumb_text_ko"] = _s.get("thumb_text", ""); _s["thumb_text"] = _xl[_i]
         _ss_set("gen_" + cur, sets)
 
     gens = st.session_state.get("gen_" + cur, [])
@@ -573,9 +585,13 @@ if page == "✨ 생성":
                 box.caption("💬 " + sc["reason"])
         else:
             box.markdown(f"**세트 {i+1}**")
-        box.caption("📋 제목")
+        box.caption("📋 제목" + ("  ·  🌐 현지 정서 번안" if s.get("title_ko") else ""))
         box.code(s["title"], language=None)
-        box.caption("🖼 썸네일 문구(이미지 위 글자): " + s.get("thumb_text", ""))
+        if s.get("title_ko"):
+            box.caption("🇰🇷 " + s["title_ko"])
+        _tx = s.get("thumb_text", "")
+        box.caption("🖼 썸네일 문구(이미지 위 글자): " + _tx
+                    + (f"  (🇰🇷 {s['thumb_text_ko']})" if s.get("thumb_text_ko") else ""))
 
         # 외부 도구용 프롬프트 (복붙) — 공식(원리) + 우리 시그니처 + 복제 금지
         base_scene = s.get("scene", content)

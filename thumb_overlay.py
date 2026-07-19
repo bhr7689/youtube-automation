@@ -16,14 +16,17 @@ try:
 except Exception:                       # noqa: BLE001
     Image = None
 
-# 한글 렌더 가능 폰트 후보 (플랫폼별)
+# 한글·일본어·중국어 렌더 가능 폰트 후보 (플랫폼별, CJK 지원 우선)
 _FONT_CANDIDATES = [
-    "C:/Windows/Fonts/malgunbd.ttf", "C:/Windows/Fonts/malgun.ttf",     # Windows 맑은고딕
+    "C:/Windows/Fonts/malgunbd.ttf", "C:/Windows/Fonts/malgun.ttf",     # Windows 맑은고딕(한)
+    "C:/Windows/Fonts/YuGothB.ttc", "C:/Windows/Fonts/meiryob.ttc",     # Windows 일본어
+    "C:/Windows/Fonts/meiryo.ttc", "C:/Windows/Fonts/msgothic.ttc",
+    "C:/Windows/Fonts/msyh.ttc",                                        # Windows 중국어
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",             # CJK 통합(한·일·중)
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
     "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf",
     "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
-    "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
-    "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
-    "/System/Library/Fonts/AppleSDGothicNeo.ttc",                        # macOS
+    "/System/Library/Fonts/AppleSDGothicNeo.ttc",                       # macOS
 ]
 
 
