@@ -390,21 +390,30 @@ if page == "🔖 북마크 채널":
             _ss_set("bm_" + cur, BT.collect(proj["benchmarks"]))
     if b2.button("🇰🇷🇯🇵 제목 번안 보기 (일↔한)"):
         _d = st.session_state.get("bm_" + cur)
-        if _d:
+        if not LZ.available():
+            st.warning("번안하려면 GPT(OpenAI) 또는 Gemini 키가 필요해요. ⚙️ 설정 탭에서 키를 저장해주세요.")
+        elif not _d:
+            st.info("먼저 '🔖 북마크 채널 불러오기'로 채널을 불러온 뒤 번안하세요.")
+        else:
             _allt = [(v["video_id"], v["title"]) for ch in _d["channels"]
                      for v in ch["videos"] if v.get("video_id")]
             _ja = [(vid, t) for vid, t in _allt if LC.is_japanese({"title": t})]
             _ko = [(vid, t) for vid, t in _allt if not LC.is_japanese({"title": t})]
             _tr = {}
-            if _ja:
-                _m = LZ.localize_batch([t for _, t in _ja], "KR")
-                for _i, (vid, _) in enumerate(_ja):
-                    _tr[vid] = ("🇰🇷", _m.get(_i, ""))
-            if _ko:
-                _m = LZ.localize_batch([t for _, t in _ko], "JP")
-                for _i, (vid, _) in enumerate(_ko):
-                    _tr[vid] = ("🇯🇵", _m.get(_i, ""))
+            with st.spinner(f"번안 중… (일본어 {len(_ja)} → 🇰🇷 · 한국어 {len(_ko)} → 🇯🇵)"):
+                if _ja:                     # 일본어 제목 → 한국어 번안
+                    _m = LZ.localize_batch([t for _, t in _ja], "KR")
+                    for _i, (vid, _) in enumerate(_ja):
+                        _tr[vid] = ("🇰🇷", _m.get(_i, ""))
+                if _ko:                     # 한국어 제목 → 일본어 번안
+                    _m = LZ.localize_batch([t for _, t in _ko], "JP")
+                    for _i, (vid, _) in enumerate(_ko):
+                        _tr[vid] = ("🇯🇵", _m.get(_i, ""))
             _ss_set("bmtr_" + cur, _tr)
+            if not any(v[1] for v in _tr.values()):
+                st.warning("번안 결과가 비어 있어요. 키가 유효한지 확인하거나 다시 눌러주세요.")
+            else:
+                st.toast("번안 완료")
 
     data = st.session_state.get("bm_" + cur)
     tr = st.session_state.get("bmtr_" + cur, {})
@@ -628,6 +637,11 @@ if page == "🌊 트렌드 레이더":
         _usedkw = rr.get("keywords", [])
         st.caption(f"🌍 {region} · 급상승 {len(rr['videos'])}개 (일평균 조회수 높은 순)"
                    + (f" · 검색어: {', '.join(_usedkw[:6])}" if _usedkw else ""))
+        # 외국 결과인데 번안(🇰🇷)이 하나도 없으면 → 키 안내
+        if region != "KR" and rr.get("videos") and not any(v.get("title_ko") for v in rr["videos"]):
+            if not LZ.available():
+                st.warning("제목 번안(🇰🇷)을 보려면 GPT/Gemini 키가 필요해요. ⚙️ 설정 탭에서 키를 저장하면 "
+                           "일본어 제목 아래 한국어 번안이 함께 나와요.")
         _plist = list(state["projects"].keys())
         _tc1, _tc2 = st.columns([3, 1])
         rtarget = _tc1.selectbox("📁 담을 장르 (아래 버튼이 이 장르로 저장돼요)", _plist,
