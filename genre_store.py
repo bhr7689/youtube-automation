@@ -281,6 +281,19 @@ def get_identity(name: str) -> dict:
     return load_state()["projects"].get(name, {}).get("identity", {})
 
 
+def add_example_title(name: str, title: str) -> dict:
+    """전이 템플릿/참고 제목을 장르의 example_titles 에 추가(생성이 참고)."""
+    st = load_state()
+    p = st["projects"].get(name)
+    if p and title:
+        gp = p.setdefault("identity", {}).setdefault("generation_prompt", {})
+        ex = gp.setdefault("example_titles", [])
+        if title not in ex:
+            ex.append(title)
+            save_state(st)
+    return st
+
+
 def set_signature(name: str, text: str) -> dict:
     """우리 채널만의 '결'(색·아트스타일·모티프·톤·차별점). 복제 방지용."""
     st = load_state()

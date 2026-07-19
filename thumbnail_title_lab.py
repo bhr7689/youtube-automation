@@ -38,6 +38,7 @@ import analysis_cache as AC
 import ctr_scorer as CS
 import thumb_scorer as TS
 import channel_watcher as W
+import trend_radar as TR
 
 st.set_page_config(page_title="🎬 썸네일·제목 연구소", page_icon="🎬", layout="wide")
 
@@ -126,7 +127,7 @@ def _ss_del(key: str) -> None:
 
 # ── 페이지 네비게이션 ─────────────────────────────────────────
 PAGES = ["🏠 대시보드", "🗂 자동분류", "🔬 구간 분석", "🎯 일치성", "✨ 생성",
-         "🧺 레퍼런스 바구니", "🔔 감시/알림", "⚙️ 설정"]
+         "🌊 트렌드 레이더", "🧺 레퍼런스 바구니", "🔔 감시/알림", "⚙️ 설정"]
 if "_goto" in st.session_state:          # 다른 화면에서 넘어온 이동 요청(위젯 생성 전 반영)
     st.session_state["nav"] = st.session_state.pop("_goto")
 
@@ -638,6 +639,40 @@ if page == "✨ 생성":
                     box.caption("💬 " + imgsc["verdict"])
                 for _tip in imgsc.get("tips", []):
                     box.write("• " + _tip)
+
+# ═══════════════════════════════════════════════════════════════
+# 🌊 트렌드 레이더
+# ═══════════════════════════════════════════════════════════════
+if page == "🌊 트렌드 레이더":
+    st.subheader("🌊 트렌드 레이더 — 장르 불문 '지금 터지는 제목'")
+    st.caption("터지는 제목 = [상황]+[장르]. 상황 구조는 장르를 초월해요. 다른 장르 급상승 제목을 "
+               "가져와 **장르만 우리 걸로** 바꿔 쓰면 됩니다.")
+    kws = st.text_input("상황 키워드 (쉼표 구분, 비우면 기본 세트: 비·눈·여름·초여름·녹음·새벽…)",
+                        key="radar_kw")
+    kw_list = [k.strip() for k in kws.split(",") if k.strip()] or None
+    if st.button("🔍 지금 터지는 제목 찾기", type="primary"):
+        with st.spinner("최근 급상승 검색 중…"):
+            _ss_set("radar_res", TR.find_surging(kw_list))
+
+    rr = st.session_state.get("radar_res")
+    if rr:
+        if rr.get("engine") == "demo":
+            st.warning("⚠️ YouTube 키가 없어 데모입니다. (사장님 PC에선 실검색)")
+        st.caption(f"급상승 {len(rr['videos'])}개 (일평균 조회수 높은 순)")
+        for i, v in enumerate(rr["videos"]):
+            box = st.container(border=True)
+            cc = box.columns([1, 3])
+            if v.get("thumb"):
+                cc[0].image(v["thumb"], use_container_width=True)
+            cc[1].markdown(f"**{v['title']}**")
+            cc[1].caption(f"🔥 일평균 {int(v.get('vpd',0)):,}회 · 👁 {v.get('views',0):,} · "
+                          f"[{v.get('keyword','')}] · 📺 {(v.get('channel','') or '')[:18]}")
+            tmpl = TR.strip_genre_template(v["title"])
+            cc[1].caption("💡 전이 템플릿 (장르만 우리 걸로 바꾸면 됨)")
+            cc[1].code(tmpl, language=None)
+            if cc[1].button(f"➡️ '{cur}' 참고 제목으로 저장", key=f"radar_apply_{i}"):
+                G.add_example_title(cur, tmpl)
+                st.toast("저장! ✨ 생성에서 참고 제목으로 쓰여요")
 
 # ═══════════════════════════════════════════════════════════════
 # 🧺 레퍼런스 바구니
