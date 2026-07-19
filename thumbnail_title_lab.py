@@ -360,6 +360,29 @@ if page == "🔖 북마크 채널":
     st.subheader(f"🔖 북마크 채널 — {cur}")
     st.caption("🔖 북마크한 채널을 조회수순으로: 채널명·로고·구독자·개설일 + 인기 영상(썸네일·제목·조회수). "
                "🔔 알림 켜면 새 영상+72h 성과 카톡.")
+
+    with st.expander("➕ 이 장르에 북마크 채널 직접 추가 (채널/영상 URL, 여러 줄)", expanded=False):
+        st.caption(f"여기에 넣으면 **'{cur}' 장르**에 바로 🔖 북마크로 등록돼요. 영상 링크는 원채널로 추적돼요.")
+        _bt = st.text_area("채널/영상 URL", height=90, key="bmadd_" + cur,
+                           placeholder="https://www.youtube.com/@channel\nhttps://youtu.be/xxxx")
+        _bal = st.checkbox("🔔 새 영상·72h 성과 알림도 함께 켜기", value=True, key="bmadd_al_" + cur)
+        if st.button("🔖 북마크로 추가", type="primary", disabled=not _bt.strip()):
+            _urls = [u.strip() for u in _bt.replace(",", "\n").splitlines() if u.strip()]
+            _added = 0
+            for u in _urls:
+                if "youtu" not in u.lower():      # 유튜브 URL 아니면 건너뜀
+                    continue
+                G.add_benchmarks(cur, [u])
+                G.toggle_flag(cur, u, "bookmark", True)
+                if _bal:
+                    G.toggle_flag(cur, u, "alarm", True)
+                _added += 1
+            if _added:
+                _ss_del("bm_" + cur)              # 다시 불러오기 유도
+                st.toast(f"🔖 {_added}개 북마크 추가 (알림 {'ON' if _bal else 'OFF'})"); st.rerun()
+            else:
+                st.warning("유튜브 URL을 찾지 못했어요. (채널/@핸들/영상 링크를 넣어주세요)")
+
     _bm = [b for b in proj["benchmarks"] if b.get("bookmark")]
     b1, b2 = st.columns(2)
     if b1.button(f"🔖 북마크 채널 불러오기 ({len(_bm)}개)", type="primary"):
