@@ -739,10 +739,13 @@ if page == "🌊 트렌드 레이더":
             if v.get("thumb"):
                 cc[0].image(v["thumb"], use_container_width=True)
             cc[1].markdown(f"**{v['title']}**")
+            if v.get("title_ko"):
+                cc[1].markdown(f"🇰🇷 {v['title_ko']}")
             cc[1].caption(f"🔥 일평균 {int(v.get('vpd',0)):,}회 · 👁 {v.get('views',0):,} · "
                           f"[{v.get('keyword','')}] · 📺 {(v.get('channel','') or '')[:18]}")
-            tmpl = TR.strip_genre_template(v["title"])
-            cc[1].caption("💡 전이 템플릿 (장르만 우리 걸로 바꾸면 됨)")
+            src_title = v.get("title_ko") or v["title"]     # 번역본 있으면 그걸로 템플릿
+            tmpl = TR.strip_genre_template(src_title)
+            cc[1].caption("💡 전이 템플릿 (한국어 · 장르만 우리 걸로 바꾸면 됨)")
             cc[1].code(tmpl, language=None)
             if cc[1].button(f"➡️ '{cur}' 참고 제목으로 저장", key=f"radar_apply_{i}"):
                 G.add_example_title(cur, tmpl)

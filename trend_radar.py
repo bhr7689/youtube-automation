@@ -47,6 +47,28 @@ def _vpd(views: int, published: str) -> float:
     return T.views_per_day(views, published)
 
 
+def _translate_titles(titles: list[str]) -> dict[int, str]:
+    """제목들 → 자연스러운 한국어 번역(배치). 키 없으면 빈 dict."""
+    try:
+        import concept_maker as CM
+    except Exception:                   # noqa: BLE001
+        return {}
+    if not (CM.llm_status().get("openai") or CM.llm_status().get("gemini")):
+        return {}
+    items = "\n".join(f"{i}. {t}" for i, t in enumerate(titles))
+    prompt = ("다음 유튜브 제목들을 자연스러운 한국어로 번역해. 의미가 통하게, 유튜브 제목답게.\n"
+              f"{items}\n\nJSON만: {{\"t\":[{{\"i\":0,\"ko\":\"한국어 번역\"}}]}}")
+    raw = CM._llm(prompt, json_mode=True)
+    if not raw:
+        return {}
+    try:
+        import json
+        d = json.loads(raw) if raw.strip().startswith("{") else (CM._parse_json(raw) or {})
+        return {int(x["i"]): x.get("ko", "") for x in d.get("t", []) if "i" in x}
+    except Exception:                   # noqa: BLE001
+        return {}
+
+
 def strip_genre_template(title: str, my_genre_word: str = "우리 장르") -> str:
     """제목에서 장르 단어를 {내 장르} 로 치환 → 전이 가능한 템플릿."""
     t = title or ""
@@ -117,7 +139,12 @@ def find_surging(keywords: list[str] | None = None, days: int = 14,
             except Exception:           # noqa: BLE001
                 continue
         vids.sort(key=lambda x: x["vpd"], reverse=True)
-        return {"engine": "youtube", "region": region, "videos": vids[:top]}
+        vids = vids[:top]
+        if region != "KR" and vids:     # 외국어 제목 → 한국어 번역 병기
+            trans = _translate_titles([v["title"] for v in vids])
+            for i, v in enumerate(vids):
+                v["title_ko"] = trans.get(i, "")
+        return {"engine": "youtube", "region": region, "videos": vids}
     except Exception:                   # noqa: BLE001
         return {"engine": "demo", "region": region, "videos": _demo(keywords)}
 
@@ -132,10 +159,13 @@ def alert(keywords: list[str] | None = None, notify: bool = False, min_vpd: int 
         try:
             import kakao_notify
             for v in hot:
+                ko = v.get("title_ko", "")
+                src = ko or v["title"]
                 kakao_notify.send_to_me(
                     f"🌊 지금 터지는 제목 [{v['keyword']}]\n{v['title']}\n"
-                    f"👁 {v['views']:,} · 일평균 {int(v['vpd']):,}회\n"
-                    f"💡 템플릿: {strip_genre_template(v['title'])}\n"
+                    + (f"🇰🇷 {ko}\n" if ko else "")
+                    + f"👁 {v['views']:,} · 일평균 {int(v['vpd']):,}회\n"
+                    f"💡 템플릿: {strip_genre_template(src)}\n"
                     f"▶ https://youtu.be/{v['video_id']}", link=f"https://youtu.be/{v['video_id']}")
         except Exception as e:           # noqa: BLE001
             print("카톡 스킵:", e)
