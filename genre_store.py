@@ -199,6 +199,21 @@ def add_benchmarks(name: str, text_or_list) -> dict:
     return st
 
 
+def move_benchmark(from_name: str, url: str, to_name: str) -> dict:
+    """벤치마크를 다른 장르로 이동(플래그·채널정보 보존)."""
+    st = load_state()
+    src, dst = st["projects"].get(from_name), st["projects"].get(to_name)
+    if not (src and dst) or from_name == to_name:
+        return st
+    item = next((b for b in src["benchmarks"] if b["url"] == url), None)
+    if item:
+        src["benchmarks"] = [b for b in src["benchmarks"] if b["url"] != url]
+        if not any(b["url"] == url for b in dst["benchmarks"]):
+            dst["benchmarks"].append(item)
+        save_state(st)
+    return st
+
+
 def remove_benchmark(name: str, url: str) -> dict:
     st = load_state()
     p = st["projects"].get(name)
