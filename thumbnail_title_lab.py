@@ -52,6 +52,7 @@ import trend_radar as TR
 import chat_editor as CE
 import localize as LZ
 import img_similar as IMG
+import title_digest as TD
 
 st.set_page_config(page_title="🎬 썸네일·제목 연구소", page_icon="🎬", layout="wide")
 
@@ -852,7 +853,7 @@ if page == "🌊 트렌드 레이더":
             cc[1].code(tmpl, language=None)
             _vurl = f"https://youtu.be/{v.get('video_id','')}"
             _demo = str(v.get("video_id", "")).startswith("demo")
-            b1, b2, b3 = cc[1].columns(3)
+            b1, b2, b3, b4 = cc[1].columns(4)
             if b1.button("➡️ 참고제목", key=f"radar_apply_{i}", help="전이 템플릿을 참고제목으로"):
                 G.add_example_title(rtarget, tmpl); st.toast(f"'{rtarget}' 참고제목 저장")
             if b2.button("📌 벤치마크", key=f"radar_bench_{i}", disabled=_demo,
@@ -862,13 +863,16 @@ if page == "🌊 트렌드 레이더":
                          help="집중 벤치마킹에 추가 + 새 영상 알림 ON"):
                 G.add_benchmarks(G.FOCUS_BUCKET, [_vurl])
                 G.toggle_flag(G.FOCUS_BUCKET, _vurl, "alarm", True); st.toast("⭐ 집중 벤치마킹 + 🔔알림")
+            if b4.button("🧺 바구니", key=f"radar_bskt_{i}", help="썸네일+제목을 바구니에 담기(패턴 학습)"):
+                G.add_to_basket(rtarget, v.get("thumb", ""), v["title"], v.get("channel", ""),
+                                title_ko=v.get("title_ko", "")); st.toast(f"🧺 '{rtarget}' 바구니에 담음")
 
 # ═══════════════════════════════════════════════════════════════
 # 🧺 레퍼런스 바구니
 # ═══════════════════════════════════════════════════════════════
 if page == "🧺 레퍼런스 바구니":
     st.subheader(f"🧺 레퍼런스 바구니 — {cur}")
-    st.caption("체크해 담은 썸네일(이미지+제목). 생성 시 무드·제목 공식으로 자동 반영.")
+    st.caption("담은 썸네일+제목을 쭉 모아 정서·표기 패턴을 익혀요. 생성 시 무드·제목 공식으로도 반영.")
     up = st.file_uploader("내 캡처 이미지 추가(바구니에 합류)", type=["png", "jpg", "jpeg", "webp"],
                           accept_multiple_files=True)
     if up:
@@ -879,16 +883,42 @@ if page == "🧺 레퍼런스 바구니":
         st.toast(f"{len(up)}장 담음"); st.rerun()
     basket = G.get_basket(cur)
     if not basket:
-        st.info("아직 비었습니다. 구간 분석에서 🧺 버튼으로 담거나, 위에서 캡처를 올리세요.")
-    grid = st.columns(4)
-    for i, b in enumerate(basket):
-        with grid[i % 4]:
+        st.info("아직 비었습니다. 트렌드 레이더/구간분석에서 🧺 버튼으로 담거나, 위에서 캡처를 올리세요.")
+    else:
+        _bt = [b.get("title", "") for b in basket if b.get("title")]
+        with st.expander(f"📊 제목 정서·표기 패턴 학습 ({len(_bt)}개 제목)", expanded=True):
+            dg = TD.digest(_bt)
+            if dg.get("n"):
+                st.write("**🔤 앞머리 키워드**: " + " · ".join(f"{w}({c})" for w, c in dg["leading"][:8]))
+                st.write("**💗 감정·감각어**: " + (", ".join(f"{w}" for w, _ in dg["sensory"][:8]) or "-")
+                         + "  · **🌦 상황어**: " + (", ".join(f"{w}" for w, _ in dg["situation"][:8]) or "-"))
+                st.write("**😀 이모지**: " + ("".join(w for w, _ in dg["emojis"][:8]) or "-"))
+                st.caption(f"평균 길이 {dg['avg_length']}자 · 괄호 표기 {dg['bracket_pct']}% · "
+                           f"구분자(|·) {dg['sep_pct']}% · 이모지 {dg['emoji_pct']}%")
+                if st.button("🧠 이 나라 정서·표기 관습 요약(GPT)"):
+                    with st.spinner("정서 패턴 요약 중…"):
+                        _sm = TD.native_summary(_bt, region_name=cur)
+                    if _sm:
+                        _ss_set("digest_" + cur, _sm)
+                    else:
+                        st.warning("요약은 OpenAI/Gemini 키가 필요해요.")
+                if st.session_state.get("digest_" + cur):
+                    st.info(st.session_state["digest_" + cur])
+            else:
+                st.caption("제목이 있는 항목이 아직 없어요.")
+
+        st.markdown("**📋 담은 목록 (썸네일 ↔ 제목 단짝)**")
+        for i, b in enumerate(basket):
+            row = st.container(border=True)
+            rc = row.columns([1, 3])
             if b.get("thumb"):
-                st.image(b["thumb"], use_container_width=True)
+                rc[0].image(b["thumb"], use_container_width=True)
             if b.get("title"):
-                st.caption(b["title"][:40])
-            st.caption("출처: " + (b.get("source", "") or "-"))
-            if st.button("🗑 빼기", key=f"unbsk_{i}"):
+                rc[1].markdown(f"**{b['title']}**")
+            if b.get("title_ko"):
+                rc[1].caption("🇰🇷 " + b["title_ko"])
+            rc[1].caption("📺 출처: " + (b.get("source", "") or "-"))
+            if rc[1].button("🗑 빼기", key=f"unbsk_{i}"):
                 G.remove_from_basket(cur, i); st.rerun()
 
 # ═══════════════════════════════════════════════════════════════

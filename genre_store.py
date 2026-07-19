@@ -244,13 +244,15 @@ def load_exported_watch(path: str = WATCH_EXPORT_PATH) -> list[dict]:
 
 
 # ── 레퍼런스 바구니 ───────────────────────────────────────────
-def add_to_basket(name: str, thumb: str, title: str = "", source: str = "", note: str = "") -> dict:
+def add_to_basket(name: str, thumb: str, title: str = "", source: str = "",
+                  note: str = "", title_ko: str = "") -> dict:
     st = load_state()
     p = st["projects"].get(name)
     if p is not None:
         key = (thumb or "") + "|" + (title or "")
         if not any((b.get("thumb", "") + "|" + b.get("title", "")) == key for b in p["basket"]):
-            p["basket"].append({"thumb": thumb, "title": title, "source": source, "note": note})
+            p["basket"].append({"thumb": thumb, "title": title, "title_ko": title_ko,
+                                "source": source, "note": note})
             save_state(st)
     return st
 
