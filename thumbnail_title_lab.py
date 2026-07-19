@@ -152,8 +152,8 @@ def _ss_del(key: str) -> None:
     AC.delete(key)
 
 # ── 페이지 네비게이션 ─────────────────────────────────────────
-PAGES = ["🏠 대시보드", "🗂 자동분류", "🔬 구간 분석", "🎯 일치성", "✨ 생성",
-         "🤖 AI 편집", "🌊 트렌드 레이더", "🧺 레퍼런스 바구니", "🔔 감시/알림", "⚙️ 설정"]
+PAGES = ["🏠 대시보드", "🗂 자동분류", "🔬 구간 분석", "🌊 트렌드 레이더",
+         "🔔 감시/알림", "⚙️ 설정"]
 if "_goto" in st.session_state:          # 다른 화면에서 넘어온 이동 요청(위젯 생성 전 반영)
     st.session_state["nav"] = st.session_state.pop("_goto")
 
@@ -201,28 +201,6 @@ with st.sidebar:
         if not yt:
             st.caption("↳ 키 없으면 데모 데이터로 시연됩니다.")
     st.caption("발행 6개월 이내 · 구간 1천~30만+")
-
-    st.divider()
-    with st.expander("🤖 AI 대화 (어느 페이지든)", expanded=False):
-        _wk, _hk = f"chat_work_{cur}", f"chat_hist_{cur}"
-        _work = st.session_state.get(_wk, {"title": "", "thumb_text": "", "scene": ""})
-        _hist = st.session_state.get(_hk, [])
-        for _m in _hist[-3:]:
-            st.caption(("🙋 " if _m["role"] == "user" else "🤖 ") + _m["content"][:70])
-        _msg = st.text_input("메시지", key="side_chat_in", label_visibility="collapsed",
-                             placeholder="예: 제목 더 궁금하게, 문구 짧게")
-        if st.button("보내기", key="side_chat_send", use_container_width=True) and _msg.strip():
-            _idt = G.get_identity(cur) or {}
-            _brief = " | ".join(filter(None, [_idt.get("signature", ""),
-                                              _idt.get("generation_prompt", {}).get("title_template", "")]))
-            _h2 = _hist + [{"role": "user", "content": _msg}]
-            _r = CE.chat(_h2, _work, cur, _brief)
-            _ss_set(_wk, {"title": _r["title"], "thumb_text": _r["thumb_text"], "scene": _r["scene"]})
-            _ss_set(_hk, _h2 + [{"role": "assistant", "content": _r["reply"]}])
-            st.rerun()
-        if _work.get("title"):
-            st.caption("📝 현재: " + _work["title"][:38])
-        st.caption("🤖 AI 편집 페이지에서 이어서 그리기까지 가능")
 
 
 # (탭 → 사이드바 메뉴 전환: page 값으로 각 화면 표시)
@@ -463,10 +441,10 @@ if page == "🔬 구간 분석":
                                     unsafe_allow_html=True)
                             else:
                                 card.image(v["thumb"], use_container_width=True)
-                        # 카드에서 바로 🔖북마크 · 🔔알림 · 🧺바구니 · ⭐집중
+                        # 카드에서 바로 🔖북마크 · 🔔알림 · ⭐집중
                         burl = v.get("bench_url", "")
                         b = bench_by_url.get(burl)
-                        a1, a2, a3, a4 = card.columns(4)
+                        a1, a2, a3 = card.columns(3)
                         if b is not None:
                             if a1.checkbox("🔖", value=b.get("bookmark"), key=f"bk_{label}_{j}",
                                            help="채널 북마크") != b.get("bookmark"):
@@ -474,10 +452,7 @@ if page == "🔬 구간 분석":
                             if a2.checkbox("🔔", value=b.get("alarm"), key=f"al_{label}_{j}",
                                            help="새 영상 카톡 알림") != b.get("alarm"):
                                 G.toggle_flag(cur, burl, "alarm"); st.rerun()
-                        if a3.button("🧺", key=f"bsk_{label}_{j}", help="레퍼런스 바구니에 담기"):
-                            G.add_to_basket(cur, v.get("thumb", ""), v.get("title", ""),
-                                            v.get("source", "")); st.toast("바구니에 담음")
-                        if a4.button("⭐", key=f"fc_{label}_{j}", help="집중 벤치마킹에 추가 + 알림 ON",
+                        if a3.button("⭐", key=f"fc_{label}_{j}", help="집중 벤치마킹에 추가 + 알림 ON",
                                      disabled=(not burl or cur == G.FOCUS_BUCKET)):
                             G.add_benchmarks(G.FOCUS_BUCKET, [burl])
                             G.toggle_flag(G.FOCUS_BUCKET, burl, "alarm", True)
@@ -485,364 +460,6 @@ if page == "🔬 구간 분석":
                         card.caption(f"👁 {int(v.get('views',0)):,} · 📅 {v.get('published','')}")
                         card.caption(f"📺 {(v.get('source','') or '')[:22]}")
                         card.caption((v.get("title", "") or "")[:38])
-                        if v.get("video_id"):      # ✅ 선택 → 일치성 탭에서 5개 예시 생성
-                            card.checkbox("✅ 선택", key=f"pick_{cur}_{v['video_id']}")
-
-# ═══════════════════════════════════════════════════════════════
-# 🎯 일치성 검사
-# ═══════════════════════════════════════════════════════════════
-if page == "🎯 일치성":
-    st.subheader("🎯 선택 → 패턴 공식 → 5개 예시 (이미지프롬프트+제목)")
-    st.caption("🔬 구간분석 카드에서 ✅ 체크한 썸네일+제목을 모아, 공통 패턴 공식으로 우리 채널용 예시 5개 생성.")
-
-    with st.expander("🎨 채널 전체 '결' 분석 (로고·배너·태그·설명·썸네일 통합)", expanded=False):
-        ch_url = st.text_input("유튜브 채널 URL", key="brand_url",
-                               placeholder="https://www.youtube.com/@channel")
-        if st.button("🎨 채널 결 분석") and ch_url.strip():
-            with st.spinner("채널 브랜드(로고·배너·태그·설명·썸네일) 수집 + GPT Vision…"):
-                _ss_set("brand_" + cur, PA.channel_brand(ch_url, cur))
-        bd = st.session_state.get("brand_" + cur)
-        if bd:
-            if bd.get("error"):
-                st.warning(bd["error"])
-            else:
-                st.markdown(f"**{bd['title']}** · 구독자 {bd.get('subscribers',0):,}")
-                bc = st.columns(2)
-                if bd.get("logo"):
-                    bc[0].caption("로고"); bc[0].image(bd["logo"], width=120)
-                if bd.get("banner"):
-                    bc[1].caption("배너"); bc[1].image(bd["banner"], use_container_width=True)
-                if bd.get("thumbs"):
-                    st.caption("최근 썸네일")
-                    tcols = st.columns(min(6, len(bd["thumbs"])))
-                    for _i, _t in enumerate(bd["thumbs"][:6]):
-                        tcols[_i].image(_t, use_container_width=True)
-                st.caption("📝 설명글: " + (bd.get("description", "") or "")[:200])
-                st.caption("🏷 채널 키워드: " + (bd.get("keywords", "") or "-"))
-                vz = bd.get("vision") or {}
-                if vz:
-                    st.markdown("**🎨 채널 '결' (Vision 종합)**")
-                    st.write(f"- 팔레트: {'  '.join(vz.get('palette',[]))} · 무드: {vz.get('mood','')}")
-                    st.write(f"- 비주얼: {vz.get('visual_style','')} · 톤: {vz.get('tone','')}")
-                    st.write(f"- 로고: {vz.get('logo_style','')} · 배너: {vz.get('banner_style','')}")
-                    st.write(f"- 썸네일 일관성: {vz.get('thumbnail_consistency','')}")
-                    st.info("🧬 " + vz.get("signature_summary", ""))
-                    if st.button("💾 이 결을 참고해 우리 시그니처로 저장"):
-                        G.set_signature(cur, vz.get("signature_summary", ""))
-                        st.success("우리 시그니처로 저장! ✨ 생성에 반영됩니다."); st.rerun()
-
-    st.divider()
-    # 구간분석에서 ✅ 선택한 것 수집
-    rep = st.session_state.get("report_" + cur)
-    selected = []
-    if rep:
-        for label in T.TIER_ORDER:
-            for v in rep["tiers"][label]["videos"]:
-                vid = v.get("video_id", "")
-                if vid and st.session_state.get(f"pick_{cur}_{vid}"):
-                    selected.append(v)
-    with st.expander("📎 (선택) 이미지 직접 업로드로 추가"):
-        ups = st.file_uploader("썸네일 이미지들", type=["png", "jpg", "jpeg", "webp"],
-                               accept_multiple_files=True, key="sel_up")
-        up_titles = st.text_area("각 제목 (한 줄에 하나)", key="sel_up_titles")
-        if ups:
-            import base64
-            _tl = [t.strip() for t in up_titles.split("\n") if t.strip()]
-            for _i, _f in enumerate(ups):
-                selected.append({"thumb": "data:image/png;base64," + base64.b64encode(_f.read()).decode(),
-                                 "title": (_tl[_i] if _i < len(_tl) else ""), "video_id": ""})
-
-    if not selected:
-        st.info("🔬 구간분석에서 카드의 **✅ 선택**을 체크한 뒤 여기로 오세요. (또는 위에서 이미지 업로드)")
-    else:
-        st.write(f"**✅ 선택된 {len(selected)}개 (썸네일↔제목)**")
-        _selt = st.session_state.get("seltrans_" + cur, {})
-        if st.button("🇰🇷 선택 제목 한국어 번안 보기 (일본어 등)"):
-            _m = LZ.localize_batch([_v.get("title", "") for _v in selected], "KR")
-            _selt = {selected[_i].get("title", ""): _m.get(_i, "") for _i in range(len(selected))}
-            _ss_set("seltrans_" + cur, _selt)
-        gcols = st.columns(min(6, len(selected)))
-        for _i, _v in enumerate(selected):
-            with gcols[_i % len(gcols)]:
-                if _v.get("thumb"):
-                    st.image(_v["thumb"], use_container_width=True)
-                st.caption((_v.get("title", "") or "")[:26])
-                _ko = _selt.get(_v.get("title", ""))
-                if _ko:
-                    st.caption("🇰🇷 " + _ko[:26])
-
-        _tn = {LZ.REGION_NAME[k]: k for k in LZ.REGION_NAME}
-        tgt = _tn[st.selectbox("🌐 제목 언어(현지 정서 번안 + 한국어 병기)", list(_tn),
-                               index=list(_tn).index("일본어"))]
-        if st.button("✨ 선택으로 (이미지프롬프트+제목) 5개 생성", type="primary"):
-            sig = (G.get_identity(cur) or {}).get("signature", "")
-            with st.spinner("공통 패턴 파악 + 5개 생성 + 현지 번안 중…"):
-                out = PA.examples_from_selection(selected, cur, sig, n=5)
-                exs = out.get("examples", [])
-                if tgt != "KR" and exs:            # 타깃(일본 등) 현지 정서 + 한국어 병기
-                    _tl2 = LZ.localize_batch([e.get("title", "") for e in exs], tgt)
-                    _xl2 = LZ.localize_batch([e.get("thumb_text", "") for e in exs], tgt)
-                    for _i, e in enumerate(exs):
-                        if _tl2.get(_i):
-                            e["title_ko"] = e["title"]; e["title"] = _tl2[_i]
-                        if _xl2.get(_i):
-                            e["thumb_text_ko"] = e.get("thumb_text", ""); e["thumb_text"] = _xl2[_i]
-                elif tgt == "KR" and exs:          # 한국어 제목 → 일본어 번안 병기(일본 공략)
-                    _ja = LZ.localize_batch([e.get("title", "") for e in exs], "JP")
-                    for _i, e in enumerate(exs):
-                        if _ja.get(_i):
-                            e["title_ja"] = _ja[_i]
-                out["examples"] = exs
-            _ss_set("exgen_" + cur, out)
-
-        out = st.session_state.get("exgen_" + cur)
-        if out:
-            if out.get("pattern"):
-                st.caption("🧩 공통 패턴: " + out["pattern"])
-            for i, e in enumerate(out.get("examples", [])):
-                bx = st.container(border=True)
-                bx.markdown(f"**예시 {i+1}**  ·  📋 제목")
-                bx.code(e.get("title", ""), language=None)
-                if e.get("title_ko"):
-                    bx.caption("🇰🇷 " + e["title_ko"])
-                if e.get("title_ja"):
-                    bx.caption("🇯🇵 " + e["title_ja"])
-                if e.get("thumb_text"):
-                    bx.caption("🖼 문구: " + e["thumb_text"]
-                               + (f"  (🇰🇷 {e['thumb_text_ko']})" if e.get("thumb_text_ko") else ""))
-                bx.caption("📋 이미지 프롬프트 (ChatGPT · Gemini · DALL·E)")
-                bx.code(e.get("image_prompt", ""), language=None)
-                bx.caption("📋 미드저니")
-                bx.code(_mj_prompt(e.get("image_prompt", "")), language=None)
-                ik = f"eximg_{cur}_{i}"
-                if CM and bx.button("🎨 이 예시로 썸네일 그리기", key=f"exdraw_{i}"):
-                    with st.spinner("생성 중…"):
-                        o = CM.generate_thumbnail_image(
-                            TS.STYLES[TS.DEFAULT_STYLE] + " " + e.get("image_prompt", ""),
-                            size="1536x1024",
-                            refs=[b["thumb"] for b in G.get_basket(cur) if b.get("thumb")][:6])
-                    if o.get("data_url"):
-                        _ss_set(ik, OV.to_data_url(OV.overlay_title(o["data_url"], e.get("thumb_text", ""))))
-                        st.rerun()
-                    else:
-                        bx.error(o.get("error", "생성 실패 — OpenAI 키 필요."))
-                if st.session_state.get(ik):
-                    bx.image(st.session_state[ik], use_container_width=True)
-                    bx.download_button("⬇️ 다운로드", data=_dataurl_bytes(st.session_state[ik]),
-                                       file_name=f"{cur}_ex{i+1}.png", mime="image/png", key=f"exdl_{i}")
-
-# ═══════════════════════════════════════════════════════════════
-# ✨ 생성
-# ═══════════════════════════════════════════════════════════════
-if page == "✨ 생성":
-    st.subheader(f"✨ 생성 — {cur}")
-    st.caption("장르 공식 + 🧺 바구니 무드 + 내 콘텐츠 → 썸네일·제목 세트. 씬은 이미지, 글자는 코드로.")
-    content = st.text_input("이번 영상 소재", placeholder="파리 카페의 비 오는 아침, 스텔라장 스타일 피아노")
-    gc1, gc2, gc3 = st.columns(3)
-    n = gc1.slider("만들 세트 수", 1, 5, 3)
-    thumb_style = gc2.selectbox("🎨 썸네일 공격 스타일", list(TS.STYLES),
-                                help="폰에서 스크롤 멈추는 한 방. 강대비/병맛/감성/미니멀 중 선택")
-    _tgt_names = {LZ.REGION_NAME[k]: k for k in LZ.REGION_NAME}
-    gen_target = _tgt_names[gc3.selectbox("🌐 타깃 언어(현지 정서)", list(_tgt_names),
-                                          help="그 나라 현지인이 실제 검색·사용하는 말투로 '번안'. 직역 아님")]
-    st.caption("💡 폰 기준 — 핵심 포인트 하나 + 강한 대비. 🌐 타깃 언어면 현지 정서로 번안(제목+한국어 병기).")
-    basket = G.get_basket(cur)
-    refs = [b["thumb"] for b in basket if b.get("thumb")]
-    st.caption(f"🧺 바구니 레퍼런스 {len(refs)}장 무드 반영 예정")
-    ident = G.get_identity(cur) or {}
-    igp = ident.get("generation_prompt", {})
-    if igp.get("title_template") or igp.get("thumbnail_prompt"):
-        st.info("💡 일치성 탭에서 저장한 **장르 공식(원리)** 이 적용됩니다. + 아래 우리 시그니처로 원본화.")
-
-    with st.expander("🎨 우리 채널 시그니처 (우리만의 '결' — 복제 아닌 원본 만들기)", expanded=False):
-        st.caption("벤치마크에선 '원리'만 배우고, 여기 우리 고유 스타일을 입혀 복제가 아닌 원본으로.")
-        _sigv = ident.get("signature", "")
-        new_sig = st.text_area("색 · 아트스타일 · 모티프 · 톤 · 차별점", value=_sigv, key="sig_" + cur,
-                               placeholder="예: 파스텔 수채 일러스트 + 손글씨 로고 '별밤', 고양이 마스코트, "
-                                           "따뜻한 필름톤, 왼쪽 하단 브랜드 마크, 유럽 빈티지 무드")
-        if st.button("💾 시그니처 저장", key="save_sig"):
-            G.set_signature(cur, new_sig)
-            st.success("저장! 생성에 '우리만의 결'로 반영됩니다."); st.rerun()
-
-    if st.button("✨ 제목·썸네일 세트 생성", type="primary"):
-        formula = ""
-        if igp.get("title_template"):          # 저장된 장르 공식 우선
-            formula = "[저장된 장르 공식] " + igp["title_template"]
-        if not formula:
-            rep = st.session_state.get("report_" + cur)
-            if rep:
-                for label in ("10만+", "5만+", "3만+", "1만+", "5천+"):
-                    if rep["tiers"][label]["count"]:
-                        formula = f"[{label} 공식] " + rep["tiers"][label]["formula"]; break
-        ref_titles = (igp.get("example_titles", []) +
-                      [b["title"] for b in basket if b.get("title")])[:6]
-        with st.spinner("세트 생성 + 🏆 CTR 예측 채점 중…"):
-            sets = _generate_sets(cur, content, n, formula, ref_titles)
-            sets = CS.score_sets(sets, cur, ident)     # 후보 채점 → 베스트 정렬
-            if gen_target != "KR":                     # 타깃 언어면 현지 정서로 번안(+한국어 병기)
-                _tl = LZ.localize_batch([s["title"] for s in sets], gen_target)
-                _xl = LZ.localize_batch([s.get("thumb_text", "") for s in sets], gen_target)
-                for _i, _s in enumerate(sets):
-                    if _tl.get(_i):
-                        _s["title_ko"] = _s["title"]; _s["title"] = _tl[_i]
-                    if _xl.get(_i):
-                        _s["thumb_text_ko"] = _s.get("thumb_text", ""); _s["thumb_text"] = _xl[_i]
-        _ss_set("gen_" + cur, sets)
-
-    gens = st.session_state.get("gen_" + cur, [])
-    if gens:
-        st.caption("💾 생성 이미지는 저장돼 탭을 옮겨도 남아요. 프롬프트는 📋로 복사해 ChatGPT·Gemini·미드저니에서도 쓸 수 있어요.")
-    for i, s in enumerate(gens):
-        box = st.container(border=True)
-        sc = s.get("score", {})
-        if sc:
-            tot = sc.get("total", 0)
-            badge = "🏆 베스트 " if s.get("winner") else ""
-            dot = "🟢" if tot >= 75 else ("🟠" if tot >= 55 else "🔴")
-            box.markdown(f"### {badge}{dot} CTR 예측 {tot} / 100")
-            box.caption(" · ".join(f"{CS.LABELS[c]} {sc.get(c,0)}" for c in CS.CRITERIA))
-            if sc.get("reason"):
-                box.caption("💬 " + sc["reason"])
-        else:
-            box.markdown(f"**세트 {i+1}**")
-        box.caption("📋 제목" + ("  ·  🌐 현지 정서 번안" if s.get("title_ko") else ""))
-        box.code(s["title"], language=None)
-        if s.get("title_ko"):
-            box.caption("🇰🇷 " + s["title_ko"])
-        _tx = s.get("thumb_text", "")
-        box.caption("🖼 썸네일 문구(이미지 위 글자): " + _tx
-                    + (f"  (🇰🇷 {s['thumb_text_ko']})" if s.get("thumb_text_ko") else ""))
-
-        # 외부 도구용 프롬프트 (복붙) — 공식(원리) + 우리 시그니처 + 복제 금지
-        base_scene = s.get("scene", content)
-        _p = [TS.STYLES[thumb_style]]
-        if igp.get("thumbnail_prompt"):        # 저장된 장르 공식 = 원리만 참고
-            _p.append("Winning pattern (principles only, do not copy): " + igp["thumbnail_prompt"])
-        _sig = ident.get("signature", "")
-        if _sig:
-            _p.append("OUR channel signature style (make it distinctly ours): " + _sig)
-        _p.append("Create an ORIGINAL scene in our own style — it must NOT look like a copy of any "
-                  "reference. Scene: " + base_scene)
-        scene = " . ".join(_p)
-        box.caption("📋 이미지 프롬프트 (ChatGPT · Gemini · DALL·E) — 우리 결 + 복제 방지 포함")
-        box.code(scene, language=None)
-        box.caption("📋 미드저니 프롬프트")
-        box.code(_mj_prompt(scene), language=None)
-
-        img_key = f"img_{cur}_{i}"
-        imgval = st.session_state.get(img_key)
-        b1, b2 = box.columns(2)
-        do_draw = bool(CM) and b1.button("🎨 그리기(최고화질)" if not imgval else "🔄 다시 그리기",
-                                         key=f"draw_{i}", use_container_width=True)
-        if b2.button("🗑 이미지 삭제", key=f"del_{i}", disabled=not imgval, use_container_width=True):
-            _ss_del(img_key); st.rerun()
-        if do_draw:
-            with st.spinner("생성 중… (씬 이미지 → 글자 얹기)"):
-                # scene 에 이미 공격스타일+공식+시그니처+복제금지 포함
-                out = CM.generate_thumbnail_image(scene, size="1536x1024", refs=refs[:6])
-            if out.get("data_url"):
-                final = OV.overlay_title(out["data_url"], s.get("thumb_text", ""))
-                _ss_set(img_key, OV.to_data_url(final))
-                st.rerun()
-            else:
-                box.error(out.get("error", "생성 실패 — OpenAI 키 필요(설정)."))
-        if imgval:
-            box.image(imgval, use_container_width=True)
-            box.download_button("⬇️ 이미지 다운로드 (PNG)", data=_dataurl_bytes(imgval),
-                                file_name=f"{cur}_{i+1}.png", mime="image/png",
-                                key=f"dl_{i}", use_container_width=True)
-            # 📱 폰 피드 미리보기 (작게 봐도 읽히나 확인)
-            fp = box.columns([1, 2])
-            fp[0].image(imgval, width=180)
-            fp[1].caption("📱 폰 피드에서 이렇게 보여요")
-            fp[1].markdown(f"**{s['title'][:45]}**")
-            fp[1].caption("📺 내 채널 · 조회수 1.2만 · 방금")
-            # 👁 이미지 Vision 채점
-            sc_key = f"imgscore_{cur}_{i}"
-            imgsc = st.session_state.get(sc_key)
-            if box.button("👁 이 썸네일 이미지 채점 (Vision)", key=f"vs_{i}"):
-                with st.spinner("GPT Vision 이미지 채점 중…"):
-                    _r = TS.score(imgval, s.get("title", ""), cur, ident)
-                if _r:
-                    _ss_set(sc_key, _r); st.rerun()
-                else:
-                    box.warning("이미지 채점은 OpenAI 키가 필요해요(설정 탭).")
-            if imgsc:
-                _t = imgsc.get("total", 0)
-                _d = "🟢" if _t >= 75 else ("🟠" if _t >= 55 else "🔴")
-                box.markdown(f"**👁 {_d} 이미지 CTR {_t} / 100**")
-                box.caption(" · ".join(f"{TS.LAB[c]} {imgsc.get(c,0)}" for c in TS.CRIT))
-                if imgsc.get("verdict"):
-                    box.caption("💬 " + imgsc["verdict"])
-                for _tip in imgsc.get("tips", []):
-                    box.write("• " + _tip)
-
-# ═══════════════════════════════════════════════════════════════
-# 🤖 AI 편집 대화
-# ═══════════════════════════════════════════════════════════════
-if page == "🤖 AI 편집":
-    st.subheader(f"🤖 AI 편집 대화 — {cur}")
-    st.caption("나랑 대화하듯 고쳐요. 예: '제목 더 궁금하게', '대비 강하게 고양이 추가', '문구를 한 줄로'.")
-    wk_key, hk_key, imgk = f"chat_work_{cur}", f"chat_hist_{cur}", f"chatimg_{cur}"
-    work = st.session_state.get(wk_key, {"title": "", "thumb_text": "", "scene": ""})
-    hist = st.session_state.get(hk_key, [])
-    ci_ident = G.get_identity(cur) or {}
-    ci_igp = ci_ident.get("generation_prompt", {})
-    brief = " | ".join(filter(None, [ci_ident.get("signature", ""), ci_igp.get("title_template", "")]))
-
-    with st.expander("✏️ 편집 시작 (소재 입력 또는 생성 세트 불러오기)", expanded=not work.get("title")):
-        seed = st.text_input("소재/초안 제목", key="chat_seed")
-        cgens = st.session_state.get("gen_" + cur, [])
-        copts = [f"세트 {i+1}: {g.get('title','')[:28]}" for i, g in enumerate(cgens)]
-        cA, cB = st.columns(2)
-        if cA.button("이 소재로 시작", use_container_width=True) and seed.strip():
-            _ss_set(wk_key, {"title": seed, "thumb_text": "", "scene": seed})
-            _ss_set(hk_key, []); st.session_state.pop(imgk, None); st.rerun()
-        pick = cB.selectbox("생성 세트 불러오기", ["(선택)"] + copts, label_visibility="collapsed") if copts else "(선택)"
-        if copts and pick != "(선택)":
-            g = cgens[copts.index(pick)]
-            if cB.button("불러오기", use_container_width=True):
-                _ss_set(wk_key, {"title": g.get("title", ""), "thumb_text": g.get("thumb_text", ""),
-                                 "scene": g.get("scene", "")})
-                _ss_set(hk_key, []); st.session_state.pop(imgk, None); st.rerun()
-
-    st.markdown("**현재 작업물**")
-    st.code(work.get("title", ""), language=None)
-    st.caption("🖼 문구: " + (work.get("thumb_text", "") or "-"))
-    st.caption("🎬 장면: " + (work.get("scene", "") or "-")[:80])
-
-    for m in hist:
-        with st.chat_message("user" if m["role"] == "user" else "assistant"):
-            st.write(m["content"])
-    if prompt := st.chat_input("어떻게 고칠까요?"):
-        hist2 = hist + [{"role": "user", "content": prompt}]
-        with st.spinner("AI 편집 중…"):
-            r = CE.chat(hist2, work, cur, brief)
-        _ss_set(wk_key, {"title": r["title"], "thumb_text": r["thumb_text"], "scene": r["scene"]})
-        _ss_set(hk_key, hist2 + [{"role": "assistant", "content": r["reply"]}])
-        st.rerun()
-
-    cst = st.selectbox("🎨 썸네일 스타일", list(TS.STYLES), key="chat_style")
-    if CM and work.get("scene") and st.button("🎨 현재 작업물로 썸네일 그리기", type="primary"):
-        _p = [TS.STYLES[cst]]
-        if ci_igp.get("thumbnail_prompt"):
-            _p.append("Winning pattern (principles only): " + ci_igp["thumbnail_prompt"])
-        if ci_ident.get("signature"):
-            _p.append("OUR signature (distinctly ours): " + ci_ident["signature"])
-        _p.append("Original scene, not a copy. Scene: " + work["scene"])
-        with st.spinner("생성 중…"):
-            out = CM.generate_thumbnail_image(" . ".join(_p), size="1536x1024",
-                                              refs=[b["thumb"] for b in G.get_basket(cur) if b.get("thumb")][:6])
-        if out.get("data_url"):
-            _ss_set(imgk, OV.to_data_url(OV.overlay_title(out["data_url"], work.get("thumb_text", ""))))
-            st.rerun()
-        else:
-            st.error(out.get("error", "생성 실패 — OpenAI 키 필요."))
-    ci = st.session_state.get(imgk)
-    if ci:
-        st.image(ci, use_container_width=True)
-        st.download_button("⬇️ 다운로드 (PNG)", data=_dataurl_bytes(ci),
-                           file_name=f"{cur}_chat.png", mime="image/png")
 
 # ═══════════════════════════════════════════════════════════════
 # 🌊 트렌드 레이더
@@ -917,73 +534,14 @@ if page == "🌊 트렌드 레이더":
             cc[1].code(tmpl, language=None)
             _vurl = f"https://youtu.be/{v.get('video_id','')}"
             _demo = str(v.get("video_id", "")).startswith("demo")
-            b1, b2, b3, b4 = cc[1].columns(4)
-            if b1.button("➡️ 참고제목", key=f"radar_apply_{i}", help="전이 템플릿을 참고제목으로"):
-                G.add_example_title(rtarget, tmpl); st.toast(f"'{rtarget}' 참고제목 저장")
-            if b2.button("📌 벤치마크", key=f"radar_bench_{i}", disabled=_demo,
+            b1, b2 = cc[1].columns(2)
+            if b1.button("📌 벤치마크 담기", key=f"radar_bench_{i}", disabled=_demo,
                          help=f"이 영상 링크를 '{rtarget}' 벤치마크에 추가"):
                 G.add_benchmarks(rtarget, [_vurl]); st.toast(f"'{rtarget}' 벤치마크 추가")
-            if b3.button("⭐ 집중+알림", key=f"radar_focus_{i}", disabled=_demo,
+            if b2.button("⭐ 집중+알림", key=f"radar_focus_{i}", disabled=_demo,
                          help="집중 벤치마킹에 추가 + 새 영상 알림 ON"):
                 G.add_benchmarks(G.FOCUS_BUCKET, [_vurl])
                 G.toggle_flag(G.FOCUS_BUCKET, _vurl, "alarm", True); st.toast("⭐ 집중 벤치마킹 + 🔔알림")
-            if b4.button("🧺 바구니", key=f"radar_bskt_{i}", help="썸네일+제목을 바구니에 담기(패턴 학습)"):
-                G.add_to_basket(rtarget, v.get("thumb", ""), v["title"], v.get("channel", ""),
-                                title_ko=v.get("title_ko", "")); st.toast(f"🧺 '{rtarget}' 바구니에 담음")
-
-# ═══════════════════════════════════════════════════════════════
-# 🧺 레퍼런스 바구니
-# ═══════════════════════════════════════════════════════════════
-if page == "🧺 레퍼런스 바구니":
-    st.subheader(f"🧺 레퍼런스 바구니 — {cur}")
-    st.caption("담은 썸네일+제목을 쭉 모아 정서·표기 패턴을 익혀요. 생성 시 무드·제목 공식으로도 반영.")
-    up = st.file_uploader("내 캡처 이미지 추가(바구니에 합류)", type=["png", "jpg", "jpeg", "webp"],
-                          accept_multiple_files=True)
-    if up:
-        import base64
-        for f in up:
-            b64 = base64.b64encode(f.read()).decode()
-            G.add_to_basket(cur, f"data:image/png;base64,{b64}", "", "내 캡처")
-        st.toast(f"{len(up)}장 담음"); st.rerun()
-    basket = G.get_basket(cur)
-    if not basket:
-        st.info("아직 비었습니다. 트렌드 레이더/구간분석에서 🧺 버튼으로 담거나, 위에서 캡처를 올리세요.")
-    else:
-        _bt = [b.get("title", "") for b in basket if b.get("title")]
-        with st.expander(f"📊 제목 정서·표기 패턴 학습 ({len(_bt)}개 제목)", expanded=True):
-            dg = TD.digest(_bt)
-            if dg.get("n"):
-                st.write("**🔤 앞머리 키워드**: " + " · ".join(f"{w}({c})" for w, c in dg["leading"][:8]))
-                st.write("**💗 감정·감각어**: " + (", ".join(f"{w}" for w, _ in dg["sensory"][:8]) or "-")
-                         + "  · **🌦 상황어**: " + (", ".join(f"{w}" for w, _ in dg["situation"][:8]) or "-"))
-                st.write("**😀 이모지**: " + ("".join(w for w, _ in dg["emojis"][:8]) or "-"))
-                st.caption(f"평균 길이 {dg['avg_length']}자 · 괄호 표기 {dg['bracket_pct']}% · "
-                           f"구분자(|·) {dg['sep_pct']}% · 이모지 {dg['emoji_pct']}%")
-                if st.button("🧠 이 나라 정서·표기 관습 요약(GPT)"):
-                    with st.spinner("정서 패턴 요약 중…"):
-                        _sm = TD.native_summary(_bt, region_name=cur)
-                    if _sm:
-                        _ss_set("digest_" + cur, _sm)
-                    else:
-                        st.warning("요약은 OpenAI/Gemini 키가 필요해요.")
-                if st.session_state.get("digest_" + cur):
-                    st.info(st.session_state["digest_" + cur])
-            else:
-                st.caption("제목이 있는 항목이 아직 없어요.")
-
-        st.markdown("**📋 담은 목록 (썸네일 ↔ 제목 단짝)**")
-        for i, b in enumerate(basket):
-            row = st.container(border=True)
-            rc = row.columns([1, 3])
-            if b.get("thumb"):
-                rc[0].image(b["thumb"], use_container_width=True)
-            if b.get("title"):
-                rc[1].markdown(f"**{b['title']}**")
-            if b.get("title_ko"):
-                rc[1].caption("🇰🇷 " + b["title_ko"])
-            rc[1].caption("📺 출처: " + (b.get("source", "") or "-"))
-            if rc[1].button("🗑 빼기", key=f"unbsk_{i}"):
-                G.remove_from_basket(cur, i); st.rerun()
 
 # ═══════════════════════════════════════════════════════════════
 # 🔔 감시/알림
