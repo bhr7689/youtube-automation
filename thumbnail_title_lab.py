@@ -360,17 +360,24 @@ if page == "🔬 구간 분석":
                 st.error("concept_maker 로드 실패 — jpshorts/backend 확인.")
             else:
                 allvids = []
-                prog = st.progress(0.0, "수집 중…")
                 chans = [b["url"] for b in proj["benchmarks"]]
-                for i, url in enumerate(chans):
+                ch_urls = [u for u in chans if LC.extract_ref(u)[0] in ("channel", "handle")]
+                vid_urls = [u for u in chans if LC.extract_ref(u)[0] == "video"]
+                prog = st.progress(0.0, "수집 중…")
+                for i, url in enumerate(ch_urls):          # 채널/핸들 → 그 채널 영상들
                     data = CM.collect_channel(url)
                     for v in data.get("videos", []):
                         allvids.append({**v, "source": data.get("title", url), "bench_url": url})
-                    prog.progress((i + 1) / len(chans), f"수집 {i+1}/{len(chans)}")
+                    prog.progress((i + 1) / max(1, len(ch_urls) + 1), f"채널 {i+1}/{len(ch_urls)}")
+                if vid_urls:                               # 영상 링크 → 그 영상 자체(직접 조회)
+                    prog.progress(0.95, f"영상 {len(vid_urls)}개 조회…")
+                    allvids += LC.fetch_video_stats(vid_urls)
                 prog.empty()
                 _ss_set("report_" + cur, T.tier_report(allvids))
-                if any(CM.collect_channel(u).get("demo") for u in chans[:1]):
-                    st.warning("⚠️ YouTube 키가 없어 데모 데이터로 시연 중입니다. (사장님 PC에선 실데이터)")
+                if not os.environ.get("YOUTUBE_API_KEY", "").strip():
+                    st.warning("⚠️ YouTube 키가 없어 데모/빈 데이터입니다. (설정 탭에서 키 저장)")
+                elif not allvids:
+                    st.warning("수집 0건 — 벤치마킹 링크를 확인해주세요.")
 
         rep = st.session_state.get("report_" + cur)
         if rep:

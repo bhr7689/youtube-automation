@@ -147,6 +147,36 @@ STOPWORDS = {
 }
 
 
+def fetch_video_stats(urls: list[str]) -> list[dict]:
+    """영상 URL들 → 그 영상 자체의 [{title,views,published,thumb,video_id,source,bench_url}].
+    (영상 링크를 채널 검색에 넣어 엉뚱한 채널이 나오는 버그 방지)"""
+    import youtube_client as yc
+    out: list[dict] = []
+    if not yc.has_key():
+        return out
+    yt = yc._yt()
+    id2url, ids = {}, []
+    for u in urls:
+        kind, val = extract_ref(u)
+        if kind == "video":
+            ids.append(val)
+            id2url[val] = u
+    for k in range(0, len(ids), 50):
+        try:
+            r = yt.videos().list(part="snippet,statistics", id=",".join(ids[k:k + 50])).execute()
+        except Exception:               # noqa: BLE001
+            continue
+        for it in r.get("items", []):
+            sn, stt = it["snippet"], it.get("statistics", {})
+            th = sn.get("thumbnails", {})
+            thumb = next((th[q]["url"] for q in ("maxres", "high", "medium", "default")
+                          if th.get(q, {}).get("url")), "")
+            out.append({"title": sn["title"], "views": int(stt.get("viewCount", 0) or 0),
+                        "published": sn["publishedAt"][:10], "thumb": thumb, "video_id": it["id"],
+                        "source": sn.get("channelTitle", ""), "bench_url": id2url.get(it["id"], "")})
+    return out
+
+
 def _project_keywords(projects: dict) -> dict[str, list[str]]:
     """프로젝트 이름/메모 + BASE_LEXICON 으로 장르별 키워드 세트(불용어 제외)."""
     out = {}
