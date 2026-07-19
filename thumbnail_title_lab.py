@@ -288,9 +288,18 @@ with tabs[2]:
                 grid = st.columns(4)
                 for j, v in enumerate(info["videos"][:8]):
                     with grid[j % 4]:
+                        vid = v.get("video_id", "")
+                        link = f"https://youtu.be/{vid}" if vid else ""
                         if v.get("thumb"):
-                            st.image(v["thumb"], use_container_width=True)
-                        st.caption(f"👁 {int(v.get('views',0)):,} · 일{int(v.get('vpd',0)):,}")
+                            if link:   # 썸네일 클릭 → 유튜브 새 탭
+                                st.markdown(
+                                    f'<a href="{link}" target="_blank" title="유튜브에서 보기">'
+                                    f'<img src="{v["thumb"]}" style="width:100%;border-radius:8px"></a>',
+                                    unsafe_allow_html=True)
+                            else:
+                                st.image(v["thumb"], use_container_width=True)
+                        st.caption(f"👁 {int(v.get('views',0)):,} · 📅 {v.get('published','')} · 일{int(v.get('vpd',0)):,}회")
+                        st.caption(f"📺 {(v.get('source','') or '')[:22]}")
                         st.caption((v.get("title", "") or "")[:40])
                         if st.button("🧺 바구니", key=f"bsk_{label}_{j}"):
                             G.add_to_basket(cur, v.get("thumb", ""), v.get("title", ""),
