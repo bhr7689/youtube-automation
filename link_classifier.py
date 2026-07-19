@@ -16,6 +16,16 @@ if _BACKEND not in sys.path:
     sys.path.insert(0, _BACKEND)
 
 UNSORTED = "미분류"
+JP_BUCKET = "🇯🇵 일본채널"
+
+# 히라가나·가타카나(일본어 고유 문자). 한자만으론 중/한 구분이 안 되므로 가나 존재로 판정.
+_JP_RE = re.compile(r"[぀-ヿ]")
+
+
+def is_japanese(meta: dict) -> bool:
+    blob = " ".join([meta.get("title", ""), meta.get("desc", ""),
+                     meta.get("channel", ""), " ".join(meta.get("tags", []))])
+    return bool(_JP_RE.search(blob))
 
 # 장르별 기본 어휘(프로젝트 이름/메모 토큰에 더해 매칭 강화)
 BASE_LEXICON = {
@@ -221,8 +231,9 @@ JSON만: {{"result":[{{"i":0,"genre":"장르명"}}]}}"""
 
 def classify(urls: list[str], projects: dict, use_llm: bool = True) -> list[dict]:
     metas = fetch_meta(urls)
-    if use_llm:
-        res = classify_llm(metas, projects)
-        if res is not None:
-            return res
-    return classify_heuristic(metas, projects)
+    res = classify_llm(metas, projects) if use_llm else None
+    if res is None:
+        res = classify_heuristic(metas, projects)
+    for m in res:                       # 언어(일본어) 축은 장르와 별개로 태깅
+        m["jp"] = is_japanese(m)
+    return res

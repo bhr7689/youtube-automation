@@ -197,21 +197,25 @@ with tabs[1]:
             col = st.columns([1, 4, 3])
             if mm.get("thumb"):
                 col[0].image(mm["thumb"], use_container_width=True)
-            tag = "🤖" if mm.get("by") == "gpt" else "🔤"
+            tag = ("🇯🇵 " if mm.get("jp") else "") + ("🤖" if mm.get("by") == "gpt" else "🔤")
             col[1].caption(f"{tag} " + (mm.get("title") or mm["url"])[:70])
             sel = col[2].selectbox("장르", names,
                                    index=names.index(mm["genre"]) if mm["genre"] in names else len(names) - 1,
                                    key=f"cls_sel_{m}", label_visibility="collapsed")
             res[m]["genre"] = sel
         if st.button("✅ 확정 — 분류는 각 장르로, 미분류는 미분류함에", type="primary"):
-            # 미분류함이 없으면 생성 (현재 선택 장르는 그대로)
+            # 미분류함 · 일본채널함이 없으면 생성 (현재 선택 장르는 그대로)
             stt = G.load_state()
             if LC.UNSORTED not in stt["projects"]:
                 stt["projects"][LC.UNSORTED] = {
                     "note": "자동분류가 장르를 못 정한 링크 모음 — 나중에 재분류.",
                     "benchmarks": [], "basket": [], "identity": {}}
-                G.save_state(stt)
-            added = un = 0
+            if any(m.get("jp") for m in res) and LC.JP_BUCKET not in stt["projects"]:
+                stt["projects"][LC.JP_BUCKET] = {
+                    "note": "일본어(가나) 채널 모음 — 장르와 별개로 언어 기준. 장르통에도 함께 들어감.",
+                    "benchmarks": [], "basket": [], "identity": {}}
+            G.save_state(stt)
+            added = un = jp = 0
             for mm in res:
                 g = mm["genre"]
                 if g in state["projects"] and g != LC.UNSORTED:
@@ -219,9 +223,11 @@ with tabs[1]:
                     G.remove_benchmark(LC.UNSORTED, mm["url"])   # 미분류함에서 이동
                 else:
                     G.add_benchmarks(LC.UNSORTED, [mm["url"]]); un += 1
+                if mm.get("jp"):                                  # 일본어면 일본채널함에도
+                    G.add_benchmarks(LC.JP_BUCKET, [mm["url"]]); jp += 1
             st.session_state.pop("cls_res", None)
-            st.success(f"장르 배정 {added}개 · 미분류함 {un}개 저장 완료! "
-                       "대시보드에 '미분류' 장르가 생겼어요 — 나중에 거기서 재분류하면 됩니다.")
+            st.success(f"장르 배정 {added} · 미분류함 {un} · 🇯🇵 일본채널 {jp} 저장 완료! "
+                       "일본 채널은 장르통과 🇯🇵일본채널함 양쪽에 들어갔어요.")
             st.rerun()
 
 # ═══════════════════════════════════════════════════════════════
