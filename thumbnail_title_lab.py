@@ -202,6 +202,28 @@ with st.sidebar:
             st.caption("↳ 키 없으면 데모 데이터로 시연됩니다.")
     st.caption("발행 6개월 이내 · 구간 1천~30만+")
 
+    st.divider()
+    with st.expander("🤖 AI 대화 (어느 페이지든)", expanded=False):
+        _wk, _hk = f"chat_work_{cur}", f"chat_hist_{cur}"
+        _work = st.session_state.get(_wk, {"title": "", "thumb_text": "", "scene": ""})
+        _hist = st.session_state.get(_hk, [])
+        for _m in _hist[-3:]:
+            st.caption(("🙋 " if _m["role"] == "user" else "🤖 ") + _m["content"][:70])
+        _msg = st.text_input("메시지", key="side_chat_in", label_visibility="collapsed",
+                             placeholder="예: 제목 더 궁금하게, 문구 짧게")
+        if st.button("보내기", key="side_chat_send", use_container_width=True) and _msg.strip():
+            _idt = G.get_identity(cur) or {}
+            _brief = " | ".join(filter(None, [_idt.get("signature", ""),
+                                              _idt.get("generation_prompt", {}).get("title_template", "")]))
+            _h2 = _hist + [{"role": "user", "content": _msg}]
+            _r = CE.chat(_h2, _work, cur, _brief)
+            _ss_set(_wk, {"title": _r["title"], "thumb_text": _r["thumb_text"], "scene": _r["scene"]})
+            _ss_set(_hk, _h2 + [{"role": "assistant", "content": _r["reply"]}])
+            st.rerun()
+        if _work.get("title"):
+            st.caption("📝 현재: " + _work["title"][:38])
+        st.caption("🤖 AI 편집 페이지에서 이어서 그리기까지 가능")
+
 
 # (탭 → 사이드바 메뉴 전환: page 값으로 각 화면 표시)
 
@@ -463,13 +485,15 @@ if page == "🔬 구간 분석":
                         card.caption(f"👁 {int(v.get('views',0)):,} · 📅 {v.get('published','')}")
                         card.caption(f"📺 {(v.get('source','') or '')[:22]}")
                         card.caption((v.get("title", "") or "")[:38])
+                        if v.get("video_id"):      # ✅ 선택 → 일치성 탭에서 5개 예시 생성
+                            card.checkbox("✅ 선택", key=f"pick_{cur}_{v['video_id']}")
 
 # ═══════════════════════════════════════════════════════════════
 # 🎯 일치성 검사
 # ═══════════════════════════════════════════════════════════════
 if page == "🎯 일치성":
-    st.subheader("🎯 일치성 + 패턴 분석 → 자동 프롬프트")
-    st.caption("링크 여러 개 → GPT가 실제 썸네일 보고 제목 읽어 → 일치성 채점 + 썸네일·제목 패턴 → 재사용 프롬프트.")
+    st.subheader("🎯 선택 → 패턴 공식 → 5개 예시 (이미지프롬프트+제목)")
+    st.caption("🔬 구간분석 카드에서 ✅ 체크한 썸네일+제목을 모아, 공통 패턴 공식으로 우리 채널용 예시 5개 생성.")
 
     with st.expander("🎨 채널 전체 '결' 분석 (로고·배너·태그·설명·썸네일 통합)", expanded=False):
         ch_url = st.text_input("유튜브 채널 URL", key="brand_url",
@@ -507,128 +531,105 @@ if page == "🎯 일치성":
                         G.set_signature(cur, vz.get("signature_summary", ""))
                         st.success("우리 시그니처로 저장! ✨ 생성에 반영됩니다."); st.rerun()
 
-    src = st.radio("분석 대상", ["📺 현재 장르 벤치마크", "🔗 링크 직접 입력",
-                                "📎 이미지 업로드(비슷한 썸네일 모음)"],
-                   horizontal=True, key="pa_src")
-    pa_urls, up_videos = [], []
-    if src == "📺 현재 장르 벤치마크":
-        pa_urls = [b["url"] for b in proj["benchmarks"]]
-        st.caption(f"'{cur}' 벤치마크 {len(pa_urls)}개. 💡 구간분석을 먼저 돌리면 **실제 영상 썸네일**로 분석돼요(로고 아님).")
-    elif src == "🔗 링크 직접 입력":
-        _t = st.text_area("영상 링크 (여러 줄)", height=110, key="pa_links",
-                          placeholder="https://youtu.be/xxxx\nhttps://youtu.be/yyyy")
-        pa_urls = LC.split_links(_t)
-    else:  # 이미지 직접 업로드 (비슷한 썸네일 모음)
-        ups = st.file_uploader("비슷한 썸네일 이미지들 (여러 장)", type=["png", "jpg", "jpeg", "webp"],
-                               accept_multiple_files=True, key="pa_up")
-        up_titles = st.text_area("각 이미지 제목 (한 줄에 하나, 순서대로 — 선택)", key="pa_up_titles")
+    st.divider()
+    # 구간분석에서 ✅ 선택한 것 수집
+    rep = st.session_state.get("report_" + cur)
+    selected = []
+    if rep:
+        for label in T.TIER_ORDER:
+            for v in rep["tiers"][label]["videos"]:
+                vid = v.get("video_id", "")
+                if vid and st.session_state.get(f"pick_{cur}_{vid}"):
+                    selected.append(v)
+    with st.expander("📎 (선택) 이미지 직접 업로드로 추가"):
+        ups = st.file_uploader("썸네일 이미지들", type=["png", "jpg", "jpeg", "webp"],
+                               accept_multiple_files=True, key="sel_up")
+        up_titles = st.text_area("각 제목 (한 줄에 하나)", key="sel_up_titles")
         if ups:
             import base64
-            imgs = ["data:image/png;base64," + base64.b64encode(f.read()).decode() for f in ups]
-            tl = [t.strip() for t in up_titles.split("\n") if t.strip()]
-            up_videos = [{"thumb": im, "title": (tl[i] if i < len(tl) else "")} for i, im in enumerate(imgs)]
-            st.caption(f"📎 {len(imgs)}장 업로드됨")
-            if len(imgs) >= 2 and st.checkbox("🧲 비슷한 것끼리 묶어 보기"):
-                for gi, g in enumerate(IMG.group_similar(imgs)):
-                    st.caption(f"그룹 {gi+1} · {len(g)}장 (한 결)")
-                    gc = st.columns(min(6, len(g)))
-                    for k, idx in enumerate(g[:6]):
-                        gc[k].image(imgs[idx], use_container_width=True)
-    n_limit = st.slider("Vision 분석 개수(비용·속도)", 3, 9, 6)
+            _tl = [t.strip() for t in up_titles.split("\n") if t.strip()]
+            for _i, _f in enumerate(ups):
+                selected.append({"thumb": "data:image/png;base64," + base64.b64encode(_f.read()).decode(),
+                                 "title": (_tl[_i] if _i < len(_tl) else ""), "video_id": ""})
 
-    if st.button("🔍 패턴 분석 실행", type="primary"):
-        with st.spinner("수집 + GPT Vision 분석 중…"):
-            rep = st.session_state.get("report_" + cur)
-            if src == "📎 이미지 업로드(비슷한 썸네일 모음)":
-                if up_videos:
-                    _ss_set("pa_" + cur, PA.analyze_videos(up_videos[:n_limit], cur))
-                else:
-                    st.warning("이미지를 올려주세요.")
-            elif src == "📺 현재 장르 벤치마크" and rep:
-                allv = []
-                for label in T.TIER_ORDER:
-                    allv += rep["tiers"][label]["videos"]
-                allv = sorted(allv, key=lambda v: v.get("views", 0), reverse=True)[:n_limit]
-                if allv:
-                    _ss_set("pa_" + cur, PA.analyze_videos(allv, cur))
-                else:
-                    st.warning("수집된 영상이 없어요. 🔬 구간분석에서 [분석 실행]을 먼저.")
-            elif pa_urls:
-                _ss_set("pa_" + cur, PA.analyze(pa_urls[:n_limit], cur))
-            else:
-                st.warning("분석할 대상이 없어요.")
+    if not selected:
+        st.info("🔬 구간분석에서 카드의 **✅ 선택**을 체크한 뒤 여기로 오세요. (또는 위에서 이미지 업로드)")
+    else:
+        st.write(f"**✅ 선택된 {len(selected)}개 (썸네일↔제목)**")
+        _selt = st.session_state.get("seltrans_" + cur, {})
+        if st.button("🇰🇷 선택 제목 한국어 번안 보기 (일본어 등)"):
+            _m = LZ.localize_batch([_v.get("title", "") for _v in selected], "KR")
+            _selt = {selected[_i].get("title", ""): _m.get(_i, "") for _i in range(len(selected))}
+            _ss_set("seltrans_" + cur, _selt)
+        gcols = st.columns(min(6, len(selected)))
+        for _i, _v in enumerate(selected):
+            with gcols[_i % len(gcols)]:
+                if _v.get("thumb"):
+                    st.image(_v["thumb"], use_container_width=True)
+                st.caption((_v.get("title", "") or "")[:26])
+                _ko = _selt.get(_v.get("title", ""))
+                if _ko:
+                    st.caption("🇰🇷 " + _ko[:26])
 
-    res = st.session_state.get("pa_" + cur)
-    if res:
-        st.caption(f"엔진: {res['engine']} · {res['n']}개 분석")
-        cons = res.get("consistency", {})
-        score = int(cons.get("avg_score", 0) or 0)
-        color = "🟢" if score >= 75 else ("🟠" if score >= 55 else "🔴")
-        st.markdown(f"### {color} 일치성 {score} / 100")
-        if cons.get("note"):
-            st.write(cons["note"])
+        _tn = {LZ.REGION_NAME[k]: k for k in LZ.REGION_NAME}
+        tgt = _tn[st.selectbox("🌐 제목 언어(현지 정서 번안 + 한국어 병기)", list(_tn),
+                               index=list(_tn).index("일본어"))]
+        if st.button("✨ 선택으로 (이미지프롬프트+제목) 5개 생성", type="primary"):
+            sig = (G.get_identity(cur) or {}).get("signature", "")
+            with st.spinner("공통 패턴 파악 + 5개 생성 + 현지 번안 중…"):
+                out = PA.examples_from_selection(selected, cur, sig, n=5)
+                exs = out.get("examples", [])
+                if tgt != "KR" and exs:            # 타깃(일본 등) 현지 정서 + 한국어 병기
+                    _tl2 = LZ.localize_batch([e.get("title", "") for e in exs], tgt)
+                    _xl2 = LZ.localize_batch([e.get("thumb_text", "") for e in exs], tgt)
+                    for _i, e in enumerate(exs):
+                        if _tl2.get(_i):
+                            e["title_ko"] = e["title"]; e["title"] = _tl2[_i]
+                        if _xl2.get(_i):
+                            e["thumb_text_ko"] = e.get("thumb_text", ""); e["thumb_text"] = _xl2[_i]
+                elif tgt == "KR" and exs:          # 한국어 제목 → 일본어 번안 병기(일본 공략)
+                    _ja = LZ.localize_batch([e.get("title", "") for e in exs], "JP")
+                    for _i, e in enumerate(exs):
+                        if _ja.get(_i):
+                            e["title_ja"] = _ja[_i]
+                out["examples"] = exs
+            _ss_set("exgen_" + cur, out)
 
-        pv = {p.get("i"): p for p in res.get("per_video", [])}
-        metas = res.get("metas", [])
-        if metas:
-            cols = st.columns(min(len(metas), n_limit) if metas else 1)
-            for i, m in enumerate(metas[:n_limit]):
-                with cols[i % len(cols)]:
-                    if m.get("thumb"):
-                        st.image(m["thumb"], use_container_width=True)
-                    p = pv.get(i + 1, {})
-                    if p:
-                        st.caption(f"일치 {p.get('score','-')} · {p.get('note','')[:30]}")
-                    st.caption((m.get("title", "") or "")[:32])
-
-        tp = res.get("thumbnail_pattern", {})
-        st.markdown("#### 🖼 썸네일 패턴")
-        st.write(f"- **구도**: {tp.get('composition','')} / **각도**: {tp.get('angle','')}")
-        st.write(f"- **인물·오브젝트**: {tp.get('subject','')}")
-        st.write(f"- **색상**: {'  '.join(tp.get('colors',[]))}  · **무드**: {tp.get('mood','')}")
-        st.write(f"- **문구 스타일**: {tp.get('text_overlay','')} · **배경**: {tp.get('background','')}")
-
-        tt = res.get("title_pattern", {})
-        st.markdown("#### ✍️ 제목 패턴")
-        st.write(f"- **고정문구**: {', '.join(tt.get('fixed_phrases',[])) or '-'} · **이모지**: {tt.get('emoji','')}")
-        st.write(f"- **상황**: {tt.get('situation','')} · **감각어**: {', '.join(tt.get('sensory',[]))}")
-        st.write(f"- **구조/톤**: {tt.get('structure','')} / {tt.get('tone','')}")
-
-        ts = res.get("title_stats", {})
-        if ts.get("top_tokens"):
-            st.markdown("#### 🔑 키워드 트렌드 (분석 영상 누적)")
-            st.write("· ".join(f"**{w}**({c})" for w, c in ts["top_tokens"][:12]))
-            st.caption(f"평균 제목길이 {ts.get('avg_length','-')}자 · 감각어 {ts.get('sensory_pct',0)}% · "
-                       f"상황어 {ts.get('situation_pct',0)}% · 이모지 {ts.get('emoji_pct',0)}%. "
-                       "링크를 더 모아 다시 분석하면 이 키워드·패턴이 갱신됩니다.")
-
-        gp = res.get("generation_prompt", {})
-        st.markdown("#### ✨ 자동 생성 프롬프트 (복붙 가능)")
-        st.caption("🖼 썸네일 이미지 프롬프트")
-        st.code(gp.get("thumbnail_prompt", ""), language=None)
-        st.caption("✍️ 제목 공식")
-        st.code(gp.get("title_template", ""), language=None)
-        if gp.get("example_titles"):
-            st.caption("예시 제목")
-            st.code("\n".join(gp["example_titles"]), language=None)
-
-        if st.button(f"💾 이 프롬프트를 '{cur}' 장르 공식으로 저장", type="primary"):
-            G.set_identity(cur, {"thumbnail_pattern": tp, "title_pattern": tt,
-                                 "generation_prompt": gp})
-            st.success("저장 완료! ✨ 생성 탭에서 이 공식이 자동 적용됩니다.")
-
-    with st.expander("✍️ 수동 채점 (제목·문구 직접 입력)"):
-        title = st.text_input("제목", placeholder="비 오는 새벽, 창가에서 듣는 재즈 ☔", key="man_title")
-        thumb_text = st.text_input("썸네일 문구", placeholder="눈물이 나요", key="man_thumb")
-        tags = st.text_input("썸네일 태그(쉼표)", placeholder="새벽, 재즈, 창가", key="man_tags")
-        if st.button("일치성 채점") and title.strip():
-            r = T.consistency_heuristic(title, thumb_text, [t.strip() for t in tags.split(",") if t.strip()])
-            c = st.columns(4)
-            c[0].metric("감정", r["emotion"]); c[1].metric("주제", r["topic"])
-            c[2].metric("상보", r["complement"]); c[3].metric("타깃", r["target"])
-            st.markdown(f"**합계 {r['total']}/100**")
-            for nn in r["notes"]:
-                st.write("• " + nn)
+        out = st.session_state.get("exgen_" + cur)
+        if out:
+            if out.get("pattern"):
+                st.caption("🧩 공통 패턴: " + out["pattern"])
+            for i, e in enumerate(out.get("examples", [])):
+                bx = st.container(border=True)
+                bx.markdown(f"**예시 {i+1}**  ·  📋 제목")
+                bx.code(e.get("title", ""), language=None)
+                if e.get("title_ko"):
+                    bx.caption("🇰🇷 " + e["title_ko"])
+                if e.get("title_ja"):
+                    bx.caption("🇯🇵 " + e["title_ja"])
+                if e.get("thumb_text"):
+                    bx.caption("🖼 문구: " + e["thumb_text"]
+                               + (f"  (🇰🇷 {e['thumb_text_ko']})" if e.get("thumb_text_ko") else ""))
+                bx.caption("📋 이미지 프롬프트 (ChatGPT · Gemini · DALL·E)")
+                bx.code(e.get("image_prompt", ""), language=None)
+                bx.caption("📋 미드저니")
+                bx.code(_mj_prompt(e.get("image_prompt", "")), language=None)
+                ik = f"eximg_{cur}_{i}"
+                if CM and bx.button("🎨 이 예시로 썸네일 그리기", key=f"exdraw_{i}"):
+                    with st.spinner("생성 중…"):
+                        o = CM.generate_thumbnail_image(
+                            TS.STYLES[TS.DEFAULT_STYLE] + " " + e.get("image_prompt", ""),
+                            size="1536x1024",
+                            refs=[b["thumb"] for b in G.get_basket(cur) if b.get("thumb")][:6])
+                    if o.get("data_url"):
+                        _ss_set(ik, OV.to_data_url(OV.overlay_title(o["data_url"], e.get("thumb_text", ""))))
+                        st.rerun()
+                    else:
+                        bx.error(o.get("error", "생성 실패 — OpenAI 키 필요."))
+                if st.session_state.get(ik):
+                    bx.image(st.session_state[ik], use_container_width=True)
+                    bx.download_button("⬇️ 다운로드", data=_dataurl_bytes(st.session_state[ik]),
+                                       file_name=f"{cur}_ex{i+1}.png", mime="image/png", key=f"exdl_{i}")
 
 # ═══════════════════════════════════════════════════════════════
 # ✨ 생성

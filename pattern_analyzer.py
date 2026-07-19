@@ -176,6 +176,52 @@ def _brand_vision(logo, banner, thumbs, title, desc, keywords, genre):
         return None
 
 
+def examples_from_selection(videos: list[dict], genre: str = "", signature: str = "",
+                            n: int = 5) -> dict:
+    """선택한 썸네일+제목들의 공통 패턴 공식 → 우리 채널용 (제목+이미지프롬프트) n개 예시.
+    실제 썸네일을 GPT Vision 이 보고 조합·연관지어 생성. 키 없으면 휴리스틱."""
+    titles = [v.get("title", "") for v in videos]
+    thumbs = [v.get("thumb", "") for v in videos]
+    key = os.environ.get("OPENAI_API_KEY", "").strip()
+    imgs = [t for t in thumbs if _is_img(t)][:9]
+    if key and imgs:
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=key)
+            head = (f"너는 유튜브 '{genre}' 채널의 썸네일·제목 기획자다. 아래는 내가 고른 잘된 "
+                    f"썸네일 이미지와 제목들이다. 이들의 **공통 패턴(구도·색·문구·제목 공식)**을 "
+                    f"파악하고, 그 공식에 맞춰 우리 채널용 새 예시 {n}개를 만들어라.\n"
+                    f"우리 시그니처(우리만의 결): {signature or '(없음)'}\n"
+                    f"반드시 원본으로 — 특정 레퍼런스를 복제하지 말 것.\n"
+                    f"각 예시: title(한국어 제목, 공식 반영), image_prompt(영어 이미지생성 프롬프트, "
+                    f"글자 없는 장면·구도·색#·조명·무드), thumb_text(썸네일에 얹을 한글 문구 1줄).\n"
+                    f'JSON만: {{"pattern":"공통 패턴 한 줄","examples":[{{"title":"","image_prompt":"","thumb_text":""}}]}}')
+            content: list = [{"type": "text", "text": head}]
+            for i, v in enumerate(videos):
+                if _is_img(v.get("thumb", "")):
+                    content.append({"type": "text", "text": f"#{i+1} 제목: {v.get('title','')}"})
+                    content.append({"type": "image_url",
+                                    "image_url": {"url": v["thumb"], "detail": "low"}})
+            r = client.chat.completions.create(
+                model="gpt-4o", messages=[{"role": "user", "content": content}],
+                temperature=0.6, max_tokens=1600, response_format={"type": "json_object"})
+            d = json.loads(r.choices[0].message.content or "{}")
+            ex = d.get("examples", [])[:n]
+            if ex:
+                return {"engine": "gpt-4o-vision", "pattern": d.get("pattern", ""), "examples": ex}
+        except Exception:               # noqa: BLE001
+            pass
+    # 휴리스틱 폴백 (제목 통계 기반)
+    agg = T.aggregate_titles([{"title": t} for t in titles if t])
+    situ = [w for w, _ in agg.get("situation", [])][:3]
+    sens = [w for w, _ in agg.get("sensory", [])][:3]
+    base = " ".join(situ) or "새벽 카페"
+    ex = [{"title": f"{base} · {(sens[i % len(sens)] if sens else '감성')} {genre}",
+           "image_prompt": f"cozy {base} scene, cinematic, {genre} mood, high contrast",
+           "thumb_text": "오늘도 수고했어요"} for i in range(n)]
+    return {"engine": "heuristic", "pattern": "제목 통계 기반(정밀 분석은 GPT 키 필요)", "examples": ex}
+
+
 def channel_brand(url: str, genre: str = "") -> dict:
     """채널 URL → 로고·배너·설명·태그·썸네일 수집 + Vision '결' 분석."""
     try:
