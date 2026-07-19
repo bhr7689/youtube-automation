@@ -43,6 +43,17 @@ SEED_PROJECTS: dict[str, dict] = {
         "note": "일본 정통 피아노·클래식. 잔잔·서정.",
         "benchmarks": [],
     },
+    "🙏 종교 (CCM·불교)": {
+        "note": "기독교 CCM 찬양·워십 + 불교 음악·찬불가·명상. 종교 음악 채널.",
+        "benchmarks": [
+            "https://www.youtube.com/@CCMCOMPANY",
+            "https://www.youtube.com/channel/UCfuQHdNwJTa_E1ExHoEUwTw",
+            "https://www.youtube.com/channel/UC0e2fHWBwjXxxzI6g7jxhuA",
+            "https://www.youtube.com/channel/UCdmrs7ze65mn8po3lOw_scw",
+            "https://www.youtube.com/channel/UCT32yJHkouI8pecc0KJgd9A",
+            "https://www.youtube.com/channel/UCSpcGjm85BCFUk7oo84OS-g",
+        ],
+    },
 }
 
 

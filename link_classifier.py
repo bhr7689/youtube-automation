@@ -37,6 +37,8 @@ BASE_LEXICON = {
     "lofi": ["lofi", "lo-fi", "로파이", "chill", "study", "공부", "sleep", "수면", "감성", "relax"],
     "클래식": ["클래식", "classical", "피아노", "piano", "왈츠", "waltz", "violin", "바이올린", "orchestra"],
     "발라드": ["발라드", "ballad", "슬픈", "이별", "새벽", "밤"],
+    "종교": ["ccm", "찬양", "워십", "worship", "기독교", "예수", "하나님", "gospel", "복음",
+             "불교", "찬불가", "염불", "반야심경", "부처", "사찰", "temple", "buddhist", "명상"],
 }
 
 
