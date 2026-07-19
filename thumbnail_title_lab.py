@@ -268,7 +268,7 @@ with tabs[2]:
                 for i, url in enumerate(chans):
                     data = CM.collect_channel(url)
                     for v in data.get("videos", []):
-                        allvids.append({**v, "source": data.get("title", url)})
+                        allvids.append({**v, "source": data.get("title", url), "bench_url": url})
                     prog.progress((i + 1) / len(chans), f"수집 {i+1}/{len(chans)}")
                 prog.empty()
                 st.session_state["report_" + cur] = T.tier_report(allvids)
@@ -277,7 +277,11 @@ with tabs[2]:
 
         rep = st.session_state.get("report_" + cur)
         if rep:
-            st.success(f"6개월 이내 {rep['total']}개 분석 (오래된 영상 {rep['dropped_old']}개 제외)")
+            top = st.columns([3, 2])
+            top[0].success(f"6개월 이내 {rep['total']}개 분석 (오래된 영상 {rep['dropped_old']}개 제외)")
+            sort_key = top[1].radio("정렬", ["조회수순", "📅 날짜순"], horizontal=True,
+                                    key="sort_" + cur, label_visibility="collapsed")
+            bench_by_url = {b["url"]: b for b in proj["benchmarks"]}
             for label in T.TIER_ORDER:
                 info = rep["tiers"][label]
                 if not info["count"]:
@@ -285,10 +289,14 @@ with tabs[2]:
                 low = " 🌱" if info["is_low"] else ""
                 st.markdown(f"#### {label}{low} — {info['count']}개")
                 st.caption("승리 공식: " + info["formula"])
+                if sort_key == "📅 날짜순":
+                    vids = sorted(info["videos"], key=lambda v: v.get("published", ""), reverse=True)
+                else:
+                    vids = sorted(info["videos"], key=lambda v: v.get("views", 0), reverse=True)
                 grid = st.columns(4)
-                for j, v in enumerate(info["videos"][:8]):
+                for j, v in enumerate(vids[:8]):
                     with grid[j % 4]:
-                        card = st.container(border=True, height=350)  # 고정 높이 → 열 맞춤
+                        card = st.container(border=True, height=360)  # 고정 높이 → 열 맞춤
                         vid = v.get("video_id", "")
                         link = f"https://youtu.be/{vid}" if vid else ""
                         if v.get("thumb"):
@@ -299,12 +307,23 @@ with tabs[2]:
                                     unsafe_allow_html=True)
                             else:
                                 card.image(v["thumb"], use_container_width=True)
-                        card.caption(f"👁 {int(v.get('views',0)):,} · 📅 {v.get('published','')} · 일{int(v.get('vpd',0)):,}회")
-                        card.caption(f"📺 {(v.get('source','') or '')[:22]}")
-                        card.caption((v.get("title", "") or "")[:38])
-                        if card.button("🧺 바구니", key=f"bsk_{label}_{j}"):
+                        # 카드에서 바로 🔖북마크 · 🔔알림 · 🧺바구니
+                        burl = v.get("bench_url", "")
+                        b = bench_by_url.get(burl)
+                        a1, a2, a3 = card.columns(3)
+                        if b is not None:
+                            if a1.checkbox("🔖", value=b.get("bookmark"), key=f"bk_{label}_{j}",
+                                           help="채널 북마크") != b.get("bookmark"):
+                                G.toggle_flag(cur, burl, "bookmark"); st.rerun()
+                            if a2.checkbox("🔔", value=b.get("alarm"), key=f"al_{label}_{j}",
+                                           help="새 영상 카톡 알림") != b.get("alarm"):
+                                G.toggle_flag(cur, burl, "alarm"); st.rerun()
+                        if a3.button("🧺", key=f"bsk_{label}_{j}", help="레퍼런스 바구니에 담기"):
                             G.add_to_basket(cur, v.get("thumb", ""), v.get("title", ""),
                                             v.get("source", "")); st.toast("바구니에 담음")
+                        card.caption(f"👁 {int(v.get('views',0)):,} · 📅 {v.get('published','')}")
+                        card.caption(f"📺 {(v.get('source','') or '')[:22]}")
+                        card.caption((v.get("title", "") or "")[:38])
 
 # ═══════════════════════════════════════════════════════════════
 # 🎯 일치성 검사
