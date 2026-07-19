@@ -447,8 +447,8 @@ if page == "🔖 북마크 채널":
                     st.caption(f"👁 {v['views']:,} · {v['published']}")
                     st.caption((v.get("title", "") or "")[:30])
                     _t = tr.get(_vid)
-                    if _t:
-                        st.caption(_t[0] + " " + (_t[1] or "")[:28])
+                    if _t and (_t[1] or "").strip():        # 번안 텍스트 있을 때만 표시
+                        st.caption(f"{_t[0]} {_t[1][:28]}")
     elif not _bm:
         st.info("아직 북마크한 채널이 없어요. 🔬 구간분석/🌊 레이더 카드에서 🔖·⭐로 북마크한 뒤 여기서 모아보세요.")
 
