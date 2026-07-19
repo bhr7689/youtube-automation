@@ -833,6 +833,9 @@ if page == "🌊 트렌드 레이더":
         _usedkw = rr.get("keywords", [])
         st.caption(f"🌍 {region} · 급상승 {len(rr['videos'])}개 (일평균 조회수 높은 순)"
                    + (f" · 검색어: {', '.join(_usedkw[:6])}" if _usedkw else ""))
+        _plist = list(state["projects"].keys())
+        rtarget = st.selectbox("📁 담을 장르 (아래 버튼이 이 장르로 저장돼요)", _plist,
+                               index=_plist.index(cur) if cur in _plist else 0, key="radar_target")
         for i, v in enumerate(rr["videos"]):
             box = st.container(border=True)
             cc = box.columns([1, 3])
@@ -847,9 +850,18 @@ if page == "🌊 트렌드 레이더":
             tmpl = TR.strip_genre_template(src_title)
             cc[1].caption("💡 전이 템플릿 (한국어 · 장르만 우리 걸로 바꾸면 됨)")
             cc[1].code(tmpl, language=None)
-            if cc[1].button(f"➡️ '{cur}' 참고 제목으로 저장", key=f"radar_apply_{i}"):
-                G.add_example_title(cur, tmpl)
-                st.toast("저장! ✨ 생성에서 참고 제목으로 쓰여요")
+            _vurl = f"https://youtu.be/{v.get('video_id','')}"
+            _demo = str(v.get("video_id", "")).startswith("demo")
+            b1, b2, b3 = cc[1].columns(3)
+            if b1.button("➡️ 참고제목", key=f"radar_apply_{i}", help="전이 템플릿을 참고제목으로"):
+                G.add_example_title(rtarget, tmpl); st.toast(f"'{rtarget}' 참고제목 저장")
+            if b2.button("📌 벤치마크", key=f"radar_bench_{i}", disabled=_demo,
+                         help=f"이 영상 링크를 '{rtarget}' 벤치마크에 추가"):
+                G.add_benchmarks(rtarget, [_vurl]); st.toast(f"'{rtarget}' 벤치마크 추가")
+            if b3.button("⭐ 집중+알림", key=f"radar_focus_{i}", disabled=_demo,
+                         help="집중 벤치마킹에 추가 + 새 영상 알림 ON"):
+                G.add_benchmarks(G.FOCUS_BUCKET, [_vurl])
+                G.toggle_flag(G.FOCUS_BUCKET, _vurl, "alarm", True); st.toast("⭐ 집중 벤치마킹 + 🔔알림")
 
 # ═══════════════════════════════════════════════════════════════
 # 🧺 레퍼런스 바구니
