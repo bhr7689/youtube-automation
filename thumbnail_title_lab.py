@@ -355,23 +355,38 @@ if page == "🔬 구간 분석":
                 if c4.button("🗑", key="rm_" + b["url"]):
                     G.remove_benchmark(cur, b["url"]); st.rerun()
 
+        expand = st.checkbox("🔗 영상 링크를 **원채널로 확장** (그 채널 새 영상까지 분석 — 시간 지나도 갱신)",
+                             value=True, key="expand_ch")
         if st.button("📊 분석 실행 (수집 → 구간별 공식)", type="primary"):
             if CM is None:
                 st.error("concept_maker 로드 실패 — jpshorts/backend 확인.")
             else:
-                allvids = []
+                allvids, seen = [], set()
                 chans = [b["url"] for b in proj["benchmarks"]]
                 ch_urls = [u for u in chans if LC.extract_ref(u)[0] in ("channel", "handle")]
                 vid_urls = [u for u in chans if LC.extract_ref(u)[0] == "video"]
-                prog = st.progress(0.0, "수집 중…")
-                for i, url in enumerate(ch_urls):          # 채널/핸들 → 그 채널 영상들
+                targets = list(ch_urls)                    # 수집할 '채널' 목록
+                prog = st.progress(0.0, "수집 준비…")
+                if vid_urls and expand:                    # 영상 → 원채널 해석 후 채널로 편입
+                    for vc in LC.resolve_videos_to_channels(vid_urls):
+                        if vc.get("channel_id"):
+                            G.set_benchmark_channel(cur, vc["url"], vc["channel_id"], vc["channel_title"])
+                            turl = "https://www.youtube.com/channel/" + vc["channel_id"]
+                            if turl not in targets:
+                                targets.append(turl)
+                for i, url in enumerate(targets):          # 채널들 → 그 채널 최근 영상들(갱신됨)
                     data = CM.collect_channel(url)
                     for v in data.get("videos", []):
+                        vid = v.get("video_id", "")
+                        if vid and vid in seen:
+                            continue
+                        seen.add(vid)
                         allvids.append({**v, "source": data.get("title", url), "bench_url": url})
-                    prog.progress((i + 1) / max(1, len(ch_urls) + 1), f"채널 {i+1}/{len(ch_urls)}")
-                if vid_urls:                               # 영상 링크 → 그 영상 자체(직접 조회)
+                    prog.progress((i + 1) / max(1, len(targets) + 1), f"채널 {i+1}/{len(targets)}")
+                if vid_urls and not expand:                # 확장 OFF → 그 영상만 직접 조회
                     prog.progress(0.95, f"영상 {len(vid_urls)}개 조회…")
-                    allvids += LC.fetch_video_stats(vid_urls)
+                    allvids += [v for v in LC.fetch_video_stats(vid_urls)
+                                if v.get("video_id") not in seen]
                 prog.empty()
                 _ss_set("report_" + cur, T.tier_report(allvids))
                 if not os.environ.get("YOUTUBE_API_KEY", "").strip():

@@ -177,6 +177,32 @@ def fetch_video_stats(urls: list[str]) -> list[dict]:
     return out
 
 
+def resolve_videos_to_channels(video_urls: list[str]) -> list[dict]:
+    """영상 URL들 → 각 영상의 원채널 [{url, channel_id, channel_title}].
+    영상 링크로 채널을 찾아 그 채널의 새 영상까지 추적하기 위함."""
+    import youtube_client as yc
+    out: list[dict] = []
+    if not yc.has_key() or not video_urls:
+        return out
+    yt = yc._yt()
+    id2url, ids = {}, []
+    for u in video_urls:
+        kind, val = extract_ref(u)
+        if kind == "video":
+            ids.append(val)
+            id2url[val] = u
+    for k in range(0, len(ids), 50):
+        try:
+            r = yt.videos().list(part="snippet", id=",".join(ids[k:k + 50])).execute()
+        except Exception:               # noqa: BLE001
+            continue
+        for it in r.get("items", []):
+            sn = it["snippet"]
+            out.append({"url": id2url.get(it["id"], ""), "channel_id": sn.get("channelId", ""),
+                        "channel_title": sn.get("channelTitle", "")})
+    return out
+
+
 def _project_keywords(projects: dict) -> dict[str, list[str]]:
     """프로젝트 이름/메모 + BASE_LEXICON 으로 장르별 키워드 세트(불용어 제외)."""
     out = {}
