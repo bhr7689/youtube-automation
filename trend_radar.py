@@ -25,6 +25,23 @@ DEFAULT_SITUATIONS = [
     "초여름", "여름", "가을", "겨울", "봄", "녹음", "장마", "첫눈", "노을", "산책",
 ]
 
+# 나라별 상황 키워드(그 나라 언어로 검색해야 그 나라 급상승이 잡힌다)
+LOCALE_SITUATIONS = {
+    "KR": DEFAULT_SITUATIONS,
+    "JP": ["雨の日", "雪の日", "夜明け", "夜", "ドライブ", "カフェ", "初夏", "夏",
+           "秋", "冬", "春", "新緑", "梅雨", "初雪", "夕焼け", "散歩", "朝"],
+    "US": ["rainy day", "snowy day", "late night", "morning", "drive", "cafe",
+           "early summer", "summer", "autumn", "winter", "spring", "sunset", "walk"],
+    "TW": ["下雨天", "夜晚", "清晨", "開車", "咖啡廳", "夏天", "秋天", "冬天", "散步"],
+    "FR": ["jour de pluie", "matin", "nuit", "café", "été", "automne", "conduite", "promenade"],
+}
+# 나라 선택지 (표시명: regionCode)
+REGIONS = {"🇰🇷 한국": "KR", "🇯🇵 일본": "JP", "🇺🇸 미국": "US",
+           "🇹🇼 대만": "TW", "🇫🇷 프랑스": "FR"}
+_MUSIC_HINT = {"KR": "음악 플레이리스트", "JP": "音楽 プレイリスト", "US": "music playlist",
+               "TW": "音樂 播放清單", "FR": "musique playlist"}
+_REL_LANG = {"KR": "ko", "JP": "ja", "US": "en", "TW": "zh", "FR": "fr"}
+
 
 def _vpd(views: int, published: str) -> float:
     return T.views_per_day(views, published)
@@ -62,20 +79,24 @@ def _demo(keywords: list[str]) -> list[dict]:
 
 def find_surging(keywords: list[str] | None = None, days: int = 14,
                  region: str = "KR", per_kw: int = 6, top: int = 20) -> dict:
-    """상황 키워드별 최근 급상승(음악) 영상 → vpd 정렬. 반환 {engine, videos}."""
-    keywords = keywords or DEFAULT_SITUATIONS
+    """상황 키워드별 최근 급상승(음악) 영상 → vpd 정렬. 반환 {engine, videos, region}."""
+    keywords = keywords or LOCALE_SITUATIONS.get(region, DEFAULT_SITUATIONS)
+    hint = _MUSIC_HINT.get(region, "music")
+    lang = _REL_LANG.get(region, "")
     try:
         import youtube_client as yc
         if not yc.has_key():
-            return {"engine": "demo", "videos": _demo(keywords)}
+            return {"engine": "demo", "region": region, "videos": _demo(keywords)}
         yt = yc._yt()
         after = (_dt.datetime.utcnow() - _dt.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
         seen, vids = set(), []
         for kw in keywords:
             try:
-                s = yt.search().list(part="id", q=kw, type="video", order="viewCount",
-                                     publishedAfter=after, maxResults=per_kw,
-                                     regionCode=region, videoCategoryId="10").execute()
+                params = dict(part="id", q=f"{kw} {hint}", type="video", order="viewCount",
+                              publishedAfter=after, maxResults=per_kw, regionCode=region)
+                if lang:
+                    params["relevanceLanguage"] = lang
+                s = yt.search().list(**params).execute()
                 ids = [it["id"]["videoId"] for it in s.get("items", []) if it["id"].get("videoId")]
                 if not ids:
                     continue
@@ -96,14 +117,16 @@ def find_surging(keywords: list[str] | None = None, days: int = 14,
             except Exception:           # noqa: BLE001
                 continue
         vids.sort(key=lambda x: x["vpd"], reverse=True)
-        return {"engine": "youtube", "videos": vids[:top]}
+        return {"engine": "youtube", "region": region, "videos": vids[:top]}
     except Exception:                   # noqa: BLE001
-        return {"engine": "demo", "videos": _demo(keywords)}
+        return {"engine": "demo", "region": region, "videos": _demo(keywords)}
 
 
-def alert(keywords: list[str] | None = None, notify: bool = False, min_vpd: int = 20000) -> list[dict]:
-    """급상승 top 을 카톡 알림(cron 용). min_vpd 이상만."""
-    res = find_surging(keywords)
+def alert(keywords: list[str] | None = None, notify: bool = False, min_vpd: int = 20000,
+          region: str | None = None) -> list[dict]:
+    """급상승 top 을 카톡 알림(cron 용). min_vpd 이상만. region 은 env TREND_REGION 로도."""
+    region = region or os.environ.get("TREND_REGION", "KR")
+    res = find_surging(keywords, region=region)
     hot = [v for v in res["videos"] if v.get("vpd", 0) >= min_vpd][:5]
     if notify and hot:
         try:

@@ -715,18 +715,24 @@ if page == "🌊 트렌드 레이더":
     st.subheader("🌊 트렌드 레이더 — 장르 불문 '지금 터지는 제목'")
     st.caption("터지는 제목 = [상황]+[장르]. 상황 구조는 장르를 초월해요. 다른 장르 급상승 제목을 "
                "가져와 **장르만 우리 걸로** 바꿔 쓰면 됩니다.")
-    kws = st.text_input("상황 키워드 (쉼표 구분, 비우면 기본 세트: 비·눈·여름·초여름·녹음·새벽…)",
-                        key="radar_kw")
+    rc1, rc2 = st.columns([1, 2])
+    region_name = rc1.selectbox("🌍 나라", list(TR.REGIONS), key="radar_region")
+    region = TR.REGIONS[region_name]
+    kws = rc2.text_input("상황 키워드 (쉼표, 비우면 그 나라 언어 기본 세트로 검색)", key="radar_kw")
     kw_list = [k.strip() for k in kws.split(",") if k.strip()] or None
+    days = st.slider("최근 며칠 이내", 3, 30, 14)
     if st.button("🔍 지금 터지는 제목 찾기", type="primary"):
-        with st.spinner("최근 급상승 검색 중…"):
-            _ss_set("radar_res", TR.find_surging(kw_list))
+        with st.spinner(f"{region_name} 최근 급상승 검색 중…"):
+            _ss_set("radar_res", TR.find_surging(kw_list, days=days, region=region))
 
     rr = st.session_state.get("radar_res")
     if rr:
         if rr.get("engine") == "demo":
             st.warning("⚠️ YouTube 키가 없어 데모입니다. (사장님 PC에선 실검색)")
-        st.caption(f"급상승 {len(rr['videos'])}개 (일평균 조회수 높은 순)")
+        elif not rr["videos"]:
+            st.info("결과가 0개예요. 최근 일수를 늘리거나(예: 30일), 상황 키워드를 직접 넣거나, "
+                    "다른 나라를 선택해보세요. (쿼터 소진 시에도 0이 날 수 있어요)")
+        st.caption(f"🌍 {region} · 급상승 {len(rr['videos'])}개 (일평균 조회수 높은 순)")
         for i, v in enumerate(rr["videos"]):
             box = st.container(border=True)
             cc = box.columns([1, 3])
