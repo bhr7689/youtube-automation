@@ -51,6 +51,7 @@ import channel_watcher as W
 import trend_radar as TR
 import chat_editor as CE
 import localize as LZ
+import img_similar as IMG
 
 st.set_page_config(page_title="🎬 썸네일·제목 연구소", page_icon="🎬", layout="wide")
 
@@ -468,22 +469,44 @@ if page == "🎯 일치성":
                         G.set_signature(cur, vz.get("signature_summary", ""))
                         st.success("우리 시그니처로 저장! ✨ 생성에 반영됩니다."); st.rerun()
 
-    src = st.radio("분석 대상", ["📺 현재 장르 벤치마크", "🔗 링크 직접 입력"],
+    src = st.radio("분석 대상", ["📺 현재 장르 벤치마크", "🔗 링크 직접 입력",
+                                "📎 이미지 업로드(비슷한 썸네일 모음)"],
                    horizontal=True, key="pa_src")
-    pa_urls = []
+    pa_urls, up_videos = [], []
     if src == "📺 현재 장르 벤치마크":
         pa_urls = [b["url"] for b in proj["benchmarks"]]
         st.caption(f"'{cur}' 벤치마크 {len(pa_urls)}개. 💡 구간분석을 먼저 돌리면 **실제 영상 썸네일**로 분석돼요(로고 아님).")
-    else:
+    elif src == "🔗 링크 직접 입력":
         _t = st.text_area("영상 링크 (여러 줄)", height=110, key="pa_links",
                           placeholder="https://youtu.be/xxxx\nhttps://youtu.be/yyyy")
         pa_urls = LC.split_links(_t)
+    else:  # 이미지 직접 업로드 (비슷한 썸네일 모음)
+        ups = st.file_uploader("비슷한 썸네일 이미지들 (여러 장)", type=["png", "jpg", "jpeg", "webp"],
+                               accept_multiple_files=True, key="pa_up")
+        up_titles = st.text_area("각 이미지 제목 (한 줄에 하나, 순서대로 — 선택)", key="pa_up_titles")
+        if ups:
+            import base64
+            imgs = ["data:image/png;base64," + base64.b64encode(f.read()).decode() for f in ups]
+            tl = [t.strip() for t in up_titles.split("\n") if t.strip()]
+            up_videos = [{"thumb": im, "title": (tl[i] if i < len(tl) else "")} for i, im in enumerate(imgs)]
+            st.caption(f"📎 {len(imgs)}장 업로드됨")
+            if len(imgs) >= 2 and st.checkbox("🧲 비슷한 것끼리 묶어 보기"):
+                for gi, g in enumerate(IMG.group_similar(imgs)):
+                    st.caption(f"그룹 {gi+1} · {len(g)}장 (한 결)")
+                    gc = st.columns(min(6, len(g)))
+                    for k, idx in enumerate(g[:6]):
+                        gc[k].image(imgs[idx], use_container_width=True)
     n_limit = st.slider("Vision 분석 개수(비용·속도)", 3, 9, 6)
 
     if st.button("🔍 패턴 분석 실행", type="primary"):
-        with st.spinner("수집 + GPT Vision 분석 중… (실제 썸네일)"):
+        with st.spinner("수집 + GPT Vision 분석 중…"):
             rep = st.session_state.get("report_" + cur)
-            if src == "📺 현재 장르 벤치마크" and rep:
+            if src == "📎 이미지 업로드(비슷한 썸네일 모음)":
+                if up_videos:
+                    _ss_set("pa_" + cur, PA.analyze_videos(up_videos[:n_limit], cur))
+                else:
+                    st.warning("이미지를 올려주세요.")
+            elif src == "📺 현재 장르 벤치마크" and rep:
                 allv = []
                 for label in T.TIER_ORDER:
                     allv += rep["tiers"][label]["videos"]
@@ -495,7 +518,7 @@ if page == "🎯 일치성":
             elif pa_urls:
                 _ss_set("pa_" + cur, PA.analyze(pa_urls[:n_limit], cur))
             else:
-                st.warning("분석할 링크가 없어요.")
+                st.warning("분석할 대상이 없어요.")
 
     res = st.session_state.get("pa_" + cur)
     if res:
