@@ -86,7 +86,14 @@ def _demo(keywords: list[str]) -> list[dict]:
 def find_surging(keywords: list[str] | None = None, days: int = 14,
                  region: str = "KR", per_kw: int = 6, top: int = 20) -> dict:
     """상황 키워드별 최근 급상승(음악) 영상 → vpd 정렬. 반환 {engine, videos, region}."""
+    custom = bool(keywords)
     keywords = keywords or LOCALE_SITUATIONS.get(region, DEFAULT_SITUATIONS)
+    # 사용자가 직접 넣은 키워드는 그 나라 언어로 번역해 검색(한국어로 넣어도 일본 결과 나오게)
+    if custom and region != "KR":
+        import localize
+        loc = localize.localize_batch(keywords, target=region, context="유튜브 검색 키워드")
+        if loc:
+            keywords = [loc.get(i, k) for i, k in enumerate(keywords)]
     hint = _MUSIC_HINT.get(region, "music")
     lang = _REL_LANG.get(region, "")
     try:
@@ -128,7 +135,7 @@ def find_surging(keywords: list[str] | None = None, days: int = 14,
             trans = _translate_titles([v["title"] for v in vids])
             for i, v in enumerate(vids):
                 v["title_ko"] = trans.get(i, "")
-        return {"engine": "youtube", "region": region, "videos": vids}
+        return {"engine": "youtube", "region": region, "keywords": keywords, "videos": vids}
     except Exception:                   # noqa: BLE001
         return {"engine": "demo", "region": region, "videos": _demo(keywords)}
 

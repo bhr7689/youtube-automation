@@ -817,6 +817,7 @@ if page == "🌊 트렌드 레이더":
     region = TR.REGIONS[region_name]
     kws = rc2.text_input("상황 키워드 (쉼표, 비우면 그 나라 언어 기본 세트로 검색)", key="radar_kw")
     kw_list = [k.strip() for k in kws.split(",") if k.strip()] or None
+    st.caption("💡 키워드를 한국어로 넣어도, 선택한 나라 언어로 **자동 번역해 검색**해요 (플레이리스트→プレイリスト).")
     days = st.slider("최근 며칠 이내", 3, 30, 14)
     if st.button("🔍 지금 터지는 제목 찾기", type="primary"):
         with st.spinner(f"{region_name} 최근 급상승 검색 중…"):
@@ -829,7 +830,9 @@ if page == "🌊 트렌드 레이더":
         elif not rr["videos"]:
             st.info("결과가 0개예요. 최근 일수를 늘리거나(예: 30일), 상황 키워드를 직접 넣거나, "
                     "다른 나라를 선택해보세요. (쿼터 소진 시에도 0이 날 수 있어요)")
-        st.caption(f"🌍 {region} · 급상승 {len(rr['videos'])}개 (일평균 조회수 높은 순)")
+        _usedkw = rr.get("keywords", [])
+        st.caption(f"🌍 {region} · 급상승 {len(rr['videos'])}개 (일평균 조회수 높은 순)"
+                   + (f" · 검색어: {', '.join(_usedkw[:6])}" if _usedkw else ""))
         for i, v in enumerate(rr["videos"]):
             box = st.container(border=True)
             cc = box.columns([1, 3])
