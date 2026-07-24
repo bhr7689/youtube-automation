@@ -484,5 +484,18 @@ python pipeline.py --init                              # 파이프라인 폴더 
       🥇최고/🥉최저 배지 + 최고/최저 배수) + 정량 유추 불릿 + 👁 시각 원인 버튼.
     · 검증: cluster_by_style(이모지 유무 병합) + diff_hypotheses + Vision 무키 None +
       AppTest 5탭 예외0 + self-test.
+  - 🔬 **키워드 + 뉘앙스 심층 분석**(2026-07-24, 같은 브랜치): "조회수 높은 썸네일·제목의
+    키워드 분석과 뉘앙스가 모두 들어가야" 요청 → 정량(빈도)뿐 아니라 정성(톤·말투·암시·
+    감정 트리거)까지 뽑아 화면 표시 + 생성에 자동 주입.
+    · `concept_maker.py`: `analyze_titles_nuance()` — GPT/Gemini 가 1만+ 제목(+Vision)을
+      읽어 구조화 JSON(전체 뉘앙스·톤워드·키워드 묶음·파워워드·감정 트리거·미묘한 뉘앙스
+      포인트·제목 구조·dos/donts). 키 없으면 None(정량만).
+    · `viral_lab.py`: `keyword_summary`(정량 집계→화면용 라벨 7종) + `nuance_brief_text`
+      (뉘앙스 결과→생성 프롬프트 주입용 압축 브리프).
+    · `viral_lab_app.py` 🔎탭: 📊 키워드 분석(빈도, 항상) + 🔬 뉘앙스 심층분석 버튼(카드
+      렌더) 추가. ✨생성 시 `extra_notes`=nuance_brief_text 로 자동 주입 → 신규 제목·썸네일이
+      같은 파워워드·뉘앙스 계승.
+    · 검증: keyword_summary·analyze_titles_nuance(무키 None·mock 파싱)·nuance_brief_text·
+      generate_report 뉘앙스 주입 캡처 + AppTest 5탭 예외0.
   - **다음**: eqO5N 머지(→ 사장님 화면 반영) → 실키 end-to-end → 수집 키워드 시드 튜닝.
 - (작업하며 갱신할 것)
