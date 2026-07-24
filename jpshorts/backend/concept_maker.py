@@ -300,6 +300,44 @@ def explain_view_gap_vision(high: list[dict], low: list[dict]) -> str | None:
         return None
 
 
+NUANCE_PROMPT = """너는 유튜브 제목 카피 분석가다. 아래는 조회수 1만 이상으로 '검증된' 인기 영상들의
+제목(있으면 썸네일 시각 분석도)이다. 이 제목들이 왜 먹히는지 **키워드와 뉘앙스를 남김없이**
+분석하라. 한국어. 아래 JSON 스키마 **하나만** 순수 JSON 으로 출력(코드펜스·인사말·설명 금지):
+{
+  "overall_nuance": "이 제목군을 관통하는 뉘앙스·톤 한 문단 — 감정 온도, 말투(반말/존댓말/명사형), 화자의 태도, 시청자와의 거리감.",
+  "tone_words": ["톤을 규정하는 형용사 5~8개(예: 아련한·도발적인·위로하는·과장된·나른한)"],
+  "keyword_groups": [{"label":"묶음 이름(예: 시간대·상황)","words":["키워드"],"why":"이 묶음이 클릭을 부르는 이유 한 줄"}],
+  "power_words": ["실제로 클릭을 당기는 파워워드·후킹 단어(극단어·감각어·호기심어)"],
+  "emotional_triggers": ["작동하는 감정 트리거(예: 향수 자극·호기심 갭·공감·금기·위로)"],
+  "nuance_notes": ["미묘한 뉘앙스 포인트 3~6개 — 직접 말 안 하고 암시하는 것, 말줄임·여백, 숫자·이모지의 역할, 반말/존댓말의 효과"],
+  "title_structure": "공통 제목 구조 공식 한 줄(예: 상황어 + 감정형용사 + 장르 + [이모지])",
+  "dos": ["신규 제목에서 반드시 살릴 것 3~5"],
+  "donts": ["피할 것 2~4"]
+}
+근거 없는 일반론 금지 — 실제 제목에서 보이는 것만 적어라. 빈 값도 키는 반드시 포함."""
+
+
+def analyze_titles_nuance(titles: list[str], vision_text: str = "") -> dict | None:
+    """1만+ 제목들의 키워드·뉘앙스를 LLM 으로 심층 분석(구조화 JSON).
+
+    Gemini/OpenAI 키 없으면 None. 반환 {result(dict)|None, markdown, engine}.
+    """
+    clean = [t.strip() for t in (titles or []) if t and t.strip()][:40]
+    if not clean:
+        return None
+    block = "\n".join(f"- {t}" for t in clean)
+    prompt = NUANCE_PROMPT + "\n\n[인기 제목 — 조회수 1만+]\n" + block
+    if vision_text.strip():
+        prompt += "\n\n[썸네일 시각 분석(참고)]\n" + vision_text.strip()
+    prompt += "\n\n위 JSON 스키마 하나만 순수 JSON 으로 출력하라."
+    out = _llm(prompt, json_mode=True)
+    if not out:
+        return None
+    parsed = _parse_json(out)
+    return {"result": parsed, "markdown": None if parsed else out,
+            "engine": _engine_name()}
+
+
 def _engine_name() -> str:
     if os.environ.get("OPENAI_API_KEY", "").strip():
         return "openai"

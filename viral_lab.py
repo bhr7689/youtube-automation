@@ -172,6 +172,58 @@ def _median(nums: list[int]) -> int:
     return s[m] if len(s) % 2 else (s[m - 1] + s[m]) // 2
 
 
+def keyword_summary(agg: dict) -> list[tuple[str, str]]:
+    """정량 집계 → 화면·생성 공용 키워드 라벨 목록 [(제목, 값)]. 빈 항목은 건너뜀."""
+    def _join(items, n=6):
+        return " · ".join(f"{w}({c})" for w, c in (items or [])[:n])
+    rows = [
+        ("반복 단어", " · ".join(w for w, _ in agg.get("top_tokens", [])[:10])),
+        ("상황어", _join(agg.get("situation"))),
+        ("감각어", _join(agg.get("sensory"))),
+        ("장르어", _join(agg.get("genre"))),
+        ("볼륨어(모음·믹스)", _join(agg.get("volume"))),
+        ("이모지", " ".join(f"{w}×{c}" for w, c in agg.get("top_emojis", [])[:6])),
+        ("문형·길이",
+         f"질문 {agg.get('question_pct', 0)}% · 감탄 {agg.get('exclaim_pct', 0)}% · "
+         f"이모지 {agg.get('emoji_pct', 0)}% · 평균 {int(agg.get('avg_length', 0))}자"),
+    ]
+    return [(k, v) for k, v in rows if v]
+
+
+def nuance_brief_text(nuance: dict | None) -> str:
+    """뉘앙스 분석 결과(analyze_titles_nuance) → 생성 프롬프트에 넣을 압축 브리프.
+
+    None 이거나 파싱 실패면 빈 문자열(생성에 아무 영향 없음).
+    """
+    if not nuance or not isinstance(nuance.get("result"), dict):
+        return ""
+    r = nuance["result"]
+
+    def _list(key, n=8):
+        v = r.get(key)
+        return " · ".join(str(x) for x in v[:n]) if isinstance(v, list) else ""
+
+    parts = []
+    if r.get("overall_nuance"):
+        parts.append("전체 뉘앙스: " + str(r["overall_nuance"]))
+    if _list("tone_words"):
+        parts.append("톤: " + _list("tone_words"))
+    if _list("power_words"):
+        parts.append("파워워드: " + _list("power_words"))
+    if _list("emotional_triggers"):
+        parts.append("감정 트리거: " + _list("emotional_triggers"))
+    if r.get("title_structure"):
+        parts.append("제목 구조: " + str(r["title_structure"]))
+    if _list("dos", 6):
+        parts.append("반드시 살릴 것: " + _list("dos", 6))
+    if _list("donts", 4):
+        parts.append("피할 것: " + _list("donts", 4))
+    if not parts:
+        return ""
+    return ("[1만+ 키워드·뉘앙스 심층 분석 — 신규 제목·썸네일 문구에 이 뉘앙스와 파워워드를 "
+            "그대로 반영하라]\n" + "\n".join("· " + p for p in parts))
+
+
 # ── 🧩 같은 풍끼리 묶기 (스타일 클러스터링, 헤드리스·무료) ──────
 def _style_signature(v: dict) -> tuple[str, str]:
     """제목에서 (테마, 문형) 시그니처 추출 → 같은 풍끼리 묶는 키.

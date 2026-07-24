@@ -192,17 +192,54 @@ with tab_find:
         st.markdown(f"**🏆 제목 승리 공식** — {ana['formula']}")
 
         agg = ana["agg"]
-        cols = st.columns(2)
-        with cols[0]:
-            if agg.get("situation"):
-                st.caption("상황어 " + " · ".join(f"{w}({c})" for w, c in agg["situation"][:5]))
-            if agg.get("sensory"):
-                st.caption("감각어 " + " · ".join(f"{w}({c})" for w, c in agg["sensory"][:5]))
-        with cols[1]:
-            if agg.get("top_emojis"):
-                st.caption("이모지 " + " ".join(f"{w}×{c}" for w, c in agg["top_emojis"][:6]))
-            if agg.get("top_tokens"):
-                st.caption("반복단어 " + " · ".join(w for w, _ in agg["top_tokens"][:8]))
+        # 📊 정량 키워드 분석 (무료·항상)
+        st.markdown("**📊 키워드 분석 (빈도)**")
+        for label, val in V.keyword_summary(agg):
+            st.caption(f"**{label}** — {val}")
+
+        # 🔬 키워드·뉘앙스 심층 분석 (GPT/Gemini) — 정성·뉘앙스
+        st.markdown("**🔬 키워드·뉘앙스 심층 분석**")
+        can_llm = CM is not None and (_openai or bool(os.environ.get("GEMINI_API_KEY", "").strip()))
+        if can_llm:
+            if st.button("🔬 GPT 로 키워드·뉘앙스 뽑기", use_container_width=True):
+                with st.spinner("제목들의 톤·말투·암시·감정 트리거를 분석하는 중..."):
+                    st.session_state["nuance"] = CM.analyze_titles_nuance(
+                        [h["title"] for h in ana["top"] if h.get("title")],
+                        vision_text=st.session_state.get("vision", ""))
+        else:
+            st.caption("뉘앙스 분석은 OpenAI 또는 Gemini 키가 필요합니다(⚙️ 설정).")
+
+        nz = st.session_state.get("nuance")
+        if nz and isinstance(nz.get("result"), dict):
+            r = nz["result"]
+            with st.container(border=True):
+                if r.get("overall_nuance"):
+                    st.markdown("**🎭 전체 뉘앙스** — " + str(r["overall_nuance"]))
+                if r.get("tone_words"):
+                    st.caption("톤: " + " · ".join(map(str, r["tone_words"])))
+                if r.get("power_words"):
+                    st.caption("💥 파워워드: " + " · ".join(map(str, r["power_words"])))
+                if r.get("emotional_triggers"):
+                    st.caption("❤️ 감정 트리거: " + " · ".join(map(str, r["emotional_triggers"])))
+                for g in (r.get("keyword_groups") or [])[:6]:
+                    if isinstance(g, dict):
+                        st.markdown(f"- **{g.get('label', '')}**: "
+                                    f"{' · '.join(map(str, g.get('words', [])))}  \n"
+                                    f"  ↳ {g.get('why', '')}")
+                if r.get("nuance_notes"):
+                    st.markdown("**미묘한 뉘앙스 포인트**")
+                    for n in r["nuance_notes"][:6]:
+                        st.markdown("- " + str(n))
+                if r.get("title_structure"):
+                    st.caption("🧱 제목 구조: " + str(r["title_structure"]))
+                cda, cdb = st.columns(2)
+                if r.get("dos"):
+                    cda.markdown("**✅ 살릴 것**\n\n" + "\n".join("- " + str(x) for x in r["dos"][:5]))
+                if r.get("donts"):
+                    cdb.markdown("**🚫 피할 것**\n\n" + "\n".join("- " + str(x) for x in r["donts"][:4]))
+            st.caption("→ 이 뉘앙스·파워워드는 **✨ 생성** 시 자동으로 반영됩니다.")
+        elif nz and nz.get("markdown"):
+            st.write(nz["markdown"])
 
         # 👁 GPT Vision 실측(썸네일 이미지 존재 시)
         if CM is not None and _openai:
@@ -315,12 +352,16 @@ with tab_gen:
             titles_text = "\n".join(h["title"] for h in top if h.get("title"))
             brief = V.vibe_brief(tone, intensity)
             vibe_notes = CM.build_vibe_notes(brief["tone_line"], brief["intensity_line"])
+            nuance_notes = V.nuance_brief_text(st.session_state.get("nuance"))
             st.session_state["punchy"] = brief["punchy"]
-            with st.spinner(f"GPT 가 1만+ 공식 + '{brief['label']}' 톤으로 짜는 중..."):
+            spin = f"GPT 가 1만+ 공식 + '{brief['label']}' 톤"
+            spin += " + 키워드·뉘앙스" if nuance_notes else ""
+            with st.spinner(spin + "으로 짜는 중..."):
                 try:
                     resp = CM.generate_report(channel_urls=[], song_type="auto",
                                               num_songs=1, images=imgs,
                                               titles_text=titles_text,
+                                              extra_notes=nuance_notes,
                                               vibe_notes=vibe_notes,
                                               punchy_overlay=brief["punchy"])
                 except Exception as e:          # noqa: BLE001
