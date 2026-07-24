@@ -248,6 +248,58 @@ def analyze_thumbnails_vision(thumb_urls: list[str],
         return None
 
 
+VIEW_GAP_PROMPT = """너는 유튜브 썸네일 A/B 분석가다. 아래 썸네일들은 **제목·주제가 비슷한**
+같은 풍의 영상인데 조회수가 갈렸다. '고조회' 그룹과 '저조회' 그룹의 썸네일을 실제로 비교해,
+**왜 한쪽이 더 클릭됐는지** 시각적 원인을 한국어로 유추하라. 추측이 아니라 실제로 보이는
+차이에서 근거를 대라. 반드시 아래 항목별로 '- ' 불릿 한 줄씩:
+- 색상: 지배 색·명도·채도·대비 차이 (더 눈에 띄는 쪽은?)
+- 인물: 유무, 표정·감정 강도, 얼굴 크기·클로즈업 정도
+- 헤어: 헤어스타일·헤어 색의 차이(있다면)
+- 배경: 복잡함/단순함, 배경이 주는 분위기 차이
+- 텍스트: 문구 유무·크기·가독성·후킹 강도
+- 구도: 시선 유도, 여백, 주 피사체 배치
+- 결론: 고조회 쪽이 이긴 **가장 결정적인 시각 요인 1~2개**, 그리고 저조회 쪽이 다음에
+  바꾸면 좋을 점 1~2개.
+간결하게. 데이터가 부족한 항목은 '판단 어려움'이라고 솔직히."""
+
+
+def explain_view_gap_vision(high: list[dict], low: list[dict]) -> str | None:
+    """제목·풍이 비슷한데 조회수가 갈린 이유를 GPT-4o Vision 이 썸네일을 직접 보고 유추.
+
+    high/low = [{"thumb","title","views"}, ...]. 키 없거나 볼 이미지 없으면 None.
+    """
+    key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not key:
+        return None
+    hi = [d for d in (high or []) if _is_image_ref(d.get("thumb", ""))][:4]
+    lo = [d for d in (low or []) if _is_image_ref(d.get("thumb", ""))][:4]
+    if not hi or not lo:
+        return None
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=key)
+        content: list = [{"type": "text", "text": VIEW_GAP_PROMPT}]
+        content.append({"type": "text", "text": "━━ [고조회 그룹] ━━"})
+        for d in hi:
+            content.append({"type": "text",
+                            "text": f"조회수 {int(d.get('views', 0)):,} · {d.get('title', '')}"})
+            content.append({"type": "image_url",
+                            "image_url": {"url": d["thumb"], "detail": "low"}})
+        content.append({"type": "text", "text": "━━ [저조회 그룹] ━━"})
+        for d in lo:
+            content.append({"type": "text",
+                            "text": f"조회수 {int(d.get('views', 0)):,} · {d.get('title', '')}"})
+            content.append({"type": "image_url",
+                            "image_url": {"url": d["thumb"], "detail": "low"}})
+        r = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": content}],
+            temperature=0.4, max_tokens=900)
+        return (r.choices[0].message.content or "").strip() or None
+    except Exception:
+        return None
+
+
 def _engine_name() -> str:
     if os.environ.get("OPENAI_API_KEY", "").strip():
         return "openai"

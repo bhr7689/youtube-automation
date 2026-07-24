@@ -470,5 +470,19 @@ python pipeline.py --init                              # 파이프라인 폴더 
     · `viral_lab_app.py` ✨생성 탭: 톤 라디오 + 강도 슬라이더 → build_vibe_notes 주입.
     · 검증: vibe_brief·주입문자열·overlay punchy·generate_report 프롬프트 주입 캡처 + 기본
       호출 무주입 + AppTest 4탭 예외0. ⚠️ 실 이미지·제목 생성은 사장님 PC(키)에서.
+  - 🧩 **같은 풍 묶음 + 조회수 갈린 이유 유추**(2026-07-24, 같은 브랜치): 유사한 썸네일·제목인데
+    조회수가 갈리는 원인을 분석하고, 같은 풍끼리 묶어 분류.
+    · `viral_lab.py`: `_style_signature`(테마=장르>상황>감각 첫히트 + 문형=질문/감탄/서술.
+      이모지 유무는 '다른 풍' 아니라 갈림 원인 후보라 문형서 제외) · `cluster_by_style`
+      (같은 풍끼리 묶고 격차 큰 묶음 우선) · `diff_hypotheses`(상위 vs 하위 정량 유추 —
+      👥구독자 격차·🚀채널평균 대비 배수·🕰️노출기간/🔥최신폭발·📝제목 요소 차이(이모지·상황어·
+      질문형) + 🎨시각원인은 Vision 안내). 전부 헤드리스·무료.
+    · `concept_maker.py`: `explain_view_gap_vision(high, low)` — GPT-4o Vision 이 고조회 vs
+      저조회 썸네일을 직접 비교해 색상·인물·**헤어스타일/헤어색**·배경·텍스트·구도 차이로
+      승패 원인 유추. 키 없으면 None(정량 유추만).
+    · `viral_lab_app.py`: **🧩 묶음·갈림 탭** 신설(총 5탭) — 풍별 expander(썸네일 그리드 +
+      🥇최고/🥉최저 배지 + 최고/최저 배수) + 정량 유추 불릿 + 👁 시각 원인 버튼.
+    · 검증: cluster_by_style(이모지 유무 병합) + diff_hypotheses + Vision 무키 None +
+      AppTest 5탭 예외0 + self-test.
   - **다음**: eqO5N 머지(→ 사장님 화면 반영) → 실키 end-to-end → 수집 키워드 시드 튜닝.
 - (작업하며 갱신할 것)

@@ -108,8 +108,8 @@ st.caption(_badge + "  — 미설정 키는 **⚙️ 설정** 탭에서 넣으�
 if CM is None:
     st.error(f"생성 엔진(concept_maker) 로드 실패: {_CM_ERR}. 저장소 구조를 확인하세요.")
 
-tab_find, tab_gen, tab_store, tab_set = st.tabs(
-    ["🔎 발굴·분석", "✨ 생성", "📦 수집함", "⚙️ 설정"])
+tab_find, tab_cluster, tab_gen, tab_store, tab_set = st.tabs(
+    ["🔎 발굴·분석", "🧩 묶음·갈림", "✨ 생성", "📦 수집함", "⚙️ 설정"])
 
 
 # ════════════════════════════════════════════════════════════
@@ -226,7 +226,62 @@ with tab_find:
                     st.image(h["thumb"], use_container_width=True)
                 st.caption(f"**{h['views']:,}회**\n\n{h['title'][:40]}")
 
-        st.info("→ 이 표본을 근거로 **✨ 생성** 탭에서 새 썸네일·제목을 만듭니다.")
+        st.info("→ 이 표본을 근거로 **✨ 생성** 탭에서 새 썸네일·제목을 만듭니다. "
+                "같은 풍끼리 묶어 보고 조회수 갈린 이유가 궁금하면 **🧩 묶음·갈림** 탭으로.")
+
+
+# ════════════════════════════════════════════════════════════
+# 🧩 묶음·갈림 (같은 풍끼리 분류 + 조회수 갈린 이유 유추)
+# ════════════════════════════════════════════════════════════
+with tab_cluster:
+    st.subheader("같은 풍끼리 묶고, 조회수 갈린 이유 찾기")
+    hits = st.session_state.get("hits")
+    if not hits:
+        st.info("먼저 **🔎 발굴·분석** 탭에서 1만+ 표본을 만들어 주세요. "
+                "(📦 수집함에서 불러와도 됩니다.)")
+    else:
+        clusters = V.cluster_by_style(hits)
+        multi = [c for c in clusters if c["size"] >= 2]
+        st.caption(f"{len(hits)}개를 **{len(clusters)}개 풍**으로 분류 "
+                   f"(2개 이상 묶인 풍 {len(multi)}개 — 이런 묶음에서 갈림 원인이 보입니다).")
+        for ci, c in enumerate(clusters):
+            spread = f" · 최고/최저 **{c['spread']}배**" if c.get("spread") and c["size"] >= 2 else ""
+            with st.expander(f"🧩 {c['label']}  ·  {c['size']}개{spread}",
+                             expanded=(ci == 0 and c["size"] >= 2)):
+                st.caption("승리 공식: " + c["formula"])
+                grid = st.columns(3)
+                for i, v in enumerate(c["videos"][:6]):
+                    with grid[i % 3]:
+                        if v.get("thumb"):
+                            st.image(v["thumb"], use_container_width=True)
+                        tag = "🥇최고" if i == 0 and c["size"] >= 2 else (
+                            "🥉최저" if v is c["bottom"] and c["size"] >= 2 else "")
+                        st.caption(f"**{v['views']:,}회** {tag}\n\n{v['title'][:36]}")
+
+                if c["size"] >= 2:
+                    st.markdown("**🔬 왜 갈렸나 — 정량 유추**")
+                    for line in V.diff_hypotheses(c):
+                        st.markdown("- " + line)
+
+                    # 👁 시각 원인(색상·헤어·배경·표정) — GPT Vision
+                    hi = [{"thumb": v.get("thumb"), "title": v.get("title"),
+                           "views": v.get("views")} for v in c["videos"][:3] if v.get("thumb")]
+                    lo = [{"thumb": v.get("thumb"), "title": v.get("title"),
+                           "views": v.get("views")} for v in c["videos"][-3:] if v.get("thumb")]
+                    vkey = f"vgap_{ci}"
+                    if CM is not None and _openai and hi and lo:
+                        if st.button("👁 GPT 로 시각 원인 유추 (색상·헤어·배경·표정)",
+                                     key=f"vgapbtn_{ci}", use_container_width=True):
+                            with st.spinner("GPT Vision 이 상·하위 썸네일을 비교하는 중..."):
+                                st.session_state[vkey] = (
+                                    CM.explain_view_gap_vision(hi, lo)
+                                    or "이미지 비교로는 뚜렷한 차이를 못 찾았습니다.")
+                        if st.session_state.get(vkey):
+                            with st.container(border=True):
+                                st.markdown("**👁 GPT Vision 시각 원인**")
+                                st.write(st.session_state[vkey])
+                    elif hi and lo and not _openai:
+                        st.caption("👁 시각 원인 유추는 OpenAI 키가 필요합니다(⚙️ 설정).")
 
 
 # ════════════════════════════════════════════════════════════

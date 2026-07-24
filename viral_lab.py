@@ -172,6 +172,134 @@ def _median(nums: list[int]) -> int:
     return s[m] if len(s) % 2 else (s[m - 1] + s[m]) // 2
 
 
+# ── 🧩 같은 풍끼리 묶기 (스타일 클러스터링, 헤드리스·무료) ──────
+def _style_signature(v: dict) -> tuple[str, str]:
+    """제목에서 (테마, 문형) 시그니처 추출 → 같은 풍끼리 묶는 키.
+
+    테마 = 장르어 > 상황어 > 감각어 순 첫 히트(없으면 '기타').
+    문형 = 질문형 / 감탄형 / 이모지형 / 서술형.
+    """
+    a = T.analyze_title(v.get("title", ""))
+    if a["genre"]:
+        theme = a["genre"][0]
+    elif a["situation"]:
+        theme = a["situation"][0]
+    elif a["sensory"]:
+        theme = a["sensory"][0]
+    else:
+        theme = "기타"
+    # 이모지 유무는 '다른 풍'이 아니라 갈림 원인 후보 → 문형에서 제외(같이 묶이게)
+    if a["question"]:
+        form = "질문형"
+    elif a["exclaim"]:
+        form = "감탄형"
+    else:
+        form = "서술형"
+    return theme, form
+
+
+def cluster_by_style(videos: list[dict], min_views: int = MIN_VIEWS) -> list[dict]:
+    """1만+ 를 같은 풍(테마·문형)끼리 묶는다. 큰 묶음(격차 큰 것 우선)부터 정렬.
+
+    각 묶음: {label, theme, form, formula, size, videos(조회수순),
+             top, bottom, views_max, views_min, spread(최대/최소 배수)}
+    """
+    hits = filter_hits(videos, min_views)
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for v in hits:
+        groups.setdefault(_style_signature(v), []).append(v)
+
+    clusters = []
+    for (theme, form), vids in groups.items():
+        vids.sort(key=lambda x: x["views"], reverse=True)
+        agg = T.aggregate_titles(vids)
+        vmax = vids[0]["views"]
+        vmin = vids[-1]["views"]
+        clusters.append({
+            "label": f"{theme} · {form}",
+            "theme": theme, "form": form,
+            "formula": T.formula_line(agg),
+            "size": len(vids),
+            "videos": vids,
+            "top": vids[0],
+            "bottom": vids[-1],
+            "views_max": vmax,
+            "views_min": vmin,
+            "spread": round(vmax / vmin, 1) if vmin else None,
+        })
+    # 여러 개 + 격차 큰 묶음을 위로(분석 가치 순)
+    clusters.sort(key=lambda c: (c["size"] >= 2, c["spread"] or 0, c["size"]),
+                  reverse=True)
+    return clusters
+
+
+# ── 🔬 같은 풍인데 조회수가 갈리는 이유 — 정량 유추(무료) ──────
+def _days_since(iso: str) -> int | None:
+    return T.days_since((iso or "")[:10])
+
+
+def diff_hypotheses(cluster: dict) -> list[str]:
+    """묶음 안에서 상위(고조회) vs 하위(저조회)를 비교해 정량 원인 가설 생성.
+
+    구독자/채널평균대비 배수/신선도(경과일)/제목 요소 차이를 근거로 유추.
+    시각 원인(색상·헤어·배경 등)은 별도 👁Vision(concept_maker.explain_view_gap_vision).
+    """
+    vids = cluster.get("videos", [])
+    if len(vids) < 2:
+        return ["표본이 1개뿐이라 갈림 비교가 어렵습니다. 같은 풍 영상이 2개 이상 모이면 원인을 유추합니다."]
+    top, bot = vids[0], vids[-1]
+    out: list[str] = []
+
+    # 1) 구독자 수 차이 — 같은 풍이어도 구독 기반이 크면 초기 노출이 유리
+    ts, bs = int(top.get("subscribers", 0) or 0), int(bot.get("subscribers", 0) or 0)
+    if ts and bs:
+        if ts >= bs * 2:
+            out.append(f"👥 구독자 격차: 상위 채널 {ts:,}명 vs 하위 {bs:,}명 — "
+                       "구독 기반이 큰 쪽이 초기 노출·추천에서 유리했을 가능성이 큽니다.")
+        elif bs >= ts * 2:
+            out.append(f"👥 역전 신호: 하위 영상 채널({bs:,}명)이 구독자가 더 많은데도 조회수가 낮음 "
+                       f"→ 구독자 탓이 아니라 **썸네일·제목·주제** 자체의 흡인력 차이일 확률이 높습니다.")
+
+    # 2) 채널 평균 대비 배수 — 자기 채널에서 얼마나 튀었나(구독자 규모 보정)
+    tm, bm = top.get("multiplier"), bot.get("multiplier")
+    if tm and bm:
+        if tm >= bm * 1.5:
+            out.append(f"🚀 자기채널 대비 배수: 상위 {tm}배 vs 하위 {bm}배 — 상위 썸네일·제목이 "
+                       "그 채널의 평소 성적마저 뛰어넘음(구독자 규모와 무관한 콘텐츠 자체의 힘).")
+
+    # 3) 신선도 — 오래된 영상은 조회수를 오래 쌓았을 수도(반대로 최신인데 높으면 진짜 강함)
+    td, bd = _days_since(top.get("published", "")), _days_since(bot.get("published", ""))
+    if td is not None and bd is not None:
+        if td > bd * 1.5 and bd >= 0:
+            out.append(f"🕰️ 노출 기간: 상위 영상이 {td}일로 하위({bd}일)보다 오래 노출됨 — "
+                       "격차의 일부는 '쌓인 시간' 때문일 수 있어 하루 평균으로도 봐야 합니다.")
+        elif bd > td * 1.5 and td >= 0:
+            out.append(f"🔥 최신 폭발: 상위 영상이 {td}일밖에 안 됐는데 하위({bd}일)를 이미 앞섬 "
+                       "→ 최근 트렌드·후킹이 제대로 먹힌 강한 신호.")
+
+    # 4) 제목 요소 차이 — 상위엔 있고 하위엔 없는 것
+    at, ab = T.analyze_title(top.get("title", "")), T.analyze_title(bot.get("title", ""))
+    gained = []
+    if at["emojis"] and not ab["emojis"]:
+        gained.append("이모지")
+    only_sit = set(at["situation"]) - set(ab["situation"])
+    only_sen = set(at["sensory"]) - set(ab["sensory"])
+    if only_sit:
+        gained.append("상황어(" + "·".join(list(only_sit)[:2]) + ")")
+    if only_sen:
+        gained.append("감각어(" + "·".join(list(only_sen)[:2]) + ")")
+    if at["question"] and not ab["question"]:
+        gained.append("질문형 후킹")
+    if gained:
+        out.append("📝 제목 차이: 상위 제목엔 있고 하위엔 없는 요소 — " + ", ".join(gained) +
+                   ". 이 후킹 요소가 클릭률을 갈랐을 수 있습니다.")
+
+    # 5) 시각 원인은 이미지로만 판별 가능 — 안내
+    out.append("🎨 색상·인물 헤어스타일/헤어색·배경·표정·텍스트 등 **시각 원인**은 아래 "
+               "'👁 GPT 로 시각 원인 유추' 버튼으로 상·하위 썸네일을 직접 비교해 확인하세요.")
+    return out
+
+
 # ── 무인 수집함 저장소(JSON, git 추적 — cron 이 커밋해 앱과 공유) ──
 def load_store() -> dict:
     if not os.path.exists(HITS_PATH):
@@ -260,4 +388,15 @@ if __name__ == "__main__":  # 간이 자기검증
     assert "새벽" in a["formula"] or a["agg"]["n"] == 2, a
     print("MIN_VIEWS =", MIN_VIEWS)
     print("통과분:", a["n"], "탈락:", a["dropped"], "| 공식:", a["formula"])
+
+    # 클러스터 + 갈림 유추
+    demo2 = demo + [{"video_id": "d", "title": "새벽 감성 재즈 라디오", "views": 11000,
+                     "subscribers": 3000, "multiplier": 1.0,
+                     "published_at": _dt.date.today().isoformat(), "thumb": "http://x/d.jpg"}]
+    cl = cluster_by_style(demo2)
+    jazz = [c for c in cl if c["theme"] == "재즈" and c["size"] >= 2]
+    assert jazz, cl                                       # 재즈 2개가 한 묶음
+    hyp = diff_hypotheses(jazz[0])
+    assert any(("이모지" in h or "구독자" in h) for h in hyp), hyp
+    print("클러스터:", [(c["label"], c["size"]) for c in cl])
     print("self-test OK")
