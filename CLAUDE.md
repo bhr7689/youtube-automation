@@ -437,4 +437,26 @@ python pipeline.py --init                              # 파이프라인 폴더 
   - 검증: 전 모듈 컴파일 + tier/consistency 로직 + genre_store CRUD + RSS 파서 + AppTest(예외0·7탭) +
     Streamlit HTTP 200 + overlay 렌더. ⚠️ 실제 수집/이미지생성은 사장님 PC(키+YouTube 접속)에서 완전 작동.
   - **다음(사용하며 보완)**: eqO5N 머지 → 실키 end-to-end → 미분류 대량링크 PC 자동분류 → 채널 정체성 확정.
+- [x] 🔟 **조회수 1만+ 연구소 (단독 앱 + 무인 자동 수집)**(2026-07-24, thumbnail-title-generator-app-cwexl9):
+  사장님 요청 — "오로지 조회수 1만 이상 썸네일·제목만 분석해서 새 썸네일·제목을 만드는
+  독립 앱". 확정: **단독 앱 + 무인 자동 수집 / API검색+캡처 둘 다 / 음악·플레이리스트**.
+  기존 엔진(`concept_maker`·`youtube_client`·`tier_lab`) 재활용 + "1만 미만은 아예 버리는
+  강한 필터"만 새로 얹음.
+  - 신규 파일:
+    · `viral_lab.py` — 순수 로직. `MIN_VIEWS=10000`. `filter_hits`(정규화+1만+필터+조회수정렬)
+      · `search_hits`(youtube_client 조회수순 검색→1만+) · `analyze_hits`(tier_lab
+      aggregate_titles 재사용해 제목 승리공식) · JSON 수집함(`viral_hits.json`, git 추적 —
+      cron 이 커밋해 앱과 공유, video_id 멱등 `add_hits`) · `collect_cli`. 자기검증 통과.
+    · `viral_lab_app.py` — 단독 Streamlit(포트 **8506**). 4탭: 🔎발굴·분석(YouTube검색 or
+      캡처 붙여넣기 → 1만+만 → 승리공식 + 👁GPT Vision 실측) / ✨생성(`concept_maker.
+      generate_report(images=1만+썸네일, titles_text=제목)` → 제목10세트 + 세트별
+      `generate_thumbnail_image(refs=1만+썸네일)` 무드이식·최고화질) / 📦수집함(무인 아카이브,
+      표본으로 불러오기) / ⚙️설정(.env+keys.json 키저장, 재시작없이 반영).
+    · `daily_viral_collect.py` — 무인 수집 CLI. env(VIRAL_KEYWORDS 등) 제어. 키없으면 데모탈출.
+    · `.github/workflows/daily_viral_collect.yml` — 매일 07:00 KST cron → 1만+ 수집 →
+      `viral_hits.json` 커밋·푸시(PC 꺼져도 자동). Secret: YOUTUBE_API_KEY.
+    · `조회수1만분석기실행.bat` — 포트 8506 런처(git pull 로 수집함도 동기화).
+  - 검증(데모/키없음): viral_lab self-test · AppTest 4탭 예외0 · 데모검색 24→1만+필터 →
+    analyze → store add 멱등 · collector CLI 데모탈출. ⚠️ 실검색·이미지생성은 사장님 PC(키)에서.
+  - **다음**: eqO5N 머지(→ 사장님 화면 반영) → 실키 end-to-end → 수집 키워드 시드 튜닝.
 - (작업하며 갱신할 것)
