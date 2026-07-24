@@ -437,4 +437,52 @@ python pipeline.py --init                              # 파이프라인 폴더 
   - 검증: 전 모듈 컴파일 + tier/consistency 로직 + genre_store CRUD + RSS 파서 + AppTest(예외0·7탭) +
     Streamlit HTTP 200 + overlay 렌더. ⚠️ 실제 수집/이미지생성은 사장님 PC(키+YouTube 접속)에서 완전 작동.
   - **다음(사용하며 보완)**: eqO5N 머지 → 실키 end-to-end → 미분류 대량링크 PC 자동분류 → 채널 정체성 확정.
+- [x] 🔟 **조회수 1만+ 연구소 (단독 앱 + 무인 자동 수집)**(2026-07-24, thumbnail-title-generator-app-cwexl9):
+  사장님 요청 — "오로지 조회수 1만 이상 썸네일·제목만 분석해서 새 썸네일·제목을 만드는
+  독립 앱". 확정: **단독 앱 + 무인 자동 수집 / API검색+캡처 둘 다 / 음악·플레이리스트**.
+  기존 엔진(`concept_maker`·`youtube_client`·`tier_lab`) 재활용 + "1만 미만은 아예 버리는
+  강한 필터"만 새로 얹음.
+  - 신규 파일:
+    · `viral_lab.py` — 순수 로직. `MIN_VIEWS=10000`. `filter_hits`(정규화+1만+필터+조회수정렬)
+      · `search_hits`(youtube_client 조회수순 검색→1만+) · `analyze_hits`(tier_lab
+      aggregate_titles 재사용해 제목 승리공식) · JSON 수집함(`viral_hits.json`, git 추적 —
+      cron 이 커밋해 앱과 공유, video_id 멱등 `add_hits`) · `collect_cli`. 자기검증 통과.
+    · `viral_lab_app.py` — 단독 Streamlit(포트 **8506**). 4탭: 🔎발굴·분석(YouTube검색 or
+      캡처 붙여넣기 → 1만+만 → 승리공식 + 👁GPT Vision 실측) / ✨생성(`concept_maker.
+      generate_report(images=1만+썸네일, titles_text=제목)` → 제목10세트 + 세트별
+      `generate_thumbnail_image(refs=1만+썸네일)` 무드이식·최고화질) / 📦수집함(무인 아카이브,
+      표본으로 불러오기) / ⚙️설정(.env+keys.json 키저장, 재시작없이 반영).
+    · `daily_viral_collect.py` — 무인 수집 CLI. env(VIRAL_KEYWORDS 등) 제어. 키없으면 데모탈출.
+    · `.github/workflows/daily_viral_collect.yml` — 매일 07:00 KST cron → 1만+ 수집 →
+      `viral_hits.json` 커밋·푸시(PC 꺼져도 자동). Secret: YOUTUBE_API_KEY.
+    · `조회수1만분석기실행.bat` — 포트 8506 런처(git pull 로 수집함도 동기화).
+  - 검증(데모/키없음): viral_lab self-test · AppTest 4탭 예외0 · 데모검색 24→1만+필터 →
+    analyze → store add 멱등 · collector CLI 데모탈출. ⚠️ 실검색·이미지생성은 사장님 PC(키)에서.
+  - 🎯 **톤 보존 + 클릭 심리 주입**(2026-07-24, 같은 브랜치): 레퍼런스가 병맛이면 병맛까지
+    살려서(순화 금지) + 안 누를 수 없는 심리 트리거를 제목·썸네일에 심는 프롬프트 추가.
+    · `concept_maker.py`: `CLICK_PSYCH` 블록 + `build_vibe_notes()` — (A)톤 진단·미러링
+      (B)클릭 트리거(호기심갭·반전·과장·미완결·금기·공감) 최소2개 (C)병맛/유머면 시네마틱
+      photorealistic 지시 무시하고 B급·밈 화풍으로 (D)thumb_text=후킹 한 방. `generate_report`
+      에 `vibe_notes`·`punchy_overlay` 파라미터 추가(**기본 빈값 → 기존 음악채널 호출 무영향**).
+      `_overlay_prompt(punchy=)` — 병맛/충격이면 굵고 크고 고대비 밈 문구.
+    · `viral_lab.py`: `VIBE_TONES`(🪞레퍼런스그대로/🤪병맛살려/😱더자극적/🌙감성유지) +
+      `VIBE_INTENSITY`(약·중·강) + `vibe_brief()`. 강도=강이면 punchy 강제.
+    · `viral_lab_app.py` ✨생성 탭: 톤 라디오 + 강도 슬라이더 → build_vibe_notes 주입.
+    · 검증: vibe_brief·주입문자열·overlay punchy·generate_report 프롬프트 주입 캡처 + 기본
+      호출 무주입 + AppTest 4탭 예외0. ⚠️ 실 이미지·제목 생성은 사장님 PC(키)에서.
+  - 🧩 **같은 풍 묶음 + 조회수 갈린 이유 유추**(2026-07-24, 같은 브랜치): 유사한 썸네일·제목인데
+    조회수가 갈리는 원인을 분석하고, 같은 풍끼리 묶어 분류.
+    · `viral_lab.py`: `_style_signature`(테마=장르>상황>감각 첫히트 + 문형=질문/감탄/서술.
+      이모지 유무는 '다른 풍' 아니라 갈림 원인 후보라 문형서 제외) · `cluster_by_style`
+      (같은 풍끼리 묶고 격차 큰 묶음 우선) · `diff_hypotheses`(상위 vs 하위 정량 유추 —
+      👥구독자 격차·🚀채널평균 대비 배수·🕰️노출기간/🔥최신폭발·📝제목 요소 차이(이모지·상황어·
+      질문형) + 🎨시각원인은 Vision 안내). 전부 헤드리스·무료.
+    · `concept_maker.py`: `explain_view_gap_vision(high, low)` — GPT-4o Vision 이 고조회 vs
+      저조회 썸네일을 직접 비교해 색상·인물·**헤어스타일/헤어색**·배경·텍스트·구도 차이로
+      승패 원인 유추. 키 없으면 None(정량 유추만).
+    · `viral_lab_app.py`: **🧩 묶음·갈림 탭** 신설(총 5탭) — 풍별 expander(썸네일 그리드 +
+      🥇최고/🥉최저 배지 + 최고/최저 배수) + 정량 유추 불릿 + 👁 시각 원인 버튼.
+    · 검증: cluster_by_style(이모지 유무 병합) + diff_hypotheses + Vision 무키 None +
+      AppTest 5탭 예외0 + self-test.
+  - **다음**: eqO5N 머지(→ 사장님 화면 반영) → 실키 end-to-end → 수집 키워드 시드 튜닝.
 - (작업하며 갱신할 것)
