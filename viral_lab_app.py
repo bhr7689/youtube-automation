@@ -243,17 +243,31 @@ with tab_gen:
         top = V.filter_hits(hits)[:9]
         st.caption(f"근거: 1만+ 썸네일 {len(top)}장 + 제목 {len(top)}개 "
                    f"(출처: {st.session_state.get('hits_src', '?')})")
-        num = st.slider("만들 세트 수 안내", 1, 10, 10, disabled=True,
-                        help="제목·썸네일 세트는 10개 생성됩니다.")
+
+        # 🎯 톤 선택 — 레퍼런스가 병맛이면 병맛까지 살려서, 클릭 심리 자극
+        tone_keys = list(V.VIBE_TONES.keys())
+        tone = st.radio(
+            "톤 (레퍼런스 느낌을 어떻게 살릴까)", tone_keys, horizontal=True,
+            format_func=lambda k: V.VIBE_TONES[k][0])
+        intensity = st.select_slider("강도", ["약", "중", "강"], value="중")
+        st.caption("🪞 레퍼런스 그대로 = 표본이 병맛이면 병맛·감성이면 감성으로 미러링 · "
+                   "🤪 병맛 살려 = 날것·과장·B급 감성 밀어붙임 · 😱 더 자극적 = 충격·반전 극대화 · "
+                   "🌙 감성 유지 = 무드는 지키되 클릭 심리는 확실히.")
+
         if st.button("✨ 새 썸네일·제목 10세트 생성", type="primary",
                      use_container_width=True):
             imgs = [h["thumb"] for h in top if h.get("thumb")]
             titles_text = "\n".join(h["title"] for h in top if h.get("title"))
-            with st.spinner("GPT 가 1만+ 공식으로 컨셉·제목·이미지 프롬프트를 짜는 중..."):
+            brief = V.vibe_brief(tone, intensity)
+            vibe_notes = CM.build_vibe_notes(brief["tone_line"], brief["intensity_line"])
+            st.session_state["punchy"] = brief["punchy"]
+            with st.spinner(f"GPT 가 1만+ 공식 + '{brief['label']}' 톤으로 짜는 중..."):
                 try:
                     resp = CM.generate_report(channel_urls=[], song_type="auto",
                                               num_songs=1, images=imgs,
-                                              titles_text=titles_text)
+                                              titles_text=titles_text,
+                                              vibe_notes=vibe_notes,
+                                              punchy_overlay=brief["punchy"])
                 except Exception as e:          # noqa: BLE001
                     resp = {"error": str(e)}
             if resp.get("error"):

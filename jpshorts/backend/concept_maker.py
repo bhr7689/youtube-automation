@@ -286,17 +286,64 @@ def _midjourney(prompt: str) -> str:
     return f"{p} --ar 16:9 --style raw --v 6"
 
 
-def _overlay_prompt(scene: str, text: str) -> str:
-    """장면 프롬프트 + 한글 문구 오버레이 지시 → GPT 이미지용 풀 프롬프트."""
+def _overlay_prompt(scene: str, text: str, punchy: bool = False) -> str:
+    """장면 프롬프트 + 한글 문구 오버레이 지시 → GPT 이미지용 풀 프롬프트.
+
+    punchy=True 면 밈·클릭베이트형(굵고 크고 고대비) 문구, False 면 감성 플리형(가늘고 은은).
+    """
     base = _clean_img_prompt(scene)
     t = (text or "").strip().replace('"', "'")
     if not t:
         return base
+    if punchy:
+        return (base +
+                f' Overlay the exact Korean text "{t}" as a BOLD viral-thumbnail caption '
+                "— very large heavy sans-serif, bright high-contrast fill (white or yellow) "
+                "with a thick dark outline/stroke and hard drop shadow so it pops instantly, "
+                "placed prominently (top or across the subject), the kind of punchy clickbait "
+                "text that grabs the eye in half a second. Render the Korean characters "
+                "accurately, exactly as written, no distortion.")
     return (base +
             f' Overlay the exact Korean text "{t}" on the image — elegant thin white '
             "font with a subtle soft shadow, small-to-medium size, placed in the "
             "natural empty area of the composition, tasteful like a premium music "
             "playlist thumbnail. Render the Korean characters accurately, exactly as written.")
+
+
+# ── 🎯 톤 보존 + 클릭 심리 주입 블록 (viral_lab 등에서 vibe_notes 로 전달) ──
+CLICK_PSYCH = """[★ 이번 생성의 최우선 지침 — 레퍼런스 톤 보존 + 클릭 심리 ★]
+{tone_line}
+{intensity_line}
+
+(A) 톤 진단 먼저: 위 벤치마킹 썸네일·제목(및 👁Vision 분석)의 '진짜 결'을 한마디로 규정하라
+   — 감성·잔잔 / 병맛·날것·과장·유머 / 충격·자극 / 반전 / 일상 공감 / 정보 중 무엇인지.
+   그리고 그 결을 신규 제목·썸네일에 **그대로** 옮겨라. 병맛이면 병맛을, 날것이면 날것을,
+   과장이면 과장을 살려라 — 예쁘고 고급스럽게 '순화'하지 마라. 순화는 이 채널이 먹히는 이유를
+   죽이는 것이다. (이 톤 보존이 85% 유지 원칙의 핵심이다.)
+
+(B) 클릭 심리 — title 과 thumb_text 각각에 아래 트리거를 최소 2개씩 심어라:
+   · 호기심 갭: 결정적 정보를 일부러 비운다("…했더니 벌어진 일", "…의 정체")
+   · 반전·모순: 예상과 어긋나는 조합으로 시선을 멈추게
+   · 감정 과장: 극단 단어·숫자·클로즈업 표정
+   · 미완결: 결말을 안 알려줘 눌러야 풀리게
+   · 금기·비밀·경고: "아무도 안 알려준", "이거 모르면", "절대 하지 마"
+   · 공감 저격: "나만 이런 줄", "당신도 분명"
+   단, 영상 내용이 못 지키는 순수 과대낚시는 금지 — 콘텐츠가 지킬 수 있는 선에서 최대로 당겨라.
+
+(C) 썸네일 image_prompt: (A)에서 진단한 결을 '시각 스타일'로 그대로 반영하라.
+   - 병맛·유머·밈 결: 과장된 표정, 엉뚱한 오브젝트 조합, 굵은 외곽선·강한 대비, B급·날것·밈 에너지.
+     이 경우 '완벽한 시네마틱 photorealistic 사진' 지시는 **무시**하고, 그 결에 맞는 화풍
+     (거친 합성/일러스트/과장 사진/밈 편집 느낌)으로 묘사하라.
+   - 충격·자극 결: 강한 클로즈업, 붉은 화살표·동그라미·놀란 표정, 고대비.
+   - 감성 결: 기존처럼 시네마틱 사진 유지.
+   어느 결이든 0.5초 안에 시선을 붙잡는 '패턴 인터럽트'(강한 대비·여백 파괴·시선 유도선)를 넣어라.
+
+(D) thumb_text 는 설명이 아니라 **후킹 한 방**이다 — 짧고 세게(1~2줄). 결에 맞는 말투로(병맛이면
+   병맛 말투, 충격이면 충격 단어). 제목과 똑같이 겹치지 말고 궁금증을 '증폭'시키는 카피로."""
+
+
+def build_vibe_notes(tone_line: str, intensity_line: str = "") -> str:
+    return CLICK_PSYCH.format(tone_line=tone_line, intensity_line=intensity_line)
 
 
 # ── 데모 썸네일(그라디언트 SVG data URI) ────────────────
@@ -582,7 +629,8 @@ def _balance_braces(s: str) -> str:
 
 def generate_report(channel_urls: list[str], song_type: str = "auto",
                     num_songs: int = 1, extra_notes: str = "",
-                    images: list[str] | None = None, titles_text: str = "") -> dict:
+                    images: list[str] | None = None, titles_text: str = "",
+                    vibe_notes: str = "", punchy_overlay: bool = False) -> dict:
     images = [i for i in (images or []) if _is_image_ref(i)][:9]
     titles_list = [t.strip() for t in (titles_text or "").splitlines() if t.strip()][:20]
 
@@ -659,6 +707,7 @@ def generate_report(channel_urls: list[str], song_type: str = "auto",
         ("\n[사용자 추가 메모]\n" + extra_notes + "\n" if extra_notes.strip() else "") +
         f"\n[곡 유형] {song_line}\n[곡 수] {songs_line}\n" +
         thumb_note +
+        ("\n\n" + vibe_notes if vibe_notes.strip() else "") +
         "\n위 JSON 스키마 하나만 순수 JSON으로 출력하라."
     )
     out = _llm(prompt, json_mode=True)
@@ -686,7 +735,8 @@ def generate_report(channel_urls: list[str], song_type: str = "auto",
             for s in ts:
                 if isinstance(s, dict) and s.get("image_prompt"):
                     s["full_image_prompt"] = _overlay_prompt(
-                        s["image_prompt"], s.get("thumb_text", ""))
+                        s["image_prompt"], s.get("thumb_text", ""),
+                        punchy=punchy_overlay)
                     s["midjourney_prompt"] = _midjourney(s["image_prompt"])
             if not result.get("titles"):     # 전체복사·구버전 호환용 제목 리스트 파생
                 result["titles"] = [s.get("title", "") for s in ts

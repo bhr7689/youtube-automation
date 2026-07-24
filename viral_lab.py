@@ -126,6 +126,44 @@ def analyze_hits(videos: list[dict], min_views: int = MIN_VIEWS) -> dict:
     }
 
 
+# ── 톤 프리셋 (병맛부터 감성까지) — 생성 시 톤 보존 + 클릭 심리 주입 ──
+# (label, tone_line, punchy) — tone_line 은 concept_maker.build_vibe_notes 에 주입
+VIBE_TONES: dict[str, tuple[str, str, bool]] = {
+    "auto": ("🪞 레퍼런스 그대로",
+             "톤 지시: 레퍼런스의 결을 있는 그대로 미러링하라. 별도 강제 톤 없이, 위 표본이 "
+             "감성이면 감성·병맛이면 병맛·충격이면 충격으로 따라가라.", False),
+    "byungmat": ("🤪 병맛 살려",
+                 "톤 지시: 이 세트는 '병맛·날것·과장·유머' 결을 최대한 살린다. 어색함·엉뚱함·"
+                 "B급 감성을 두려워 말고 밀어붙여라. 절대 예쁘게·고급스럽게 순화하지 마라.", True),
+    "shock": ("😱 더 자극적으로",
+              "톤 지시: 이 세트는 '충격·자극·반전' 결을 극대화한다. 시선을 강제로 붙잡는 "
+              "이미지·카피로, 안 누르고는 못 배기게 만들어라.", True),
+    "gamsung": ("🌙 감성 유지",
+                "톤 지시: 이 세트는 감성·무드 결을 유지하되, 제목·썸네일에 클릭 심리 트리거는 "
+                "확실히 심는다(감성인데 궁금해서 누르게).", False),
+}
+VIBE_INTENSITY: dict[str, str] = {
+    "약": "강도=약: 은은하게, 과함 금지. 트리거는 넣되 티 안 나게.",
+    "중": "강도=중: 균형 있게. 눈에 띄되 과장은 통제.",
+    "강": "강도=강: 최대치로 밀어붙여라. 밋밋하면 실패다.",
+}
+
+
+def vibe_brief(tone: str = "auto", intensity: str = "중") -> dict:
+    """톤·강도 선택 → 생성 프롬프트 주입용 브리프.
+
+    반환: {tone_line, intensity_line, punchy, label}
+      - tone_line/intensity_line → concept_maker.build_vibe_notes 에 넣음
+      - punchy → generate_report(punchy_overlay=) : 썸네일 문구를 밈/클릭베이트 스타일로
+    """
+    label, tone_line, punchy = VIBE_TONES.get(tone, VIBE_TONES["auto"])
+    intensity_line = VIBE_INTENSITY.get(intensity, VIBE_INTENSITY["중"])
+    if intensity == "강":
+        punchy = True
+    return {"tone_line": tone_line, "intensity_line": intensity_line,
+            "punchy": punchy, "label": label}
+
+
 def _median(nums: list[int]) -> int:
     if not nums:
         return 0
