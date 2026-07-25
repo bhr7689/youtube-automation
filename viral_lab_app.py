@@ -117,7 +117,7 @@ tab_find, tab_cluster, tab_gen, tab_store, tab_set = st.tabs(
 # ════════════════════════════════════════════════════════════
 with tab_find:
     st.subheader("1만+ 만 골라 승리 공식 뽑기")
-    mode = st.radio("방법", ["🌐 YouTube 검색", "📎 캡처 붙여넣기"],
+    mode = st.radio("방법", ["🌐 YouTube 검색", "🔗 링크 직접 추가", "📎 캡처 붙여넣기"],
                     horizontal=True, label_visibility="collapsed")
 
     if mode == "🌐 YouTube 검색":
@@ -148,6 +148,39 @@ with tab_find:
                                f"통과 · {res['dropped']}개는 1만 미만이라 버림")
                     st.session_state["hits"] = res["hits"]
                     st.session_state["hits_src"] = kw
+
+    elif mode == "🔗 링크 직접 추가":
+        st.caption("분석할 영상/채널 링크를 한 줄에 하나씩 붙여넣으세요. **영상 링크**는 그 영상만, "
+                   "**채널 링크(@핸들 등)**는 그 채널 인기영상을 가져옵니다. (1만+ 만 남깁니다)")
+        links = st.text_area(
+            "유튜브 링크 (한 줄에 하나)", height=150,
+            placeholder="https://www.youtube.com/watch?v=XXXXXXXXXXX\n"
+                        "https://youtu.be/XXXXXXXXXXX\n"
+                        "https://www.youtube.com/@채널핸들")
+        if st.button("🔗 링크에서 1만+ 가져오기", type="primary", use_container_width=True):
+            if not links.strip():
+                st.warning("링크를 하나 이상 넣어주세요.")
+            else:
+                with st.spinner("링크에서 영상 정보를 가져오는 중..."):
+                    try:
+                        res = V.add_from_links(links)
+                    except Exception as e:      # noqa: BLE001
+                        res = None
+                        st.error(f"불러오기 실패: {e}")
+                if res is not None:
+                    if res["raw"] == 0:
+                        st.warning("링크에서 영상을 못 찾았습니다. 유튜브 영상/채널 주소가 맞는지 확인해 주세요.")
+                    else:
+                        if res["demo"]:
+                            st.info("⚠️ YouTube 키가 없어 **데모**로 보여줍니다(썸네일은 실제, 조회수는 임의). "
+                                    "실제 수치는 ⚙️ 설정에서 키를 넣으세요.")
+                        st.success(f"영상링크 {res['video_ids']}개 + 채널 {res['channels']}개 → "
+                                   f"**1만+ {len(res['hits'])}개** 통과 · {res['dropped']}개는 1만 미만이라 제외")
+                        if res["hits"]:
+                            st.session_state["hits"] = res["hits"]
+                            st.session_state["hits_src"] = "링크 직접 추가"
+                        else:
+                            st.warning("가져온 영상 중 1만+ 가 없습니다.")
 
     else:  # 캡처 붙여넣기
         st.caption("이미 1만+ 로 확인한 인기 썸네일 캡처와 제목을 직접 넣으면, 그 이미지를 "

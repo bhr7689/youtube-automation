@@ -448,7 +448,7 @@ python pipeline.py --init                              # 파이프라인 폴더 
       aggregate_titles 재사용해 제목 승리공식) · JSON 수집함(`viral_hits.json`, git 추적 —
       cron 이 커밋해 앱과 공유, video_id 멱등 `add_hits`) · `collect_cli`. 자기검증 통과.
     · `viral_lab_app.py` — 단독 Streamlit(포트 **8506**). 4탭: 🔎발굴·분석(YouTube검색 or
-      캡처 붙여넣기 → 1만+만 → 승리공식 + 👁GPT Vision 실측) / ✨생성(`concept_maker.
+      **🔗링크 직접 추가** or 캡처 붙여넣기 → 1만+만 → 승리공식 + 👁GPT Vision 실측) / ✨생성(`concept_maker.
       generate_report(images=1만+썸네일, titles_text=제목)` → 제목10세트 + 세트별
       `generate_thumbnail_image(refs=1만+썸네일)` 무드이식·최고화질) / 📦수집함(무인 아카이브,
       표본으로 불러오기) / ⚙️설정(.env+keys.json 키저장, 재시작없이 반영).
@@ -499,5 +499,10 @@ python pipeline.py --init                              # 파이프라인 폴더 
       같은 파워워드·뉘앙스 계승.
     · 검증: keyword_summary·analyze_titles_nuance(무키 None·mock 파싱)·nuance_brief_text·
       generate_report 뉘앙스 주입 캡처 + AppTest 5탭 예외0.
+  - 🔗 **링크 직접 추가**(2026-07-25, 같은 브랜치): 🔎발굴·분석에 세 번째 방식 추가 — 영상/채널
+    링크를 한 줄에 하나씩 붙여넣으면 그 영상만(영상URL)/그 채널 인기영상(채널·@핸들URL)을
+    가져와 1만+ 필터. `viral_lab.py`: `extract_video_ids`(URL 문맥 11자 ID) · `fetch_videos_by_ids`
+    (videos.list, 키없으면 i.ytimg.com 실썸네일+임의조회수 데모) · `add_from_links`(영상=fetch,
+    채널=concept_maker.collect_channel 재사용). 검증: ID추출·데모조회·AppTest 5탭 예외0.
   - **다음**: eqO5N 머지(→ 사장님 화면 반영) → 실키 end-to-end → 수집 키워드 시드 튜닝.
 - (작업하며 갱신할 것)
