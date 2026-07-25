@@ -39,6 +39,7 @@ import streamlit as st
 
 import viral_lab as V
 import viral_folders as F
+import viral_channels as VC
 
 # concept_maker (Vision·이미지생성·리포트) 재사용
 _BACKEND = os.path.join(_HERE, "jpshorts", "backend")
@@ -109,8 +110,11 @@ st.caption(_badge + "  — 미설정 키는 **⚙️ 설정** 탭에서 넣으�
 if CM is None:
     st.error(f"생성 엔진(concept_maker) 로드 실패: {_CM_ERR}. 저장소 구조를 확인하세요.")
 
-tab_find, tab_cluster, tab_folder, tab_gen, tab_store, tab_set = st.tabs(
-    ["🔎 발굴·분석", "🧩 묶음·갈림", "📁 감성 폴더", "✨ 생성", "📦 수집함", "⚙️ 설정"])
+_alert_n = VC.alert_count()
+_alarm_label = f"🔔 알림 ({_alert_n})" if _alert_n else "🔔 알림"
+tab_find, tab_cluster, tab_folder, tab_alarm, tab_gen, tab_store, tab_set = st.tabs(
+    ["🔎 발굴·분석", "🧩 묶음·갈림", "📁 감성 폴더", _alarm_label,
+     "✨ 생성", "📦 수집함", "⚙️ 설정"])
 
 
 # ════════════════════════════════════════════════════════════
@@ -448,6 +452,25 @@ with tab_folder:
                         st.markdown("**👁 썸네일 공통 시각 패턴**")
                         st.write(st.session_state[fvkey])
 
+            # 📺 이 폴더의 채널 — 링크 + 🔖 북마크(=새 영상 알림 + 새 1만+ 자동수집)
+            chs = VC.channels_in_videos(folder["videos"])
+            if chs:
+                st.markdown("**📺 이 폴더의 채널** — 🔖 북마크하면 새 영상 알림 + 새 1만+ 자동수집")
+                for ch in chs:
+                    cc1, cc2 = st.columns([3, 1])
+                    cc1.markdown(f"[{ch['title']}]({ch['url']}) · 이 폴더에 {ch['count']}개")
+                    if ch["bookmarked"]:
+                        if cc2.button("🔖 해제", key=f"unbm_{fid}_{ch['channel_id']}",
+                                      use_container_width=True):
+                            VC.unbookmark(ch["channel_id"])
+                            st.rerun()
+                    else:
+                        if cc2.button("🔖 북마크", key=f"bm_{fid}_{ch['channel_id']}",
+                                      use_container_width=True):
+                            VC.bookmark(ch["channel_id"], ch["title"], ch["url"])
+                            st.rerun()
+                st.caption("→ 북마크한 채널은 **🔔 알림** 탭에서 새 영상·새 1만+ 를 확인하세요.")
+
             # 폴더 안 썸네일 + 제목 한눈에
             st.markdown("**🖼️ 폴더 안 썸네일·제목**")
             fv = cm["top"][:30]
@@ -469,6 +492,96 @@ with tab_folder:
                 F.delete_folder(fid)
                 st.warning("삭제했습니다.")
                 st.rerun()
+
+
+# ════════════════════════════════════════════════════════════
+# 🔔 알림 (북마크 채널 새 영상 + 새 1만+ 자동수집)
+# ════════════════════════════════════════════════════════════
+with tab_alarm:
+    st.subheader("북마크한 채널의 새 영상 · 새 1만+")
+    bms = VC.list_channels()
+    if not bms:
+        st.info("아직 북마크한 채널이 없습니다. **📁 감성 폴더** 탭에서 폴더를 열면 "
+                "그 안의 채널을 🔖 북마크할 수 있어요. 북마크하면 여기서 새 영상 알림과 "
+                "새 1만+ 를 자동으로 챙겨드립니다.")
+    else:
+        st.caption(f"북마크 채널 {len(bms)}개 — 앱을 열면 자동으로 새 영상을 확인합니다.")
+        # 앱 열 때 세션당 1회 자동 확인
+        if not st.session_state.get("_checked"):
+            with st.spinner("북마크 채널의 새 영상을 확인하는 중(RSS)..."):
+                try:
+                    st.session_state["_check_res"] = VC.check_new()
+                except Exception as e:      # noqa: BLE001
+                    st.session_state["_check_res"] = {"error": str(e)}
+            st.session_state["_checked"] = True
+
+        if st.button("🔄 지금 새 영상 확인 + 1만+ 수집", use_container_width=True):
+            with st.spinner("확인하는 중..."):
+                st.session_state["_check_res"] = VC.check_new()
+            st.rerun()
+
+        cr = st.session_state.get("_check_res") or {}
+        if cr.get("error"):
+            st.warning(f"확인 중 문제: {cr['error']}")
+        elif cr:
+            msg = f"채널 {cr.get('checked', 0)}개 확인 · 새 영상 {cr.get('new_alerts', 0)}건"
+            if cr.get("collected"):
+                msg += f" · 새 1만+ {cr['collected']}건 수집"
+            st.caption(msg)
+            if cr.get("need_key"):
+                st.caption("⚠️ 조회수 확인(1만+ 자동수집)에는 YouTube 키가 필요합니다(⚙️ 설정). "
+                           "키가 없어도 새 영상 알림은 됩니다.")
+
+        # 북마크 채널 목록
+        with st.expander(f"📺 북마크 채널 {len(bms)}개"):
+            for ch in bms:
+                d1, d2 = st.columns([3, 1])
+                d1.markdown(f"[{ch.get('title', ch['channel_id'])}]({ch.get('url', '')})")
+                if d2.button("🔖 해제", key=f"al_unbm_{ch['channel_id']}",
+                             use_container_width=True):
+                    VC.unbookmark(ch["channel_id"])
+                    st.rerun()
+
+        # 🔔 새 영상 알림
+        al = VC.alerts()
+        st.markdown(f"### 🔔 새 영상 알림 ({len(al)})")
+        if not al:
+            st.caption("새로 올라온 영상이 아직 없습니다. (북마크 이후 올라오는 영상부터 떠요.)")
+        else:
+            if st.button("🔕 알림 모두 끄기(삭제)", use_container_width=True):
+                VC.clear_alerts()
+                st.rerun()
+            for a in al[:40]:
+                with st.container(border=True):
+                    g1, g2 = st.columns([1, 2])
+                    with g1:
+                        if a.get("thumb"):
+                            st.image(a["thumb"], use_container_width=True)
+                    with g2:
+                        st.markdown(f"**{a.get('title', '')}**")
+                        st.caption(f"{a.get('channel', '')} · {a.get('published', '')}")
+                        st.markdown(f"[▶️ 영상 보기]({a.get('url', '')})")
+                        if st.button("🔕 이 알림 끄기", key=f"dis_{a['video_id']}"):
+                            VC.dismiss_alert(a["video_id"])
+                            st.rerun()
+
+        # 🔟 북마크 채널에서 자동수집된 1만+
+        col = VC.collected_hits()
+        st.markdown(f"### 🔟 북마크 채널 새 1만+ ({len(col)})")
+        if not col:
+            st.caption("아직 수집된 1만+ 가 없습니다. (키가 있으면 최근 영상 중 1만+ 를 자동 수집해요.)")
+        else:
+            grid = st.columns(3)
+            for i, h in enumerate(col[:30]):
+                with grid[i % 3]:
+                    if h.get("thumb"):
+                        st.image(h["thumb"], use_container_width=True)
+                    st.caption(f"**{h.get('views', 0):,}회** · {h.get('channel_title', '')}\n\n"
+                               f"{h.get('title', '')[:36]}")
+            if st.button("📥 이 1만+ 를 분석 표본으로 불러오기", use_container_width=True):
+                st.session_state["hits"] = V.filter_hits(col)
+                st.session_state["hits_src"] = "북마크 채널 1만+"
+                st.success("불러왔습니다. 🔎/✨ 탭에서 이어가세요.")
 
 
 # ════════════════════════════════════════════════════════════

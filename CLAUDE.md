@@ -529,5 +529,17 @@ python pipeline.py --init                              # 파이프라인 폴더 
       음악 아니면 금지, 계절 분산 지시보다 이 원칙 우선". `viral_lab_app` 생성 탭: engine==
       'demo' 면 데모 렌더 대신 "키 없어 링크 기반 생성 불가 — 고정 예시일 뿐" 에러만 표시.
     · 검증: grounding 주입 캡처 + AppTest 6탭 + 데모리포트 주입 시 재즈세트 미렌더·경고표시.
+  - 🔖🔔 **폴더 채널 북마크 + 새 영상 알림 + 새 1만+ 자동수집**(2026-07-25, 같은 브랜치):
+    폴더 안 채널 링크 확인 → 🔖 북마크 → 그 채널 새 영상 알림 + 새 1만+ 자동수집 → 알림 끄면 삭제.
+    · `viral_channels.py` 신규 — 로컬 JSON(`viral_channels.json`, gitignore). channel_watcher(RSS
+      쿼터0·채널해석·조회수) 재활용. `channels_in_videos`(폴더 영상→고유 채널+북마크상태) ·
+      `bookmark/unbookmark` · `check_new`(RSS 폴링→새 영상 알림[baseline 이후만] + 최근영상 중
+      1만+ 자동수집[키 필요]) · `alerts/dismiss_alert/clear_alerts` · `collected_hits`.
+    · `viral_lab_app.py`: 📁 폴더 탭에 **📺 이 폴더의 채널**(링크 + 🔖 북마크/해제). **🔔 알림 탭**
+      신설(총 7탭, 탭 라벨에 미확인 건수 배지). 앱 열면 세션당 1회 자동 RSS 확인 + 🔄 수동버튼.
+      새 영상 카드(썸네일·제목·링크·🔕 끄기·모두 끄기) + 북마크 채널에서 자동수집된 1만+ 갤러리
+      (📥 표본 불러오기). git 충돌 방지 위해 북마크/알림은 로컬(앱 열 때 자동 = '자동' 충족).
+    · 검증: viral_channels self-test(채널집계·북마크·알림 dismiss) + AppTest 7탭 예외0 +
+      알림 배지·새영상·자동수집 렌더.
   - **다음**: eqO5N 머지(→ 사장님 화면 반영) → 실키 end-to-end → 수집 키워드 시드 튜닝.
 - (작업하며 갱신할 것)
