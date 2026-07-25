@@ -38,6 +38,7 @@ except Exception:                       # noqa: BLE001
 import streamlit as st
 
 import viral_lab as V
+import viral_folders as F
 
 # concept_maker (Vision·이미지생성·리포트) 재사용
 _BACKEND = os.path.join(_HERE, "jpshorts", "backend")
@@ -108,8 +109,8 @@ st.caption(_badge + "  — 미설정 키는 **⚙️ 설정** 탭에서 넣으�
 if CM is None:
     st.error(f"생성 엔진(concept_maker) 로드 실패: {_CM_ERR}. 저장소 구조를 확인하세요.")
 
-tab_find, tab_cluster, tab_gen, tab_store, tab_set = st.tabs(
-    ["🔎 발굴·분석", "🧩 묶음·갈림", "✨ 생성", "📦 수집함", "⚙️ 설정"])
+tab_find, tab_cluster, tab_folder, tab_gen, tab_store, tab_set = st.tabs(
+    ["🔎 발굴·분석", "🧩 묶음·갈림", "📁 감성 폴더", "✨ 생성", "📦 수집함", "⚙️ 설정"])
 
 
 # ════════════════════════════════════════════════════════════
@@ -324,6 +325,10 @@ with tab_cluster:
         multi = [c for c in clusters if c["size"] >= 2]
         st.caption(f"{len(hits)}개를 **{len(clusters)}개 풍**으로 분류 "
                    f"(2개 이상 묶인 풍 {len(multi)}개 — 이런 묶음에서 갈림 원인이 보입니다).")
+        if multi and st.button(f"📁 2개 이상 묶인 감성 {len(multi)}개를 폴더로 한 번에 저장",
+                               use_container_width=True):
+            made = [F.create_folder(c["label"], c["videos"], vibe=c["label"]) for c in multi]
+            st.success(f"{len(made)}개 감성 폴더를 만들었습니다. → **📁 감성 폴더** 탭에서 확인·분석하세요.")
         for ci, c in enumerate(clusters):
             spread = f" · 최고/최저 **{c['spread']}배**" if c.get("spread") and c["size"] >= 2 else ""
             with st.expander(f"🧩 {c['label']}  ·  {c['size']}개{spread}",
@@ -337,6 +342,11 @@ with tab_cluster:
                         tag = "🥇최고" if i == 0 and c["size"] >= 2 else (
                             "🥉최저" if v is c["bottom"] and c["size"] >= 2 else "")
                         st.caption(f"**{v['views']:,}회** {tag}\n\n{v['title'][:36]}")
+
+                if st.button("📁 이 감성 묶음을 폴더로 저장", key=f"savef_{ci}",
+                             use_container_width=True):
+                    F.create_folder(c["label"], c["videos"], vibe=c["label"])
+                    st.success(f"'{c['label']}' 폴더 저장 완료 → 📁 감성 폴더 탭에서 분석하세요.")
 
                 if c["size"] >= 2:
                     st.markdown("**🔬 왜 갈렸나 — 정량 유추**")
@@ -362,6 +372,103 @@ with tab_cluster:
                                 st.write(st.session_state[vkey])
                     elif hi and lo and not _openai:
                         st.caption("👁 시각 원인 유추는 OpenAI 키가 필요합니다(⚙️ 설정).")
+
+
+# ════════════════════════════════════════════════════════════
+# 📁 감성 폴더 (비슷한 감성끼리 폴더 저장 → 폴더 안 공통점·유사도 분석)
+# ════════════════════════════════════════════════════════════
+with tab_folder:
+    st.subheader("비슷한 감성끼리 폴더에 모아, 공통점·유사도 보기")
+
+    # (1) 현재 표본을 감성별 폴더로 자동 제안/저장
+    hits = st.session_state.get("hits")
+    if hits:
+        sug = F.suggest_folders(hits)
+        with st.expander(f"➕ 지금 표본을 감성별 폴더로 담기 (자동 제안 {len(sug)}개)",
+                         expanded=not F.list_folders()):
+            if sug:
+                for s in sug:
+                    st.caption(f"📁 {s['name']} · {s['size']}개 — {s['formula']}")
+                if st.button("이 감성 폴더들 전부 만들기", type="primary",
+                             use_container_width=True):
+                    for s in sug:
+                        F.create_folder(s["name"], s["videos"], vibe=s["vibe"])
+                    st.success(f"{len(sug)}개 폴더 생성 완료.")
+                    st.rerun()
+            else:
+                st.caption("2개 이상 묶이는 감성이 없어요. 표본을 더 모아 보세요.")
+            nm = st.text_input("또는 새 폴더 이름", placeholder="예) 새벽 감성 재즈")
+            if st.button("현재 표본 전체를 새 폴더로", use_container_width=True):
+                if nm.strip():
+                    F.create_folder(nm, V.filter_hits(hits), vibe=nm)
+                    st.success(f"'{nm}' 폴더 생성 완료.")
+                    st.rerun()
+                else:
+                    st.warning("폴더 이름을 넣어주세요.")
+    else:
+        st.caption("🔎 발굴·분석에서 표본을 만들면, 감성별 폴더를 자동으로 제안해 드립니다.")
+
+    # (2) 저장된 폴더 목록 + 폴더 안 공통점 분석
+    folders = F.list_folders()
+    st.divider()
+    if not folders:
+        st.info("아직 폴더가 없습니다. 🧩 묶음·갈림 탭의 '📁 폴더로 저장' 또는 위의 자동 제안으로 만드세요.")
+    else:
+        names = {f"{f['name']} ({f['size']}개)": f["id"] for f in folders}
+        pick = st.selectbox("📁 폴더 선택", list(names.keys()))
+        fid = names[pick]
+        folder = F.get_folder(fid)
+        if folder:
+            cm = F.folder_common(folder)
+            st.markdown(f"### 📁 {folder['name']}")
+            a, b, c3 = st.columns(3)
+            a.metric("영상 수", f"{cm['n']}개")
+            b.metric("제목 유사도", f"{cm['similarity']}%")
+            c3.metric("중앙 조회수", f"{cm['median_views']:,}")
+
+            # 공통점 요약
+            st.markdown("**🔗 이 폴더의 공통점**")
+            st.caption("제목 승리 공식: " + cm["formula"])
+            if cm["common_words"]:
+                st.caption("공통 단어: " + " · ".join(f"{w}({n})" for w, n in cm["common_words"]))
+            for label, val in cm["keywords"]:
+                st.caption(f"**{label}** — {val}")
+
+            # 👁 썸네일 공통 시각 패턴 (Vision)
+            fvkey = f"fvision_{fid}"
+            fthumbs = [v["thumb"] for v in cm["top"] if v.get("thumb")]
+            if CM is not None and _openai and fthumbs:
+                if st.button("👁 GPT Vision 으로 이 폴더 썸네일 공통점 분석",
+                             key=f"fvbtn_{fid}", use_container_width=True):
+                    with st.spinner("썸네일들의 공통 시각 패턴을 보는 중..."):
+                        st.session_state[fvkey] = CM.analyze_thumbnails_vision(
+                            fthumbs[:9], [v["title"] for v in cm["top"][:9]])
+                if st.session_state.get(fvkey):
+                    with st.container(border=True):
+                        st.markdown("**👁 썸네일 공통 시각 패턴**")
+                        st.write(st.session_state[fvkey])
+
+            # 폴더 안 썸네일 + 제목 한눈에
+            st.markdown("**🖼️ 폴더 안 썸네일·제목**")
+            fv = cm["top"][:30]
+            for i in range(0, len(fv), 3):
+                cols = st.columns(3)
+                for j, v in enumerate(fv[i:i + 3]):
+                    with cols[j]:
+                        if v.get("thumb"):
+                            st.image(v["thumb"], use_container_width=True)
+                        st.markdown(f"**{v['views']:,}회**")
+                        st.caption(v["title"])
+
+            c1, c2 = st.columns(2)
+            if c1.button("📥 이 폴더를 분석 표본으로 불러오기", use_container_width=True):
+                st.session_state["hits"] = V.filter_hits(folder["videos"])
+                st.session_state["hits_src"] = f"폴더:{folder['name']}"
+                st.success("불러왔습니다. 🔎/✨ 탭에서 이어가세요.")
+            if c2.button("🗑️ 이 폴더 삭제", use_container_width=True):
+                F.delete_folder(fid)
+                st.warning("삭제했습니다.")
+                st.rerun()
 
 
 # ════════════════════════════════════════════════════════════
