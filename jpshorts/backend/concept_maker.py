@@ -432,8 +432,23 @@ CLICK_PSYCH = """[★ 이번 생성의 최우선 지침 — 레퍼런스 톤 보
    병맛 말투, 충격이면 충격 단어). 제목과 똑같이 겹치지 말고 궁금증을 '증폭'시키는 카피로."""
 
 
+# ── 🔒 절대 원칙 — 첨부 레퍼런스에만 근거(모델의 통념 주입 금지) ──
+REFERENCE_GROUNDING = """[★★ 절대 원칙 — 첨부한 레퍼런스에만 근거 ★★]
+신규 제목·thumb_text·썸네일 image_prompt 의 소재·테마·시간대·장소·계절·감정·키워드·색감은
+**오로지 위 '인기 상승 제목'과 '썸네일(👁Vision 분석)'에 실제로 나타난 것**에서만 가져와라.
+· 레퍼런스에 없는 새 테마를 너의 상식·통념·장르 관습으로 지어내지 마라.
+  (예: 레퍼런스 제목에 '밤·새벽·재즈'가 없으면 밤·새벽·재즈를 절대 넣지 마라.)
+· 각 신규 제목은, 그 근거가 된 레퍼런스 제목의 실제 단어·문형에서 나와야 한다.
+· 음악/플레이리스트/Suno 곡 가정도 레퍼런스가 음악이 아니면 적용하지 마라. 위 SPEC 의
+  음악 예시(재즈·로파이·트로트 등)는 참고용일 뿐, 레퍼런스에 없으면 쓰지 마라.
+· 계절·시간대를 '다양하게 분산'하라는 지시보다 이 원칙이 우선이다 — 레퍼런스가 특정
+  시간대에 몰려 있으면 신규도 그 범위 안에서만 만들어라.
+근거가 되는 레퍼런스가 빈약하면, 억지로 채우지 말고 있는 만큼만 충실히 반영하라."""
+
+
 def build_vibe_notes(tone_line: str, intensity_line: str = "") -> str:
-    return CLICK_PSYCH.format(tone_line=tone_line, intensity_line=intensity_line)
+    return (REFERENCE_GROUNDING + "\n\n"
+            + CLICK_PSYCH.format(tone_line=tone_line, intensity_line=intensity_line))
 
 
 # ── 데모 썸네일(그라디언트 SVG data URI) ────────────────

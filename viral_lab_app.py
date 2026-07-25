@@ -522,11 +522,14 @@ with tab_gen:
                 st.session_state["report"] = resp
 
         report = st.session_state.get("report")
-        if report and isinstance(report.get("result"), dict):
+        if report and report.get("engine") == "demo":
+            st.error(
+                "⚠️ **OpenAI(또는 Gemini) 키가 없어 첨부 링크 기반 생성이 불가**합니다.\n\n"
+                "키가 없으면 링크와 **무관한 고정 예시(밤·재즈 등)**만 나옵니다 — 그건 사장님 "
+                "링크 분석 결과가 아니라 프로그램에 내장된 샘플이에요. **⚙️ 설정**에서 OpenAI "
+                "키를 넣으면, **오직 첨부한 링크의 분석 결과로만** 제목·썸네일을 생성합니다.")
+        elif report and isinstance(report.get("result"), dict):
             result = report["result"]
-            if report.get("engine") == "demo":
-                st.info("⚠️ LLM 키가 없어 **데모 결과**입니다. ⚙️ 설정에서 OpenAI 키를 넣으면 "
-                        "실제 GPT 가 1만+ 공식으로 생성합니다.")
             # 컨셉 한 줄
             concept = result.get("concept") or {}
             if isinstance(concept, dict) and concept.get("headline"):
