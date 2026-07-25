@@ -110,6 +110,101 @@ st.caption(_badge + "  — 미설정 키는 **⚙️ 설정** 탭에서 넣으�
 if CM is None:
     st.error(f"생성 엔진(concept_maker) 로드 실패: {_CM_ERR}. 저장소 구조를 확인하세요.")
 
+
+# ── ✨ 생성 UI (분석 탭 아래에 바로 붙일 수 있게 함수로) ──────
+def render_generation(top: list, src: str, kp: str) -> None:
+    """분석 표본(top) 기반 톤 선택 + 생성 + 결과. kp=위젯/세션 키 접두사(위치마다 다르게)."""
+    if not top:
+        return
+    if CM is None:
+        st.error("생성 엔진을 불러오지 못했습니다.")
+        return
+    st.caption(f"근거: 1만+ 썸네일 {len([h for h in top if h.get('thumb')])}장 + "
+               f"제목 {len([h for h in top if h.get('title')])}개 (출처: {src})")
+    tone_keys = list(V.VIBE_TONES.keys())
+    tone = st.radio("톤 (레퍼런스 느낌을 어떻게 살릴까)", tone_keys, horizontal=True,
+                    format_func=lambda k: V.VIBE_TONES[k][0], key=f"tone_{kp}")
+    intensity = st.select_slider("강도", ["약", "중", "강"], value="중", key=f"inten_{kp}")
+    st.caption("🪞 레퍼런스 그대로 = 표본이 병맛이면 병맛·감성이면 감성으로 미러링 · "
+               "🤪 병맛 살려 = 날것·과장·B급 · 😱 더 자극적 = 충격·반전 · 🌙 감성 유지.")
+    rk = f"report_{kp}"
+    if st.button("✨ 새 썸네일·제목 10세트 생성", type="primary",
+                 use_container_width=True, key=f"go_{kp}"):
+        imgs = [h["thumb"] for h in top if h.get("thumb")]
+        titles_text = "\n".join(h["title"] for h in top if h.get("title"))
+        brief = V.vibe_brief(tone, intensity)
+        vibe_notes = CM.build_vibe_notes(brief["tone_line"], brief["intensity_line"])
+        nuance_notes = V.nuance_brief_text(st.session_state.get("nuance"))
+        spin = f"GPT 가 1만+ 공식 + '{brief['label']}' 톤"
+        spin += " + 키워드·뉘앙스" if nuance_notes else ""
+        with st.spinner(spin + "으로 짜는 중..."):
+            try:
+                resp = CM.generate_report(channel_urls=[], song_type="auto", num_songs=1,
+                                          images=imgs, titles_text=titles_text,
+                                          extra_notes=nuance_notes, vibe_notes=vibe_notes,
+                                          punchy_overlay=brief["punchy"])
+            except Exception as e:              # noqa: BLE001
+                resp = {"error": str(e)}
+        if resp.get("error"):
+            st.error(resp["error"])
+        else:
+            st.session_state[rk] = resp
+
+    report = st.session_state.get(rk)
+    if report and report.get("engine") == "demo":
+        st.error("⚠️ **OpenAI(또는 Gemini) 키가 없어 첨부 링크 기반 생성이 불가**합니다. "
+                 "키가 없으면 링크와 **무관한 고정 예시(밤·재즈 등)**만 나와요 — ⚙️ 설정에서 "
+                 "OpenAI 키를 넣으면 **오직 첨부 링크 분석 결과로만** 생성합니다.")
+    elif report and isinstance(report.get("result"), dict):
+        result = report["result"]
+        concept = result.get("concept") or {}
+        if isinstance(concept, dict) and concept.get("headline"):
+            st.markdown(f"**🎯 컨셉** — {concept.get('headline')}")
+            if concept.get("keep"):
+                st.caption("유지 85%: " + str(concept.get("keep")))
+        title_sets = result.get("title_sets") or []
+        refs = [h["thumb"] for h in top if h.get("thumb")]
+        st.markdown(f"### 🎬 썸네일·제목 {len(title_sets)}세트")
+        for idx, s in enumerate(title_sets):
+            if not isinstance(s, dict):
+                continue
+            with st.container(border=True):
+                st.markdown(f"**{idx + 1}. {s.get('title', '')}**")
+                if s.get("thumb_text"):
+                    st.caption("썸네일 문구: " + s["thumb_text"])
+                key_img = f"img_{kp}_{idx}"
+                if st.session_state.get(key_img):
+                    st.image(st.session_state[key_img], use_container_width=True)
+                    st.download_button("⬇️ 이미지 저장", _dataurl_bytes(st.session_state[key_img]),
+                                       file_name=f"thumb_{idx + 1}.png", mime="image/png",
+                                       key=f"dl_{kp}_{idx}")
+                prompt = s.get("full_image_prompt") or s.get("image_prompt", "")
+                cc1, cc2 = st.columns(2)
+                if cc1.button("🎨 이 장면 그리기", key=f"gen_{kp}_{idx}",
+                              use_container_width=True):
+                    if not _openai:
+                        st.warning("이미지 생성엔 OpenAI 키가 필요합니다(⚙️ 설정).")
+                    else:
+                        with st.spinner("최고화질 썸네일 생성 중(무드 이식)..."):
+                            r = CM.generate_thumbnail_image(prompt, refs=refs)
+                        if r.get("ok"):
+                            st.session_state[key_img] = r["data_url"]
+                            st.rerun()
+                        else:
+                            st.error(r.get("error", "생성 실패"))
+                with cc2.popover("📋 프롬프트", use_container_width=True):
+                    st.code(prompt, language=None)
+                    if s.get("midjourney_prompt"):
+                        st.caption("미드저니용:")
+                        st.code(s["midjourney_prompt"], language=None)
+        all_titles = [s.get("title", "") for s in title_sets if isinstance(s, dict)]
+        if all_titles:
+            st.markdown("**📋 제목 10개 전체복사**")
+            st.code("\n".join(all_titles), language=None)
+    elif report and report.get("markdown"):
+        st.markdown(report["markdown"])
+
+
 _alert_n = VC.alert_count()
 _alarm_label = f"🔔 알림 ({_alert_n})" if _alert_n else "🔔 알림"
 tab_find, tab_cluster, tab_folder, tab_alarm, tab_gen, tab_store, tab_set = st.tabs(
@@ -311,8 +406,13 @@ with tab_find:
                 st.markdown("**👁 GPT Vision 실측 — 1만+ 썸네일 공통 패턴**")
                 st.write(st.session_state["vision"])
 
-        st.info("→ 이 표본을 근거로 **✨ 생성** 탭에서 새 썸네일·제목을 만듭니다. "
-                "같은 풍끼리 묶어 보고 조회수 갈린 이유가 궁금하면 **🧩 묶음·갈림** 탭으로.")
+        st.caption("같은 풍끼리 묶어 보고 조회수 갈린 이유가 궁금하면 **🧩 묶음·갈림** 탭으로.")
+
+        # ✨ 바로 여기서 생성 — 아래로 스크롤하면 이 분석 기반 썸네일·제목 예시
+        st.divider()
+        st.markdown("## ✨ 이 분석으로 새 썸네일·제목 만들기")
+        st.caption("위 분석(키워드·뉘앙스·1만+ 공식)을 그대로 반영해 만듭니다. 아래로 내려가며 확인하세요.")
+        render_generation(ana["top"][:9], st.session_state.get("hits_src", "?"), "find")
 
 
 # ════════════════════════════════════════════════════════════
@@ -493,6 +593,12 @@ with tab_folder:
                 st.warning("삭제했습니다.")
                 st.rerun()
 
+            # ✨ 이 폴더 분석 기반 생성 — 바로 아래로 스크롤
+            st.divider()
+            st.markdown("## ✨ 이 폴더 분석으로 새 썸네일·제목 만들기")
+            st.caption("이 폴더의 공통점·키워드를 그대로 반영해 만듭니다. 아래로 내려가며 확인하세요.")
+            render_generation(cm["top"][:9], f"폴더:{folder['name']}", f"fold_{fid}")
+
 
 # ════════════════════════════════════════════════════════════
 # 🔔 알림 (북마크 채널 새 영상 + 새 1만+ 자동수집)
@@ -591,108 +697,11 @@ with tab_gen:
     st.subheader("검증된 1만+ 공식으로 새 썸네일·제목 만들기")
     hits = st.session_state.get("hits")
     if not hits:
-        st.info("먼저 **🔎 발굴·분석** 탭에서 1만+ 표본을 만들어 주세요.")
-    elif CM is None:
-        st.error("생성 엔진을 불러오지 못했습니다.")
+        st.info("먼저 **🔎 발굴·분석** 탭에서 1만+ 표본을 만들어 주세요. "
+                "(이제 🔎 발굴·분석 / 📁 감성 폴더 탭에서도 아래로 내려가면 바로 생성됩니다.)")
     else:
-        top = V.filter_hits(hits)[:9]
-        st.caption(f"근거: 1만+ 썸네일 {len(top)}장 + 제목 {len(top)}개 "
-                   f"(출처: {st.session_state.get('hits_src', '?')})")
-
-        # 🎯 톤 선택 — 레퍼런스가 병맛이면 병맛까지 살려서, 클릭 심리 자극
-        tone_keys = list(V.VIBE_TONES.keys())
-        tone = st.radio(
-            "톤 (레퍼런스 느낌을 어떻게 살릴까)", tone_keys, horizontal=True,
-            format_func=lambda k: V.VIBE_TONES[k][0])
-        intensity = st.select_slider("강도", ["약", "중", "강"], value="중")
-        st.caption("🪞 레퍼런스 그대로 = 표본이 병맛이면 병맛·감성이면 감성으로 미러링 · "
-                   "🤪 병맛 살려 = 날것·과장·B급 감성 밀어붙임 · 😱 더 자극적 = 충격·반전 극대화 · "
-                   "🌙 감성 유지 = 무드는 지키되 클릭 심리는 확실히.")
-
-        if st.button("✨ 새 썸네일·제목 10세트 생성", type="primary",
-                     use_container_width=True):
-            imgs = [h["thumb"] for h in top if h.get("thumb")]
-            titles_text = "\n".join(h["title"] for h in top if h.get("title"))
-            brief = V.vibe_brief(tone, intensity)
-            vibe_notes = CM.build_vibe_notes(brief["tone_line"], brief["intensity_line"])
-            nuance_notes = V.nuance_brief_text(st.session_state.get("nuance"))
-            st.session_state["punchy"] = brief["punchy"]
-            spin = f"GPT 가 1만+ 공식 + '{brief['label']}' 톤"
-            spin += " + 키워드·뉘앙스" if nuance_notes else ""
-            with st.spinner(spin + "으로 짜는 중..."):
-                try:
-                    resp = CM.generate_report(channel_urls=[], song_type="auto",
-                                              num_songs=1, images=imgs,
-                                              titles_text=titles_text,
-                                              extra_notes=nuance_notes,
-                                              vibe_notes=vibe_notes,
-                                              punchy_overlay=brief["punchy"])
-                except Exception as e:          # noqa: BLE001
-                    resp = {"error": str(e)}
-            if resp.get("error"):
-                st.error(resp["error"])
-            else:
-                st.session_state["report"] = resp
-
-        report = st.session_state.get("report")
-        if report and report.get("engine") == "demo":
-            st.error(
-                "⚠️ **OpenAI(또는 Gemini) 키가 없어 첨부 링크 기반 생성이 불가**합니다.\n\n"
-                "키가 없으면 링크와 **무관한 고정 예시(밤·재즈 등)**만 나옵니다 — 그건 사장님 "
-                "링크 분석 결과가 아니라 프로그램에 내장된 샘플이에요. **⚙️ 설정**에서 OpenAI "
-                "키를 넣으면, **오직 첨부한 링크의 분석 결과로만** 제목·썸네일을 생성합니다.")
-        elif report and isinstance(report.get("result"), dict):
-            result = report["result"]
-            # 컨셉 한 줄
-            concept = result.get("concept") or {}
-            if isinstance(concept, dict) and concept.get("headline"):
-                st.markdown(f"**🎯 컨셉** — {concept.get('headline')}")
-                if concept.get("keep"):
-                    st.caption("유지 85%: " + str(concept.get("keep")))
-
-            title_sets = result.get("title_sets") or []
-            refs = [h["thumb"] for h in top if h.get("thumb")]
-            st.markdown(f"### 🎬 썸네일·제목 {len(title_sets)}세트")
-            for idx, s in enumerate(title_sets):
-                if not isinstance(s, dict):
-                    continue
-                with st.container(border=True):
-                    st.markdown(f"**{idx + 1}. {s.get('title', '')}**")
-                    if s.get("thumb_text"):
-                        st.caption("썸네일 문구: " + s["thumb_text"])
-                    key_img = f"img_{idx}"
-                    if st.session_state.get(key_img):
-                        st.image(st.session_state[key_img], use_container_width=True)
-                        st.download_button("⬇️ 이미지 저장", _dataurl_bytes(st.session_state[key_img]),
-                                           file_name=f"thumb_{idx + 1}.png", mime="image/png",
-                                           key=f"dl_{idx}")
-                    prompt = s.get("full_image_prompt") or s.get("image_prompt", "")
-                    cc1, cc2 = st.columns(2)
-                    if cc1.button("🎨 이 장면 그리기", key=f"gen_{idx}",
-                                  use_container_width=True):
-                        if not _openai:
-                            st.warning("이미지 생성엔 OpenAI 키가 필요합니다(⚙️ 설정).")
-                        else:
-                            with st.spinner("최고화질 썸네일 생성 중(무드 이식)..."):
-                                r = CM.generate_thumbnail_image(prompt, refs=refs)
-                            if r.get("ok"):
-                                st.session_state[key_img] = r["data_url"]
-                                st.rerun()
-                            else:
-                                st.error(r.get("error", "생성 실패"))
-                    with cc2.popover("📋 프롬프트", use_container_width=True):
-                        st.code(prompt, language=None)
-                        if s.get("midjourney_prompt"):
-                            st.caption("미드저니용:")
-                            st.code(s["midjourney_prompt"], language=None)
-
-            # 제목 전체 복사
-            all_titles = [s.get("title", "") for s in title_sets if isinstance(s, dict)]
-            if all_titles:
-                st.markdown("**📋 제목 10개 전체복사**")
-                st.code("\n".join(all_titles), language=None)
-        elif report and report.get("markdown"):
-            st.markdown(report["markdown"])
+        render_generation(V.filter_hits(hits)[:9],
+                          st.session_state.get("hits_src", "?"), "gen")
 
 
 # ════════════════════════════════════════════════════════════
