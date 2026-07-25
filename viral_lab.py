@@ -18,6 +18,7 @@ from __future__ import annotations
 import datetime as _dt
 import json
 import os
+import re
 import sys
 from typing import Any
 
@@ -37,6 +38,13 @@ def _yc():
         sys.path.insert(0, _BACKEND)
     import youtube_client as yc  # noqa: WPS433
     return yc
+
+
+def _cm():
+    if _BACKEND not in sys.path:
+        sys.path.insert(0, _BACKEND)
+    import concept_maker as cm  # noqa: WPS433
+    return cm
 
 
 def has_youtube_key() -> bool:
@@ -108,6 +116,103 @@ def search_hits(keyword: str, video_type: str = "all", period_days: int = 0,
         "dropped": len(cards) - len(hits),
         "demo": not yc.has_key(),
     }
+
+
+# ── 🔗 링크 직접 추가 (영상/채널 URL → 1만+) ─────────────────
+_VID_RE = re.compile(
+    r"(?:youtu\.be/|v=|/shorts/|/embed/|/live/|/v/)([A-Za-z0-9_-]{11})")
+
+
+def extract_video_ids(text: str) -> list[str]:
+    """붙여넣은 텍스트에서 유튜브 영상 ID(11자)를 URL 문맥으로만 추출(중복 제거)."""
+    ids = [m.group(1) for m in _VID_RE.finditer(text or "")]
+    return list(dict.fromkeys(ids))
+
+
+def _looks_channel(url: str) -> bool:
+    u = (url or "").strip()
+    return u.startswith("@") or any(s in u for s in ("/channel/", "/@", "/c/", "/user/"))
+
+
+def fetch_videos_by_ids(ids: list[str]) -> list[dict]:
+    """영상 ID들 → 메타(제목·썸네일·조회수·구독자·배수). 최대 50개.
+
+    키 없으면 데모: 썸네일은 실제(i.ytimg.com 공개), 조회수는 임의(`_demo` 표시).
+    """
+    ids = list(dict.fromkeys([i for i in (ids or []) if i]))[:50]
+    if not ids:
+        return []
+    yc = _yc()
+    if not yc.has_key():
+        import random
+        out = []
+        for i in ids:
+            r = random.Random(i)
+            out.append({"video_id": i, "title": f"(데모) 링크 영상 {i[:6]}",
+                        "thumb": f"https://i.ytimg.com/vi/{i}/hqdefault.jpg",
+                        "views": r.randint(5000, 300000), "published_at": "",
+                        "_demo": True})
+        return out
+    yt = yc._yt()
+    cards: list[dict] = []
+    for k in range(0, len(ids), 50):
+        resp = yt.videos().list(part="snippet,statistics,contentDetails",
+                                id=",".join(ids[k:k + 50])).execute()
+        vids = resp.get("items", [])
+        chans = yc._fetch_channels([v["snippet"]["channelId"] for v in vids])
+        for v in vids:
+            sn, stt = v["snippet"], v.get("statistics", {})
+            ch = chans.get(sn["channelId"], {})
+            views = int(stt.get("viewCount", 0))
+            avg = ch.get("avg_views") or 0
+            thumbs = sn.get("thumbnails", {})
+            thumb = (thumbs.get("medium") or thumbs.get("high")
+                     or thumbs.get("default") or {}).get("url", "")
+            cards.append({
+                "video_id": v["id"], "title": sn["title"],
+                "channel_id": sn["channelId"], "channel_title": sn["channelTitle"],
+                "thumb": thumb, "views": views, "published_at": sn["publishedAt"],
+                "subscribers": int(ch.get("subs", 0) or 0),
+                "multiplier": round(views / avg, 1) if avg else None,
+                "keywords": sn.get("tags", []) or [],
+            })
+    return cards
+
+
+def add_from_links(text: str, min_views: int = MIN_VIEWS) -> dict:
+    """붙여넣은 링크들(영상/채널) → 1만+ 표본.
+
+    영상 링크 = 그 영상만, 채널/핸들 링크 = 그 채널 인기영상. 둘 다 1만+ 필터.
+    반환: {raw, hits, dropped, video_ids, channels, demo}
+    """
+    lines = [l.strip() for l in (text or "").splitlines() if l.strip()]
+    vid_ids: list[str] = []
+    ch_urls: list[str] = []
+    for l in lines:
+        got = extract_video_ids(l)
+        if got:
+            vid_ids += got
+        else:                       # 영상 ID 없는 줄 = 채널/핸들로 취급
+            ch_urls.append(l)
+
+    cards = fetch_videos_by_ids(vid_ids)
+    demo = any(c.get("_demo") for c in cards)
+    for cu in ch_urls:
+        try:
+            ch = _cm().collect_channel(cu)
+        except Exception:           # noqa: BLE001
+            ch = {"error": "채널 정보를 가져오지 못했습니다."}
+        if ch.get("error"):
+            continue
+        if ch.get("demo"):
+            demo = True
+        cards += ch.get("videos", [])
+
+    norm = [normalize(c) for c in cards]
+    hits = filter_hits(norm, min_views)
+    return {"raw": len(norm), "hits": hits, "dropped": len(norm) - len(hits),
+            "video_ids": len(dict.fromkeys(vid_ids)), "channels": len(ch_urls),
+            "demo": demo}
 
 
 # ── 분석: 1만+ 집합의 승리 공식 ──────────────────────────────
@@ -451,4 +556,11 @@ if __name__ == "__main__":  # 간이 자기검증
     hyp = diff_hypotheses(jazz[0])
     assert any(("이모지" in h or "구독자" in h) for h in hyp), hyp
     print("클러스터:", [(c["label"], c["size"]) for c in cl])
+
+    # 링크 직접 추가
+    ids = extract_video_ids("watch?v=dQw4w9WgXcQ https://youtu.be/abc123DEFgh @핸들")
+    assert ids == ["dQw4w9WgXcQ", "abc123DEFgh"], ids
+    lk = add_from_links("https://youtu.be/dQw4w9WgXcQ")   # 키없음=데모
+    assert lk["video_ids"] == 1 and lk["demo"], lk
+    print("링크추가 데모:", lk["video_ids"], "개 →", len(lk["hits"]), "통과")
     print("self-test OK")
