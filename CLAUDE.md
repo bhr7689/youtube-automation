@@ -456,6 +456,8 @@ python pipeline.py --init                              # 파이프라인 폴더 
     · `.github/workflows/daily_viral_collect.yml` — 매일 07:00 KST cron → 1만+ 수집 →
       `viral_hits.json` 커밋·푸시(PC 꺼져도 자동). Secret: YOUTUBE_API_KEY.
     · `조회수1만분석기실행.bat` — 포트 8506 런처(git pull 로 수집함도 동기화).
+    · `조회수1만분석기_바탕화면아이콘.bat` + `assets/viral_lab.ico`(🔴🟠 "10K+VIEWS" 재생삼각형)
+      — 한 번 실행하면 바탕화면에 '조회수1만연구소' 아이콘 생성(더블클릭으로 실행).
   - 검증(데모/키없음): viral_lab self-test · AppTest 4탭 예외0 · 데모검색 24→1만+필터 →
     analyze → store add 멱등 · collector CLI 데모탈출. ⚠️ 실검색·이미지생성은 사장님 PC(키)에서.
   - 🎯 **톤 보존 + 클릭 심리 주입**(2026-07-24, 같은 브랜치): 레퍼런스가 병맛이면 병맛까지
