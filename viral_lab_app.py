@@ -224,6 +224,24 @@ with tab_find:
         m3.metric("평균 제목길이", f"{int(ana['agg'].get('avg_length', 0))}자")
         st.markdown(f"**🏆 제목 승리 공식** — {ana['formula']}")
 
+        # 🖼️ 한눈에 보기 — 썸네일 + 제목(전체) + 조회수·배수·순위 (제일 먼저 크게)
+        st.markdown(f"**🖼️ 한눈에 보기 — 1만+ 썸네일·제목 ({ana['n']}개, 조회수순)**")
+        _show = ana["top"][:30]
+        for _i in range(0, len(_show), 3):
+            _cols = st.columns(3)
+            for _j, _h in enumerate(_show[_i:_i + 3]):
+                with _cols[_j]:
+                    if _h.get("thumb"):
+                        st.image(_h["thumb"], use_container_width=True)
+                    _mult = f" · {_h['multiplier']}배" if _h.get("multiplier") else ""
+                    st.markdown(f"**#{_i + _j + 1} · {_h['views']:,}회**{_mult}")
+                    st.caption(_h["title"])
+        if ana["n"] > len(_show):
+            st.caption(f"…외 {ana['n'] - len(_show)}개 더 (조회수 상위 {len(_show)}개만 표시)")
+        with st.expander("📋 제목만 모아보기 (복사용)"):
+            st.code("\n".join(f"{h['views']:,}\t{h['title']}" for h in ana["top"]),
+                    language=None)
+
         agg = ana["agg"]
         # 📊 정량 키워드 분석 (무료·항상)
         st.markdown("**📊 키워드 분석 (빈도)**")
@@ -287,14 +305,6 @@ with tab_find:
             with st.container(border=True):
                 st.markdown("**👁 GPT Vision 실측 — 1만+ 썸네일 공통 패턴**")
                 st.write(st.session_state["vision"])
-
-        st.markdown("**🖼️ 1만+ 썸네일 (조회수순)**")
-        grid = st.columns(3)
-        for i, h in enumerate(ana["top"][:9]):
-            with grid[i % 3]:
-                if h.get("thumb"):
-                    st.image(h["thumb"], use_container_width=True)
-                st.caption(f"**{h['views']:,}회**\n\n{h['title'][:40]}")
 
         st.info("→ 이 표본을 근거로 **✨ 생성** 탭에서 새 썸네일·제목을 만듭니다. "
                 "같은 풍끼리 묶어 보고 조회수 갈린 이유가 궁금하면 **🧩 묶음·갈림** 탭으로.")

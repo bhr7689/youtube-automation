@@ -504,5 +504,8 @@ python pipeline.py --init                              # 파이프라인 폴더 
     가져와 1만+ 필터. `viral_lab.py`: `extract_video_ids`(URL 문맥 11자 ID) · `fetch_videos_by_ids`
     (videos.list, 키없으면 i.ytimg.com 실썸네일+임의조회수 데모) · `add_from_links`(영상=fetch,
     채널=concept_maker.collect_channel 재사용). 검증: ID추출·데모조회·AppTest 5탭 예외0.
+    · 🖼️ **한눈에 보기 갤러리**(2026-07-25): 발굴·분석 결과를 승리공식 바로 아래에서 썸네일
+      이미지 + 제목(전체) + #순위·조회수·배수 카드로 최대 30개 펼쳐 보여줌 + 📋 제목 모아보기.
+      링크/검색/캡처 모든 방식 공용. (기존 상위9 40자 잘림 → 전체 갤러리로 격상)
   - **다음**: eqO5N 머지(→ 사장님 화면 반영) → 실키 end-to-end → 수집 키워드 시드 튜닝.
 - (작업하며 갱신할 것)
