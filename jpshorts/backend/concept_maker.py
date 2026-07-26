@@ -178,6 +178,14 @@ title_sets 는 반드시 10개. 제목과 썸네일이 **한 세트**다 — 시
 
 # ── LLM 디스패처: Gemini 우선 → OpenAI(키 있으면) ──────
 
+# 마지막 LLM 오류(진짜 원인)를 담아 화면에 노출 — '응답이 비었다'의 실제 이유
+_LAST_LLM_ERROR = {"openai": ""}
+
+
+def last_llm_error() -> str:
+    return _LAST_LLM_ERROR.get("openai", "")
+
+
 def _openai(prompt: str, json_mode: bool = False) -> str | None:
     key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not key:
@@ -192,8 +200,10 @@ def _openai(prompt: str, json_mode: bool = False) -> str | None:
             kwargs["response_format"] = {"type": "json_object"}
             kwargs["max_tokens"] = 8000     # 리포트 길어도 잘리지 않게
         r = client.chat.completions.create(**kwargs)
+        _LAST_LLM_ERROR["openai"] = ""      # 성공 → 오류 클리어
         return (r.choices[0].message.content or "").strip()
-    except Exception:
+    except Exception as e:                  # noqa: BLE001
+        _LAST_LLM_ERROR["openai"] = str(e)[:400]
         return None
 
 
@@ -901,6 +911,7 @@ def generate_report(channel_urls: list[str], song_type: str = "auto",
                       "videos": len(c["videos"]), "demo": c.get("demo", False)}
                      for c in channels],
         "engine": engine,
+        "llm_error": last_llm_error(),     # 생성 실패 시 OpenAI 진짜 오류(원인 확정용)
     }
 
 
