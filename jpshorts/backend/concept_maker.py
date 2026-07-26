@@ -351,6 +351,42 @@ def llm_status() -> dict:
             "openai": bool(os.environ.get("OPENAI_API_KEY", "").strip())}
 
 
+def test_openai() -> dict:
+    """OpenAI 에 실제로 작은 요청을 보내 '진짜 원인'을 알려준다.
+
+    반환: {ok, kind, msg}
+      kind: ok | nokey | billing | badkey | rate | network | other
+    """
+    key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not key:
+        return {"ok": False, "kind": "nokey",
+                "msg": "이 앱에 OpenAI 키가 없습니다. ⚙️ 설정에서 저장하세요."}
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=key)
+        client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": "ping"}], max_tokens=1)
+        return {"ok": True, "kind": "ok", "msg": "연결 정상 — 생성이 가능합니다. ✅"}
+    except Exception as e:                # noqa: BLE001
+        s = str(e).lower()
+        if any(w in s for w in ("insufficient_quota", "billing", "quota", "exceeded your current")):
+            return {"ok": False, "kind": "billing",
+                    "msg": "OpenAI 계정에 **크레딧/결제가 없습니다**(가장 흔한 원인). "
+                           "platform.openai.com → Billing 에서 결제수단 등록·충전 후 다시 시도하세요."}
+        if any(w in s for w in ("invalid_api_key", "incorrect api key", "authenticat", "401", "invalid api key")):
+            return {"ok": False, "kind": "badkey",
+                    "msg": "**키가 틀렸습니다**(오타·만료·삭제). platform.openai.com → API keys 에서 "
+                           "새 키를 복사해 ⚙️ 설정에 다시 저장하세요."}
+        if "429" in s or "rate limit" in s:
+            return {"ok": False, "kind": "rate",
+                    "msg": "요청이 잠깐 몰렸습니다. 1~2분 뒤 다시 시도하세요."}
+        if any(w in s for w in ("connect", "timeout", "timed out", "network", "proxy", "ssl", "getaddr")):
+            return {"ok": False, "kind": "network",
+                    "msg": "네트워크·프록시 문제로 OpenAI 에 못 닿았습니다. 인터넷·백신/방화벽을 확인하세요."}
+        return {"ok": False, "kind": "other", "msg": str(e)[:300]}
+
+
 # ── 미드저니 프롬프트 / 이미지 프롬프트 정리 ────────────
 def _is_image_ref(u: str) -> bool:
     """Vision 이 볼 수 있는 이미지 참조인가 — http(s) URL 또는 base64 data(png/jpeg/webp/gif)."""

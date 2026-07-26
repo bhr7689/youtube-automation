@@ -767,6 +767,19 @@ with tab_set:
             st.success("저장 완료 — 재시작 없이 바로 적용됩니다.")
             st.rerun()
 
+    # 🔌 OpenAI 연결 테스트 — "키는 있는데 생성이 안 될 때" 진짜 원인 확인
+    st.markdown("**🔌 OpenAI 연결 테스트** — 키는 있는데 생성이 안 되면 눌러 진짜 원인을 확인하세요.")
+    if st.button("🔌 지금 OpenAI 연결 테스트", use_container_width=True):
+        if CM is None:
+            st.error("엔진을 불러오지 못했습니다.")
+        else:
+            with st.spinner("OpenAI 에 작은 요청을 보내는 중..."):
+                res = CM.test_openai()
+            if res.get("ok"):
+                st.success(res["msg"])
+            else:
+                st.error(f"❌ {res.get('msg', '실패')}")
+
     # 🔍 키 진단 — "저장했는데 왜 없다지?" 를 스스로 확인
     with st.expander("🔍 키 진단 (저장했는데 안 먹힐 때 눌러보세요)"):
         _env = os.path.join(_HERE, ".env")
