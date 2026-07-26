@@ -372,8 +372,10 @@ def test_openai() -> dict:
         s = str(e).lower()
         if any(w in s for w in ("insufficient_quota", "billing", "quota", "exceeded your current")):
             return {"ok": False, "kind": "billing",
-                    "msg": "OpenAI 계정에 **크레딧/결제가 없습니다**(가장 흔한 원인). "
-                           "platform.openai.com → Billing 에서 결제수단 등록·충전 후 다시 시도하세요."}
+                    "msg": "OpenAI **API 크레딧이 0** 입니다. ⚠️ 주의: **ChatGPT Plus 구독($20)은 "
+                           "API 와 완전히 별개**라 결제해도 API 는 안 됩니다. platform.openai.com → "
+                           "Settings → **Billing → Add to credit balance** 에서 **크레딧을 직접 구매**"
+                           "(예: $5~10)해야 합니다. 카드만 등록하고 크레딧을 안 사면 계속 실패합니다."}
         if any(w in s for w in ("invalid_api_key", "incorrect api key", "authenticat", "401", "invalid api key")):
             return {"ok": False, "kind": "badkey",
                     "msg": "**키가 틀렸습니다**(오타·만료·삭제). platform.openai.com → API keys 에서 "
