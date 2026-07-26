@@ -155,11 +155,27 @@ def render_generation(top: list, src: str, kp: str) -> None:
         _has = bool(os.environ.get("OPENAI_API_KEY", "").strip()
                     or os.environ.get("GEMINI_API_KEY", "").strip())
         if _has:
-            st.error(
-                "⚠️ **키는 감지됐는데 생성 응답이 비었습니다.** (키가 없는 게 아니에요.)\n\n"
-                "가능한 원인: ① 키에 오타·앞뒤 공백 · ② **OpenAI 계정에 결제/크레딧이 없음**"
-                "(가장 흔함) · ③ 네트워크·프록시 문제. → **⚙️ 설정**에서 키를 다시 저장하거나 "
-                "OpenAI 결제 상태(platform.openai.com → Billing)를 확인해 주세요.")
+            _err = report.get("llm_error", "")
+            if _err:
+                st.error("⚠️ **생성이 실패했습니다. OpenAI 가 돌려준 실제 오류:**")
+                st.code(_err, language=None)
+                _e = _err.lower()
+                if "model" in _e and ("does not exist" in _e or "access" in _e):
+                    st.warning("→ 이 키(프로젝트)가 **gpt-4o 모델 접근 권한**이 없습니다. "
+                               "platform.openai.com → 해당 프로젝트에서 모델 권한을 켜거나, "
+                               "권한 있는 프로젝트의 키로 바꿔 저장하세요.")
+                elif "connect" in _e or "timeout" in _e or "proxy" in _e or "ssl" in _e:
+                    st.warning("→ **네트워크·프록시** 문제로 OpenAI 에 못 닿았습니다. "
+                               "백신·방화벽·회사망을 확인하세요.")
+                elif "max_tokens" in _e or "max_completion" in _e:
+                    st.warning("→ 요청 토큰 설정 문제입니다. 이 화면을 저에게 알려주세요(코드 수정 필요).")
+                else:
+                    st.warning("→ 위 오류 문구를 저에게 그대로 알려주시면 원인을 짚어드릴게요. "
+                               "**⚙️ 설정 → 🔌 OpenAI 연결 테스트**도 눌러보세요.")
+            else:
+                st.error(
+                    "⚠️ **키는 감지됐는데 생성 응답이 비었습니다.** (키가 없는 게 아니에요.)\n\n"
+                    "**⚙️ 설정 → 🔌 OpenAI 연결 테스트**를 눌러 정확한 원인을 확인해 주세요.")
         else:
             st.error(
                 "⚠️ **이 앱에 OpenAI(또는 Gemini) 키가 없습니다.** ⚙️ 설정 탭에서 넣어주세요.\n\n"
