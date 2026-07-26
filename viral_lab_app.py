@@ -152,9 +152,19 @@ def render_generation(top: list, src: str, kp: str) -> None:
 
     report = st.session_state.get(rk)
     if report and report.get("engine") == "demo":
-        st.error("⚠️ **OpenAI(또는 Gemini) 키가 없어 첨부 링크 기반 생성이 불가**합니다. "
-                 "키가 없으면 링크와 **무관한 고정 예시(밤·재즈 등)**만 나와요 — ⚙️ 설정에서 "
-                 "OpenAI 키를 넣으면 **오직 첨부 링크 분석 결과로만** 생성합니다.")
+        _has = bool(os.environ.get("OPENAI_API_KEY", "").strip()
+                    or os.environ.get("GEMINI_API_KEY", "").strip())
+        if _has:
+            st.error(
+                "⚠️ **키는 감지됐는데 생성 응답이 비었습니다.** (키가 없는 게 아니에요.)\n\n"
+                "가능한 원인: ① 키에 오타·앞뒤 공백 · ② **OpenAI 계정에 결제/크레딧이 없음**"
+                "(가장 흔함) · ③ 네트워크·프록시 문제. → **⚙️ 설정**에서 키를 다시 저장하거나 "
+                "OpenAI 결제 상태(platform.openai.com → Billing)를 확인해 주세요.")
+        else:
+            st.error(
+                "⚠️ **이 앱에 OpenAI(또는 Gemini) 키가 없습니다.** ⚙️ 설정 탭에서 넣어주세요.\n\n"
+                "키가 없으면 링크와 **무관한 고정 예시(밤·재즈 등)**만 나와요. 다른 앱에서 "
+                "저장했어도 같은 PC면 보통 공유되지만, 안 보이면 여기 ⚙️ 설정에서 한 번 더 저장하세요.")
     elif report and isinstance(report.get("result"), dict):
         result = report["result"]
         concept = result.get("concept") or {}
@@ -756,3 +766,20 @@ with tab_set:
             _save_keys({"YOUTUBE_API_KEY": yk, "OPENAI_API_KEY": ok, "GEMINI_API_KEY": gk})
             st.success("저장 완료 — 재시작 없이 바로 적용됩니다.")
             st.rerun()
+
+    # 🔍 키 진단 — "저장했는데 왜 없다지?" 를 스스로 확인
+    with st.expander("🔍 키 진단 (저장했는데 안 먹힐 때 눌러보세요)"):
+        _env = os.path.join(_HERE, ".env")
+        st.write(f"저장 파일 위치(이 PC): `{_env}`")
+        st.write(f"· `.env` 파일 있음: {'✅' if os.path.exists(_env) else '❌ 없음'} · "
+                 f"`keys.json` 있음: {'✅' if os.path.exists(KEYS_JSON) else '❌ 없음'}")
+        st.write(f"· 지금 감지된 키 — YouTube {'✅' if os.environ.get('YOUTUBE_API_KEY','').strip() else '❌'} · "
+                 f"OpenAI {'✅' if os.environ.get('OPENAI_API_KEY','').strip() else '❌'} · "
+                 f"Gemini {'✅' if os.environ.get('GEMINI_API_KEY','').strip() else '❌'}")
+        st.caption(
+            "· 일본쇼츠·썸네일연구소·이 앱은 **같은 PC의 같은 .env** 를 공유합니다. "
+            "그래도 여기서 ❌ 면 이 앱이 그 값을 못 읽는 것이니, 위에서 **다시 저장**하세요.\n\n"
+            "· OpenAI ✅ 인데도 생성에서 '응답이 비었다'가 나오면 키 문제가 아니라 "
+            "**OpenAI 계정 결제/크레딧**(platform.openai.com → Billing) 이나 네트워크 문제입니다.\n\n"
+            "· ⚠️ **웹 미리보기(claude.ai)** 에서 저장한 키는 그 세션에만 있고 **사장님 PC 로는 안 넘어갑니다** — "
+            "키는 반드시 **사장님 PC에서 실행한 앱**의 ⚙️ 설정에 저장하세요.")
