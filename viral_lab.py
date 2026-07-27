@@ -277,6 +277,54 @@ def _median(nums: list[int]) -> int:
     return s[m] if len(s) % 2 else (s[m - 1] + s[m]) // 2
 
 
+# ── 📊 조회수 구간 분류 (사장님 지정 7구간) ──────────────────
+# (하한 포함, 상한 미만). 상한 None = 무제한.
+VIEW_TIERS: list[tuple[int, int | None, str]] = [
+    (1_000, 3_000, "1천~3천"),
+    (3_000, 5_000, "3천~5천"),
+    (5_000, 8_000, "5천~8천"),
+    (8_000, 10_000, "8천~1만"),
+    (10_000, 30_000, "1만~3만"),
+    (30_000, 50_000, "3만~5만"),
+    (50_000, None, "5만+"),
+]
+TIER_MIN = 1_000  # 이 뷰는 1천 이상까지 본다(앱의 1만 필터와 별개)
+
+
+def view_tier_of(views: int) -> str:
+    for lo, hi, label in VIEW_TIERS:
+        if views >= lo and (hi is None or views < hi):
+            return label
+    return "1천 미만"
+
+
+def bucket_by_view_tier(videos: list[dict], min_views: int = TIER_MIN) -> dict[str, list[dict]]:
+    """영상들을 지정 조회수 구간으로 분류(각 구간 조회수순 정렬)."""
+    buckets: dict[str, list[dict]] = {label: [] for _, _, label in VIEW_TIERS}
+    for v in videos or []:
+        nv = normalize(v)
+        if nv["views"] < min_views:
+            continue
+        lab = view_tier_of(nv["views"])
+        if lab in buckets:
+            buckets[lab].append(nv)
+    for lab in buckets:
+        buckets[lab].sort(key=lambda x: x["views"], reverse=True)
+    return buckets
+
+
+def view_tier_report(videos: list[dict], min_views: int = TIER_MIN) -> list[dict]:
+    """구간별 [{label, count, videos, formula}] (VIEW_TIERS 순서)."""
+    buckets = bucket_by_view_tier(videos, min_views)
+    out = []
+    for _, _, label in VIEW_TIERS:
+        vids = buckets[label]
+        agg = T.aggregate_titles(vids)
+        out.append({"label": label, "count": len(vids), "videos": vids,
+                    "formula": T.formula_line(agg)})
+    return out
+
+
 def keyword_summary(agg: dict) -> list[tuple[str, str]]:
     """정량 집계 → 화면·생성 공용 키워드 라벨 목록 [(제목, 값)]. 빈 항목은 건너뜀."""
     def _join(items, n=6):
