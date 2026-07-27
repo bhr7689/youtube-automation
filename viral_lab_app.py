@@ -233,8 +233,8 @@ def render_generation(top: list, src: str, kp: str) -> None:
 
 _alert_n = VC.alert_count()
 _alarm_label = f"🔔 알림 ({_alert_n})" if _alert_n else "🔔 알림"
-tab_find, tab_cluster, tab_folder, tab_alarm, tab_gen, tab_store, tab_set = st.tabs(
-    ["🔎 발굴·분석", "🧩 묶음·갈림", "📁 감성 폴더", _alarm_label,
+tab_find, tab_cluster, tab_tier, tab_folder, tab_alarm, tab_gen, tab_store, tab_set = st.tabs(
+    ["🔎 발굴·분석", "🧩 묶음·갈림", "📊 조회수 구간", "📁 감성 폴더", _alarm_label,
      "✨ 생성", "📦 수집함", "⚙️ 설정"])
 
 
@@ -502,6 +502,92 @@ with tab_cluster:
                                 st.write(st.session_state[vkey])
                     elif hi and lo and not _openai:
                         st.caption("👁 시각 원인 유추는 OpenAI 키가 필요합니다(⚙️ 설정).")
+
+
+# ════════════════════════════════════════════════════════════
+# 📊 조회수 구간 (1천~3천 … 5만+ 7구간 분류)
+# ════════════════════════════════════════════════════════════
+with tab_tier:
+    st.subheader("조회수 구간별로 분류 (1천 이상 전 구간)")
+    st.caption("이 뷰만 **1천 이상**까지 봅니다(다른 탭은 1만+). 구간: 1천~3천 · 3천~5천 · "
+               "5천~8천 · 8천~1만 · 1만~3만 · 3만~5만 · 5만+")
+
+    tmode = st.radio("표본 가져오기", ["🌐 YouTube 검색", "🔗 링크 직접 추가", "📦 현재 표본 사용"],
+                     horizontal=True, key="tier_mode")
+    tier_src = None
+    if tmode == "🌐 YouTube 검색":
+        tkw = st.text_input("키워드", key="tier_kw",
+                            placeholder="예) 여름 팝송 플레이리스트")
+        tmax = st.slider("검색 수", 10, 50, 50, step=10, key="tier_max")
+        if st.button("🔎 구간 분류용으로 가져오기", type="primary",
+                     use_container_width=True, key="tier_go"):
+            if tkw.strip():
+                with st.spinner("검색 중..."):
+                    try:
+                        res = V.search_hits(tkw, max_results=tmax, min_views=V.TIER_MIN)
+                        st.session_state["tier_hits"] = res["hits"]
+                        if res["demo"]:
+                            st.info("⚠️ 키가 없어 데모 데이터입니다(⚙️ 설정에서 키 입력).")
+                    except Exception as e:      # noqa: BLE001
+                        st.error(f"검색 실패: {e}")
+            else:
+                st.warning("키워드를 넣어주세요.")
+    elif tmode == "🔗 링크 직접 추가":
+        tlinks = st.text_area("유튜브 링크(한 줄에 하나)", height=120, key="tier_links")
+        if st.button("🔗 링크에서 가져오기", type="primary",
+                     use_container_width=True, key="tier_go_link"):
+            if tlinks.strip():
+                with st.spinner("링크에서 가져오는 중..."):
+                    try:
+                        res = V.add_from_links(tlinks, min_views=V.TIER_MIN)
+                        st.session_state["tier_hits"] = res["hits"]
+                        if res["demo"]:
+                            st.info("⚠️ 키가 없어 데모(썸네일 실제·조회수 임의).")
+                    except Exception as e:      # noqa: BLE001
+                        st.error(f"불러오기 실패: {e}")
+            else:
+                st.warning("링크를 넣어주세요.")
+    else:  # 현재 표본 사용
+        cur = st.session_state.get("hits")
+        if cur:
+            st.session_state["tier_hits"] = cur
+            st.caption(f"현재 표본 {len(cur)}개로 구간 분류합니다. (대부분 1만+ 라 상위 구간에 몰릴 수 있어요.)")
+        else:
+            st.info("현재 표본이 없습니다. 검색이나 링크로 가져오세요.")
+
+    thits = st.session_state.get("tier_hits")
+    if thits:
+        st.divider()
+        report = V.view_tier_report(thits)
+        total = sum(r["count"] for r in report)
+        st.markdown(f"**총 {total}개** 를 7구간으로 분류")
+        # 구간별 개수 한눈에
+        st.caption(" · ".join(f"{r['label']} {r['count']}개" for r in report))
+        # 높은 구간부터 보여주기(역순)
+        for r in reversed(report):
+            if r["count"] == 0:
+                continue
+            with st.expander(f"📊 {r['label']}  ·  {r['count']}개", expanded=False):
+                st.caption("제목 승리 공식: " + r["formula"])
+                gv = r["videos"][:12]
+                for i in range(0, len(gv), 3):
+                    cols = st.columns(3)
+                    for j, v in enumerate(gv[i:i + 3]):
+                        with cols[j]:
+                            if v.get("thumb"):
+                                st.image(v["thumb"], use_container_width=True)
+                            st.markdown(f"**{v['views']:,}회**")
+                            st.caption(v["title"])
+                # 1만+ 구간만 메인 분석/생성으로 (그 아래는 1만 필터에 걸려 사라짐)
+                if all(v["views"] >= V.MIN_VIEWS for v in r["videos"]):
+                    if st.button(f"📥 '{r['label']}' 구간을 분석·생성 표본으로",
+                                 key=f"tierload_{r['label']}", use_container_width=True):
+                        st.session_state["hits"] = V.filter_hits(r["videos"])
+                        st.session_state["hits_src"] = f"구간:{r['label']}"
+                        st.success("불러왔습니다. 🔎/✨ 탭에서 이어가세요.")
+                else:
+                    st.caption("ℹ️ 1만 미만 구간이라 분석·생성 표본으론 못 씁니다(이 앱은 1만+ 기준). "
+                               "여기선 분류·비교용으로 보세요.")
 
 
 # ════════════════════════════════════════════════════════════
