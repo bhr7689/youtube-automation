@@ -231,6 +231,57 @@ def render_generation(top: list, src: str, kp: str) -> None:
         st.markdown(report["markdown"])
 
 
+def _real_video_id(vid: str) -> str:
+    """캡처 업로드(upload-/title-) 같은 합성 ID 는 링크 없음. 실제 영상 ID만 반환."""
+    if not vid:
+        return ""
+    if vid.startswith(("upload-", "title-", "cap-")):
+        return ""
+    return vid
+
+
+def render_hit_gallery(hits: list, kp: str, limit: int = 30) -> None:
+    """1만+ 영상 카드 그리드 — 대표 썸네일 + 원본 링크 + 채널 + 🔖 북마크.
+
+    사장님이 첨부·발굴한 링크를 눈으로 구별하고(썸네일) 바로 원본을 열고(링크)
+    그 채널을 북마크/해제할 수 있게 한다. kp=위젯 키 접두사(탭별 충돌 방지).
+    """
+    show = hits[:limit]
+    for base in range(0, len(show), 3):
+        cols = st.columns(3)
+        for off, h in enumerate(show[base:base + 3]):
+            rank = base + off + 1
+            with cols[off]:
+                thumb = h.get("thumb")
+                vid = _real_video_id(h.get("video_id", ""))
+                watch = f"https://www.youtube.com/watch?v={vid}" if vid else ""
+                if thumb:
+                    st.image(thumb, use_container_width=True)
+                mult = f" · {h['multiplier']}배" if h.get("multiplier") else ""
+                st.markdown(f"**#{rank} · {h.get('views', 0):,}회**{mult}")
+                st.caption(h.get("title", ""))
+                # ▶️ 원본 영상 링크 (있으면)
+                if watch:
+                    st.markdown(f"[▶️ 원본 영상 열기]({watch})")
+                # 📺 채널 + 🔖 북마크(있으면)
+                cid = h.get("channel_id", "")
+                ctitle = h.get("channel_title") or "채널"
+                if cid:
+                    curl = VC.channel_url(cid)
+                    st.markdown(f"[📺 {ctitle}]({curl})")
+                    bk = VC.is_bookmarked(cid)
+                    label = "🔖 채널 북마크 해제" if bk else "🔖 채널 북마크"
+                    if st.button(label, key=f"gbm_{kp}_{rank}_{cid}_{vid}",
+                                 use_container_width=True):
+                        if bk:
+                            VC.unbookmark(cid)
+                        else:
+                            VC.bookmark(cid, ctitle, curl)
+                        st.rerun()
+                elif ctitle and ctitle != "채널":
+                    st.caption(f"📺 {ctitle}")
+
+
 _alert_n = VC.alert_count()
 _alarm_label = f"🔔 알림 ({_alert_n})" if _alert_n else "🔔 알림"
 tab_find, tab_cluster, tab_tier, tab_folder, tab_alarm, tab_gen, tab_store, tab_set = st.tabs(
@@ -350,20 +401,12 @@ with tab_find:
         m3.metric("평균 제목길이", f"{int(ana['agg'].get('avg_length', 0))}자")
         st.markdown(f"**🏆 제목 승리 공식** — {ana['formula']}")
 
-        # 🖼️ 한눈에 보기 — 썸네일 + 제목(전체) + 조회수·배수·순위 (제일 먼저 크게)
+        # 🖼️ 한눈에 보기 — 대표 썸네일 + 제목 + ▶️ 원본 링크 + 📺 채널 🔖 북마크
         st.markdown(f"**🖼️ 한눈에 보기 — 1만+ 썸네일·제목 ({ana['n']}개, 조회수순)**")
-        _show = ana["top"][:30]
-        for _i in range(0, len(_show), 3):
-            _cols = st.columns(3)
-            for _j, _h in enumerate(_show[_i:_i + 3]):
-                with _cols[_j]:
-                    if _h.get("thumb"):
-                        st.image(_h["thumb"], use_container_width=True)
-                    _mult = f" · {_h['multiplier']}배" if _h.get("multiplier") else ""
-                    st.markdown(f"**#{_i + _j + 1} · {_h['views']:,}회**{_mult}")
-                    st.caption(_h["title"])
-        if ana["n"] > len(_show):
-            st.caption(f"…외 {ana['n'] - len(_show)}개 더 (조회수 상위 {len(_show)}개만 표시)")
+        st.caption("각 카드에서 ▶️ 원본 영상을 열어 확인하고, 📺 채널을 🔖 북마크/해제할 수 있어요.")
+        render_hit_gallery(ana["top"], "find", limit=30)
+        if ana["n"] > 30:
+            st.caption(f"…외 {ana['n'] - 30}개 더 (조회수 상위 30개만 표시)")
         with st.expander("📋 제목만 모아보기 (복사용)"):
             st.code("\n".join(f"{h['views']:,}\t{h['title']}" for h in ana["top"]),
                     language=None)
@@ -569,15 +612,8 @@ with tab_tier:
                 continue
             with st.expander(f"📊 {r['label']}  ·  {r['count']}개", expanded=False):
                 st.caption("제목 승리 공식: " + r["formula"])
-                gv = r["videos"][:12]
-                for i in range(0, len(gv), 3):
-                    cols = st.columns(3)
-                    for j, v in enumerate(gv[i:i + 3]):
-                        with cols[j]:
-                            if v.get("thumb"):
-                                st.image(v["thumb"], use_container_width=True)
-                            st.markdown(f"**{v['views']:,}회**")
-                            st.caption(v["title"])
+                st.caption("각 카드에서 ▶️ 원본 영상을 열고, 📺 채널을 🔖 북마크/해제할 수 있어요.")
+                render_hit_gallery(r["videos"], f"tier_{r['label']}", limit=12)
                 # 1만+ 구간만 메인 분석/생성으로 (그 아래는 1만 필터에 걸려 사라짐)
                 if all(v["views"] >= V.MIN_VIEWS for v in r["videos"]):
                     if st.button(f"📥 '{r['label']}' 구간을 분석·생성 표본으로",
@@ -683,17 +719,10 @@ with tab_folder:
                             st.rerun()
                 st.caption("→ 북마크한 채널은 **🔔 알림** 탭에서 새 영상·새 1만+ 를 확인하세요.")
 
-            # 폴더 안 썸네일 + 제목 한눈에
+            # 폴더 안 썸네일 + 제목 한눈에 (▶️ 원본 링크 + 📺 채널 🔖 북마크)
             st.markdown("**🖼️ 폴더 안 썸네일·제목**")
-            fv = cm["top"][:30]
-            for i in range(0, len(fv), 3):
-                cols = st.columns(3)
-                for j, v in enumerate(fv[i:i + 3]):
-                    with cols[j]:
-                        if v.get("thumb"):
-                            st.image(v["thumb"], use_container_width=True)
-                        st.markdown(f"**{v['views']:,}회**")
-                        st.caption(v["title"])
+            st.caption("각 카드에서 ▶️ 원본 영상을 열고, 📺 채널을 🔖 북마크/해제할 수 있어요.")
+            render_hit_gallery(cm["top"], f"fold_{fid}", limit=30)
 
             c1, c2 = st.columns(2)
             if c1.button("📥 이 폴더를 분석 표본으로 불러오기", use_container_width=True):
@@ -789,13 +818,7 @@ with tab_alarm:
         if not col:
             st.caption("아직 수집된 1만+ 가 없습니다. (키가 있으면 최근 영상 중 1만+ 를 자동 수집해요.)")
         else:
-            grid = st.columns(3)
-            for i, h in enumerate(col[:30]):
-                with grid[i % 3]:
-                    if h.get("thumb"):
-                        st.image(h["thumb"], use_container_width=True)
-                    st.caption(f"**{h.get('views', 0):,}회** · {h.get('channel_title', '')}\n\n"
-                               f"{h.get('title', '')[:36]}")
+            render_hit_gallery(col, "collected", limit=30)
             if st.button("📥 이 1만+ 를 분석 표본으로 불러오기", use_container_width=True):
                 st.session_state["hits"] = V.filter_hits(col)
                 st.session_state["hits_src"] = "북마크 채널 1만+"
@@ -834,13 +857,8 @@ with tab_store:
         pick = st.selectbox("키워드 필터", ["(전체)"] + kws)
         rows = [h for h in stored if pick == "(전체)" or h.get("keyword") == pick]
         rows = sorted(rows, key=lambda h: h.get("views", 0), reverse=True)[:60]
-        grid = st.columns(3)
-        for i, h in enumerate(rows):
-            with grid[i % 3]:
-                if h.get("thumb"):
-                    st.image(h["thumb"], use_container_width=True)
-                st.caption(f"**{h.get('views', 0):,}회** · {h.get('keyword', '')}\n\n"
-                           f"{h.get('title', '')[:40]}")
+        st.caption("각 카드에서 ▶️ 원본 영상을 열고, 📺 채널을 🔖 북마크/해제할 수 있어요.")
+        render_hit_gallery(rows, "store", limit=60)
         if st.button("📥 이 수집함을 분석 표본으로 불러오기", use_container_width=True):
             st.session_state["hits"] = V.filter_hits(rows)
             st.session_state["hits_src"] = f"수집함:{pick}"
