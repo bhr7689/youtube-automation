@@ -109,6 +109,32 @@ def resolve_channel_info(url: str) -> tuple[str, str]:
         return cid, ""
 
 
+def resolve_channel_full(url: str) -> tuple[str, str, str]:
+    """URL(영상/채널/핸들) → (channel_id, channel_name, thumb_url).
+
+    thumb_url = 채널 대표 로고(아바타). 목록에서 어떤 채널인지 눈으로 구별하려면 필요.
+    키가 없으면 이름·로고는 못 채우고 channel_id 만(가능하면) 반환.
+    """
+    cid = resolve_channel_id(url)
+    if not cid:
+        return "", "", ""
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "jpshorts", "backend"))
+        import youtube_client as yc
+        if not yc.has_key():
+            return cid, "", ""
+        r = yc._yt().channels().list(part="snippet", id=cid).execute()
+        items = r.get("items", [])
+        if not items:
+            return cid, "", ""
+        sn = items[0]["snippet"]
+        th = sn.get("thumbnails", {}) or {}
+        thumb = ((th.get("medium") or th.get("high") or th.get("default") or {}).get("url", ""))
+        return cid, sn.get("title", ""), thumb
+    except Exception:                   # noqa: BLE001
+        return cid, "", ""
+
+
 def _video_views(video_ids: list[str]) -> dict[str, int]:
     """영상 ID들 → 현재 조회수 (72시간 결과용)."""
     out: dict[str, int] = {}

@@ -470,18 +470,27 @@ if page == "🔬 구간 분석":
         st.info("위에서 이 장르의 벤치마킹 채널/영상 링크를 넣어주세요.")
     else:
         with st.expander("🔖 북마크 · 🔔 알림 관리 · 🔗 채널정보", expanded=False):
-            if st.button("🔗 채널 정보 채우기 (영상링크 → 채널명 파악)"):
+            st.caption("🔗 채널 정보 채우기를 누르면 채널명 + **대표 로고**가 채워져, "
+                       "어떤 채널인지 눈으로 보고 북마크·알림·삭제를 정할 수 있어요.")
+            if st.button("🔗 채널 정보 채우기 (영상링크 → 채널명·로고 파악)"):
                 filled = 0
-                with st.spinner("채널 정보 파악 중…"):
+                with st.spinner("채널명·로고 파악 중…"):
                     for b in proj["benchmarks"]:
-                        if not b.get("channel"):
-                            cid, cname = W.resolve_channel_info(b["url"])
-                            if cid or cname:
-                                G.set_benchmark_channel(cur, b["url"], cid, cname); filled += 1
+                        if not b.get("channel") or not b.get("thumb"):   # 이름 or 로고 없으면
+                            cid, cname, cthumb = W.resolve_channel_full(b["url"])
+                            if cid or cname or cthumb:
+                                G.set_benchmark_channel(cur, b["url"], cid,
+                                                        cname or b.get("channel", ""), cthumb)
+                                filled += 1
                 st.success(f"{filled}개 채널 정보 채움"); st.rerun()
             for b in proj["benchmarks"]:
-                c1, c2, c3, c4 = st.columns([6, 1, 1, 1])
-                c1.write((f"📺 **{b['channel']}** · " if b.get("channel") else "") + b["url"])
+                c0, c1, c2, c3, c4 = st.columns([1, 5, 1, 1, 1])
+                if b.get("thumb"):
+                    c0.image(b["thumb"], use_container_width=True)
+                else:
+                    c0.markdown("<div style='font-size:26px;text-align:center'>📺</div>",
+                                unsafe_allow_html=True)
+                c1.write((f"**{b['channel']}**  \n" if b.get("channel") else "") + b["url"])
                 if c2.checkbox("🔖", value=b.get("bookmark"), key="bk_" + b["url"]) != b.get("bookmark"):
                     G.toggle_flag(cur, b["url"], "bookmark"); st.rerun()
                 if c3.checkbox("🔔", value=b.get("alarm"), key="al_" + b["url"]) != b.get("alarm"):
