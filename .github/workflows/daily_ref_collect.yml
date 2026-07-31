@@ -1,9 +1,11 @@
 name: 📊 레퍼런스 채널 일일 수집
 
 on:
-  schedule:
-    - cron: '0 21 * * *'  # 매일 오전 6시 KST (= UTC 21:00 전날)
-  workflow_dispatch:        # GitHub 웹에서 수동 실행 가능
+  # ⏸️ 일일 자동 수집(cron) 중단됨 — 사용자 요청(2026-07-31)으로 스케줄 제거.
+  # 다시 켜려면 아래 schedule 블록의 주석을 해제하세요.
+  # schedule:
+  #   - cron: '0 21 * * *'  # 매일 오전 6시 KST (= UTC 21:00 전날)
+  workflow_dispatch:        # GitHub 웹에서 수동 실행만 가능
 
 jobs:
   collect:
