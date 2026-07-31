@@ -470,11 +470,12 @@ if page == "🔬 구간 분석":
         st.info("위에서 이 장르의 벤치마킹 채널/영상 링크를 넣어주세요.")
     else:
         with st.expander("🔖 북마크 · 🔔 알림 관리 · 🔗 채널정보", expanded=False):
-            st.caption("🔗 채널 정보 채우기를 누르면 채널명 + **대표 로고**가 채워져, "
-                       "어떤 채널인지 눈으로 보고 북마크·알림·삭제를 정할 수 있어요.")
-            if st.button("🔗 채널 정보 채우기 (영상링크 → 채널명·로고 파악)"):
+            st.caption("🔗 채널 정보 채우기를 누르면 채널명 + **대표 썸네일**이 채워져, "
+                       "어떤 채널인지 눈으로 보고 북마크·알림·삭제를 정할 수 있어요. "
+                       "(/channel/ 링크는 **API 키 없이도** RSS 로 썸네일이 보입니다.)")
+            if st.button("🔗 채널 정보 채우기 (영상링크 → 채널명·썸네일 파악)"):
                 filled = 0
-                with st.spinner("채널명·로고 파악 중…"):
+                with st.spinner("채널명·썸네일 파악 중…"):
                     for b in proj["benchmarks"]:
                         if not b.get("channel") or not b.get("thumb"):   # 이름 or 로고 없으면
                             cid, cname, cthumb = W.resolve_channel_full(b["url"])
