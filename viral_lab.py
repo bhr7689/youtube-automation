@@ -81,6 +81,7 @@ def normalize(card: dict) -> dict:
         "multiplier": card.get("multiplier"),
         "subscribers": card.get("subscribers", 0),
         "keywords": card.get("keywords", []) or [],
+        "vph": card.get("vph"),         # 시간당 조회수(있으면 — VPH 제목 대장간용)
     }
 
 
