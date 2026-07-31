@@ -41,6 +41,7 @@ except Exception:                       # noqa: BLE001
 
 import tier_lab as T
 import genre_store as G
+import title_forge as TF
 import thumb_overlay as OV
 import link_classifier as LC
 import pattern_analyzer as PA
@@ -617,8 +618,12 @@ if page == "🔬 구간 분석":
                         card.caption(f"📺 {(v.get('source','') or '')[:22]}")
                         card.caption((v.get("title", "") or "")[:38])
 
-# ═══════════════════════════════════════════════════════════════
-# 🌊 트렌드 레이더
+            # 🔥 VPH 제목 대장간 — 이 벤치마킹에서 VPH 높은 2개 조합 → 우리 채널 제목
+            st.divider()
+            st.markdown("### ✨ 이 벤치마킹으로 우리 채널 제목 만들기")
+            _allv = [v for info in rep["tiers"].values() for v in info["videos"]]
+            _sig = (proj.get("identity", {}) or {}).get("signature", "")
+            TF.render_forge(_allv, kp=f"ttl_{cur}", genre=cur, tone_notes=_sig, expanded=True)
 # ═══════════════════════════════════════════════════════════════
 if page == "🌊 트렌드 레이더":
     st.subheader("🌊 트렌드 레이더 — 장르 불문 '지금 터지는 제목'")

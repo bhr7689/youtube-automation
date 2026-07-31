@@ -40,6 +40,7 @@ import streamlit as st
 import viral_lab as V
 import viral_folders as F
 import viral_channels as VC
+import title_forge as TF
 
 # concept_maker (Vision·이미지생성·리포트) 재사용
 _BACKEND = os.path.join(_HERE, "jpshorts", "backend")
@@ -121,6 +122,8 @@ def render_generation(top: list, src: str, kp: str) -> None:
         return
     st.caption(f"근거: 1만+ 썸네일 {len([h for h in top if h.get('thumb')])}장 + "
                f"제목 {len([h for h in top if h.get('title')])}개 (출처: {src})")
+    # 🔥 VPH 제목 대장간 — 벤치마킹 2개 조합 → 우리 채널 제목 (사장님 방식)
+    TF.render_forge(top, kp=f"vl_{kp}", genre="조회수 1만+ 음악·플레이리스트")
     tone_keys = list(V.VIBE_TONES.keys())
     tone = st.radio("톤 (레퍼런스 느낌을 어떻게 살릴까)", tone_keys, horizontal=True,
                     format_func=lambda k: V.VIBE_TONES[k][0], key=f"tone_{kp}")
