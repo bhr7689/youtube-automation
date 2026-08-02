@@ -128,6 +128,118 @@ def generate_package_kr(concept: str = "수박") -> dict:
     }
 
 
+# ══════════════════════════════════════════════════════════
+# 🇯🇵 일본 — 用途(作業用BGM) + 洋楽ジャズ + 시즌(スイカ) 3박자 (A-6/A-8)
+# ══════════════════════════════════════════════════════════
+JP = {
+    # 3대장 목적성 키워드 + 洋楽
+    "purpose_short": ["作業用", "勉強用", "カフェBGM", "店舗BGM", "集中", "リラックス"],
+    "genre": ["夏のジャズ", "洋楽ジャズ", "ジャズプレイリスト", "ボサノバ", "爽やかなジャズ"],
+    "mood": ["爽やかな", "甘くて爽やかな", "涼しげな", "軽快な"],
+    "en_tail": ["Summer Jazz", "Summer Jazz Music", "Jazz Playlist", "Chill Summer Jazz"],
+}
+
+CONCEPTS_JP = {
+    "수박": {"jp": "スイカ", "emoji": "🍉", "phrase": "冷たいスイカをひと口",
+             "desc_lead": "冷たいスイカを一口食べたとき", "adj": "爽やかな"},
+    "레몬": {"jp": "レモン", "emoji": "🍋", "phrase": "爽やかなレモンをひと搾り",
+             "desc_lead": "爽やかなレモンを搾ったとき", "adj": "甘酸っぱくて爽やかな"},
+    "복숭아": {"jp": "桃", "emoji": "🍑", "phrase": "甘い桃をひと口",
+               "desc_lead": "甘い桃を一口食べたとき", "adj": "まろやかで甘い"},
+    "바다": {"jp": "海", "emoji": "🌊", "phrase": "海へ出かけたい夏",
+             "desc_lead": "海辺で涼んでいるとき", "adj": "涼しげで爽やかな"},
+    "풋사과": {"jp": "青りんご", "emoji": "🍏", "phrase": "シャキッと青りんご",
+               "desc_lead": "シャキッと青りんごをかじったとき", "adj": "軽快で爽やかな"},
+    "메론소다": {"jp": "メロンソーダ", "emoji": "🍹", "phrase": "シュワっとメロンソーダ",
+                 "desc_lead": "シュワっとメロンソーダを飲んだとき", "adj": "爽やかで涼しげな"},
+}
+
+
+def generate_titles_jp(concept: str = "수박", n_search: int = 5, n_emotion: int = 5) -> dict:
+    """🇯🇵 일본 제목. 검색형(밀도형=用途 나열) 우선 + 감성형 보조."""
+    c = CONCEPTS_JP.get(concept, CONCEPTS_JP["수박"])
+    emoji = c["emoji"]; genres = JP["genre"]; en = JP["en_tail"]; mood = JP["mood"]
+
+    # ── 검색형(밀도형) — 用途 나열(작업용·공부용·카페BGM). 洋楽 주입 ──
+    # 형식: [Playlist] {상황+무드+장르} {이모지} {用途1・用途2・用途3} | {영문}
+    leads = itertools.cycle([
+        "暑い夏に聴きたい爽やかなジャズ",
+        "夏にぴったりな爽やかな洋楽ジャズ",
+        "暑い日に涼しくなる夏の洋楽ジャズ",
+        "作業がはかどる爽やかな夏のジャズ",
+        "カフェで流れる涼しげな洋楽ジャズ",
+    ])
+    purposes = itertools.cycle([
+        "作業用・勉強用・カフェBGM",
+        "作業用BGM・勉強用・店舗BGM",
+        "集中・リラックス・カフェBGM",
+        "勉強用・作業用・洋楽BGM",
+        "作業用・カフェBGM・店舗BGM",
+    ])
+    search = []
+    for i in range(n_search):
+        e = en[i % len(en)]
+        search.append(f"[Playlist] {next(leads)} {emoji} {next(purposes)} | {e}")
+
+    # ── 감성형 — 문장형(옵션1) 보조 ──
+    emotion = []
+    for i in range(n_emotion):
+        g = genres[i % len(genres)]; e = en[i % len(en)]
+        emotion.append(f"Playlist | {c['phrase']} {emoji} {c['adj']}{g} 作業用BGM | {e}")
+
+    my_keywords = _dedup(["夏のジャズ", "作業用BGM", "勉強用BGM", "カフェBGM",
+                          "洋楽ジャズ", "洋楽", c["jp"], "Summer Jazz"])
+    return {
+        "country": "JP", "concept": concept,
+        "search_titles": search, "emotion_titles": emotion,
+        "my_keywords": my_keywords,
+        "thumb_text": f"{c['phrase']} {emoji}",
+    }
+
+
+def build_description_jp(concept: str = "수박") -> str:
+    """🇯🇵 설명글 4단 — 사장님 예시 형식 그대로(복사용)."""
+    c = CONCEPTS_JP.get(concept, CONCEPTS_JP["수박"])
+    return (
+        f"暑い夏、{c['desc_lead']}のような、甘くて爽やかな夏のジャズプレイリストです。{c['emoji']}🍹\n\n"
+        "仕事や作業に集中できる作業用BGM、勉強用BGM、カフェや店舗のBGM、"
+        "リラックスタイムにぜひお楽しみください。\n\n"
+        + build_hashtags_jp(concept) + "\n\n"
+        "--------------------------------------------------\n"
+        "[Tracklist]\n00:00 曲名 1\n03:15 曲名 2\n..."
+    )
+
+
+def build_tags_jp(concept: str = "수박") -> list[str]:
+    """🇯🇵 태그 — 3대장 + 洋楽 + 영문 (예시 그대로)."""
+    jp = CONCEPTS_JP.get(concept, CONCEPTS_JP["수박"])["jp"]
+    return _dedup([
+        "作業用BGM", "勉強用BGM", "カフェBGM", "洋楽", "洋楽ジャズ",
+        "Playlist", "プレイリスト", "夏のジャズ", jp, "夏 BGM", "爽やかなジャズ",
+        "Summer Jazz", "Summer Jazz Music", "店舗BGM", "テンションが上がる", "リラックス ジャズ",
+    ])
+
+
+def build_hashtags_jp(concept: str = "수박") -> str:
+    """🇯🇵 해시태그 — 3대장 + 洋楽ジャズ 도배(예시 그대로)."""
+    jp = CONCEPTS_JP.get(concept, CONCEPTS_JP["수박"])["jp"]
+    tags = ["#作業用BGM", "#勉強用BGM", "#カフェBGM", "#夏のジャズ",
+            f"#{jp}ジャズ", "#SummerJazz", "#洋楽ジャズ", "#ジャズプレイリスト"]
+    return " ".join(tags)
+
+
+def generate_package_jp(concept: str = "수박") -> dict:
+    t = generate_titles_jp(concept)
+    return {**t, "description": build_description_jp(concept),
+            "tags": build_tags_jp(concept), "hashtags": build_hashtags_jp(concept)}
+
+
+# ── 국가 디스패처 ──────────────────────────────────────────
+def generate_package(country: str = "KR", concept: str = "수박") -> dict:
+    return {"KR": generate_package_kr, "JP": generate_package_jp}.get(
+        country.upper(), generate_package_kr)(concept)
+
+
 # ── 자기검증 (키·네트워크 불필요) ──────────────────────────
 if __name__ == "__main__":
     pkg = generate_package_kr("수박")
@@ -163,3 +275,19 @@ if __name__ == "__main__":
     for cc in CONCEPTS:
         assert generate_titles_kr(cc)["search_titles"], cc
     print("✅ metadata_engine KR self-test 통과")
+
+    print("\n" + "=" * 55)
+    jp = generate_package_jp("수박")
+    print("🇯🇵 検索型(밀도형) 제목 — 1순위")
+    for s in jp["search_titles"]:
+        print("  ", s)
+    print("\n🇯🇵 感情型 제목 — 보조")
+    for s in jp["emotion_titles"][:3]:
+        print("  ", s)
+    print("\n썸네일 문구:", jp["thumb_text"])
+    print("해시태그:", jp["hashtags"])
+    print("태그:", ", ".join(jp["tags"]))
+    print("\n설명글:\n" + jp["description"])
+    for cc in CONCEPTS_JP:
+        assert generate_titles_jp(cc)["search_titles"], cc
+    print("\n✅ metadata_engine JP self-test 통과")
