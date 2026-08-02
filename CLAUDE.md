@@ -554,4 +554,35 @@ python pipeline.py --init                              # 파이프라인 폴더 
     제목 갤러리 + 승리공식). 1만+ 구간만 분석·생성 표본으로 불러오기(그 아래는 1만 필터에
     걸려 분류·비교용). 검증: 경계 테스트(9900→8천~1만·10000→1만~3만) + AppTest 8탭 예외0.
   - **다음**: eqO5N 머지(→ 사장님 화면 반영) → 실키 end-to-end → 수집 키워드 시드 튜닝.
+- [x] 🧬 **SRE-OS Phase 0~1 — 역설계 운영체제(기존 자산 위에 얹기)**(2026-08-02,
+  elements-tools-planning-list-yqqo2t): 사장님이 준 "SRE-OS MASTER SPEC v1.0"을 기존
+  일본쇼츠(FastAPI/Python/SQLite) 위에 큐레이션해 얹음. **원본 Next.js/Postgres 모노레포는
+  채택 안 함** — 기존 `metadata_team`(편집장+전문가) 패턴을 역설계 런타임으로 확장.
+  큐레이션 스펙: `ideas/sre_os_spec.md`(19에이전트↔기존자산 매핑: 있음8/일부8/신규3).
+  - **Phase 0(코어, 키 없이 end-to-end)**:
+    · `sre_schemas.py` — 출력 계약 v1.0(역설계6축/A~D전략+실험/바이럴점수/크리틱/메타)
+      + validate_report/assert_valid. 빈 골격 생성기.
+    · `sre_store.py` — SQLite(`sre_os.db`, gitignore=*.db) Project/Source/Run/AgentRun/
+      ResultVersion + **Idempotency**(같은 입력 재실행 시 완료 Run 재사용, force=강제) + 버전관리.
+    · `sre_runtime.py` — **12에이전트 파이프라인**(공유 SREContext 를 흘림, 스테이지 격리):
+      A01 정규화·A02 근거·**A03 콘텐츠구조(쇼츠7단, 신규)**·A04 바이럴DNA·A05 시청심리·
+      **A06 감정DNA(감정곡선, 신규)**·A07 언어DNA·**A08 보이스DNA(속도·쉼, 신규)**·
+      A12 A/B/C/D전략(경험/스토리/사실/호기심, 각자 실험가설)·A16 로컬라이제이션(KR/JP SEO는
+      `metadata_team.produce_package` 재사용)·바이럴점수(0~100+근거)·A18 크리틱(유사성 LOW~BLOCKED
+      +검증필요). 규칙기반=Mock(키 없이 100% 채움), `llm_call` 주입구 남김(Phase 2 심화용).
+  - **Phase 1(UI, 사장님이 바로 씀)**:
+    · `jpshorts/backend/main.py` — `/api/sre/{health,analyze,run}` 추가. 저장소 루트를 import
+      경로에 append 해 루트 모듈 재사용(로드 실패해도 기존 API 무영향). 이미 있는 `일본쇼츠실행.bat`
+      (포트 8787) 서버가 그대로 서빙 — **새 런처 불필요**.
+    · `japan_shorts_app/sre.html` — 모바일 세로 워크스페이스. 입력(대본/자막/키워드/아이디어 세그)
+      +시장칩(KR/JP/US) → 12에이전트 진행표시 → 결과 6탭(🔬역설계6축·🔥점수·🎯A/B/C/D·
+      🌐KR/JP 대본+SEO 복붙블록·🛡️크리틱·📦JSON). 복붙블록은 인라인script 없이 `<pre>` textContent 복사.
+    · `assets/api.js` — 🧬 SRE 역설계 메뉴를 전 페이지 사이드바에 **자동 주입**(개별 파일 수정 없이).
+  - 검증: 3모듈 self-test(스키마 위반감지/Idempotency/end-to-end Mock) + 백엔드 라이브
+    (health mock=true, analyze score=86, KR/JP SEO 생성) + Playwright E2E(6축·12에이전트·4전략·
+    8복붙블록·크리틱·JSON·nav주입, 실제 JS예외 0). ⚠️ 남은 콘솔경고는 컨테이너 프록시가 PWA
+    외부아이콘 차단한 것(코드무관, 사장님 PC 정상).
+  - **다음(Phase 2~)**: ⚠️ **eqO5N(default) 머지해야 사장님 화면 반영** → 실제 Provider(Anthropic
+    추가, `concept_maker._llm` 패턴) 로 6축 LLM 심화 + A03/A06/A08 딥분석 → URL 메타·자막 수집
+    (youtube_client·transcript_probe 재사용) → 실험 성과 입력·A/B/C/D 승자판정 → asset_ledger 학습메모리 통합.
 - (작업하며 갱신할 것)
