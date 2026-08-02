@@ -597,7 +597,22 @@ python pipeline.py --init                              # 파이프라인 폴더 
     · 검증: provider self-test + runtime self-test(13스테이지+LLM병합+skipped) + **더미키
       live배선**(available→openai 선택, 실패→규칙기반 폴백, 스키마 유효) + Playwright(6축·
       13에이전트·인사이트배너, JS예외 0). ⚠️ 실제 LLM 심화는 사장님 PC(OpenAI 키 연결됨)에서.
-  - **다음(Phase 3~)**: ⚠️ **eqO5N(default) 머지해야 사장님 화면 반영**(2번 요청 시 진행) →
-    URL 메타·자막 자동수집(youtube_client·transcript_probe 재사용) 소스 입력 → 다중 소스 비교 →
-    실험 성과 입력·A/B/C/D 승자판정 → asset_ledger 학습메모리 통합.
+  - **Phase 3 — URL 자막 자동수집 + 다중 소스 비교 + A/B/C/D 승자판정**(2026-08-02, 같은 브랜치):
+    · `sre_sources.py` 신규(순수로직 + 자기검증):
+      - `collect_source(url)` — `transcript_probe.get_lyrics`(자막, youtube-transcript-api→Whisper)
+        + 키없는 **oEmbed**(제목/채널, API쿼터 0) 재사용. 자막 실패해도 제목만 degraded 반환 +
+        명확한 한계 메시지. video_id 추출 watch/youtu.be/shorts/embed 지원.
+      - `compare_sources(reports)` — 원본 Multi-Source Pattern: **공통(전부 등장)·개별(그 소스만)·
+        검증필요(일부만)** 분리 + 공통 구조단계 + 바이럴 점수 순위. 무키.
+      - `judge_experiment(entries)` — 전략별 실측 성과로 승자 판정 + 격차%·접전(5%미만) 경고
+        + `asset_ledger` 승자 기록(옵트인).
+    · `main.py`: `/api/sre/{collect-url, compare, judge}` 추가. 비교는 규칙기반 기본(빠름·결정론).
+    · `sre.html`: ①입력창 🔗 링크 자막수집(수집→본문 자동채움+종류 맞춤) ②🏆 A/B/C/D 승자판정
+      (결과 전략에 성과값 입력→승자·순위·이유 카드) ③⚖️ 다중 소스 비교(2~4개→공통/개별/검증필요/
+      점수순위 렌더).
+    · 검증: self-test(URL 5종·비교·승자판정) + 백엔드 라이브(compare 공통신호3종·judge D승·
+      collect-url graceful) + Playwright E2E(judge 4칸·승리·compare 4축·공통, JS예외 0).
+      ⚠️ 실제 자막수집은 사장님 PC(유튜브 접근)에서 완전 동작 — 웹 컨테이너는 프록시가 유튜브 차단.
+  - **다음(Phase 4~)**: ⚠️ **eqO5N(default) 머지해야 사장님 화면 반영** → 실험 성과를 store 에 영속
+    저장(현재 판정만) → asset_ledger 학습 루프 강화 → 다중 소스 '공통 승리공식'을 생성 프롬프트에 자동 주입.
 - (작업하며 갱신할 것)
