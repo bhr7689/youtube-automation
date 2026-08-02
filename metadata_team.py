@@ -26,6 +26,21 @@ try:
     import ref_titles
 except Exception:
     ref_titles = None
+try:
+    import asset_ledger
+except Exception:
+    asset_ledger = None
+
+
+def _niche(country: str, concept: str) -> str:
+    """장르(니치) 결정 — 자산 축적·점령의 단위."""
+    co = country.upper()
+    cmap = {"KR": ME.CONCEPTS, "JP": ME.CONCEPTS_JP, "US": ME.CONCEPTS_US}[co]
+    c = cmap.get(concept, {})
+    g = c.get("genre")
+    if g:
+        return g[0]
+    return {"KR": "여름 재즈", "JP": "洋楽ジャズ", "US": "summer jazz"}[co]
 
 
 @dataclass
@@ -114,14 +129,18 @@ class TitleCopywriter(Specialist):
                 n_ref = len(ref_titles.all_titles(co))
             except Exception:
                 corpus = []
-        search = corpus or t["search_titles"]          # 레퍼런스 우선, 없으면 어휘형
+        # 🏛️ 우리 검증 자산(점령한 제목)이 있으면 최우선 재료로 재투입(복리)
+        niche = _niche(co, b.concept)
+        assets = asset_ledger.winners(co, niche) if asset_ledger else []
+        search = ME._dedup(assets + (corpus or t["search_titles"]))   # 검증자산 > 레퍼런스 > 어휘
         recommended = search[0]
         b.artifacts["titles"] = {
             "search": search, "emotion": t["emotion_titles"], "thumb_text": t["thumb_text"],
-            "recommended": recommended, "ref_count": n_ref,
-            "vocab_search": t["search_titles"],
+            "recommended": recommended, "ref_count": n_ref, "asset_count": len(assets),
+            "niche": niche, "vocab_search": t["search_titles"],
         }
-        src = f"레퍼런스 {n_ref}개 재조합" if corpus else "어휘 기반"
+        src = (f"검증자산 {len(assets)}개 재사용" if assets
+               else (f"레퍼런스 {n_ref}개 재조합" if corpus else "어휘 기반"))
         b.log(self.role, f"제목 {len(search)}(1순위: {src}) + 감성형 {len(t['emotion_titles'])}",
               {"recommended": recommended})
 
@@ -243,8 +262,18 @@ class ChiefEditor:
         b = Brief(country=country, concept=concept, serp_results=serp_results)
         for Sp in self.TEAM:
             Sp().run(b)
-        # 최종 복붙 패키지 종합
         titles = b.artifacts["titles"]
+        niche = titles.get("niche", _niche(country, b.concept))
+        serp = b.artifacts["competition"]["serp"]
+
+        # 🏛️ 자산 축적 — SERP 실판정이 있으면 원장에 기록(채택 = 검증 자산)
+        if asset_ledger and serp_results is not None and serp.get("fit_score") is not None:
+            asset_ledger.record(country, niche, titles["recommended"],
+                                fit=serp["fit_score"], verdict=serp["verdict"],
+                                adopted=(serp["verdict"] == "adopt"))
+        playbook = asset_ledger.genre_playbook(country, niche) if asset_ledger else {}
+
+        # 최종 복붙 패키지 종합
         final = {
             "country": country,
             "theme": b.artifacts["theme"]["theme"],
@@ -257,7 +286,10 @@ class ChiefEditor:
             "hashtags": b.artifacts["tags"]["hashtags"],
             "thumbnail": b.artifacts["thumbnail"],
             "qa": b.artifacts["qa"],
-            "serp": b.artifacts["competition"]["serp"],
+            "serp": serp,
+            "niche": niche,
+            "genre_playbook": playbook,                       # 📖 이 장르 승리 패턴(축적)
+            "asset_count": titles.get("asset_count", 0),
             "team_report": b.report,                          # 전문가 10명 각자 요약
         }
         return final
