@@ -35,6 +35,10 @@ try:
     import metadata_team as MT   # KR/JP SEO 패키지 재사용
 except Exception:
     MT = None
+try:
+    import sre_provider as PROV  # LLM 프로바이더 어댑터(OpenAI/Gemini/Anthropic/Mock)
+except Exception:
+    PROV = None
 
 
 # ── 공유 컨텍스트 ──────────────────────────────────────────────
@@ -44,7 +48,8 @@ class SREContext:
     kind: str = "script"          # script/transcript/keyword/idea
     url: str = ""
     markets: list = field(default_factory=lambda: ["KR"])
-    llm_call = None               # (system, user)->str, 없으면 규칙기반(Mock)
+    llm_call = None               # (system, user)->dict|None, 없으면 규칙기반(Mock)
+    provider_name: str = "mock"   # 실제 사용 프로바이더(mock/openai/gemini/anthropic)
 
     # 에이전트가 채우는 중간 산출물
     tokens: list = field(default_factory=list)
@@ -478,6 +483,83 @@ class Critic(Agent):
         return f"유사성 위험 {risk} · 검증항목 {len(verify)}"
 
 
+# ── LLM 심화(선택) — 규칙기반 위에 해석을 덮어씀 ────────────────
+class Deepener(Agent):
+    """A19d — 키가 있으면 LLM 으로 6축 해석·전략을 심화. 규칙기반 결과를 근거로 주되,
+    측정 구조(감정곡선·점수·구조단계)는 규칙 값 유지하고 '해석 텍스트'만 덮어쓴다.
+    응답 없거나 실패하면 규칙기반 그대로(격리)."""
+    code, name = "A19d", "LLM 심화"
+
+    SYSTEM = (
+        "너는 유튜브 쇼츠 역설계 분석가다. 규칙기반 1차 분석과 원본 소재를 받아, "
+        "각 축의 해석을 더 날카롭고 실전적으로 다듬는다. 특정 크리에이터의 고유 표현을 "
+        "복제하지 말고 일반화된 패턴만 쓴다. 반드시 아래 JSON 스키마 그대로 한국어로 채워라:\n"
+        '{"reverseEngineering":{"contentStructure":{"summary":""},'
+        '"viralDNA":{"formula":"","signals":[]},'
+        '"viewerPsychology":{"summary":"","triggers":[]},'
+        '"emotionDNA":{"arc":"","summary":""},'
+        '"languageDNA":{"register":"","markers":[]},'
+        '"voiceDNA":{"pace":"","summary":""}},'
+        '"strategies":{"A":{"hook":"","title":"","thumbText":"","rationale":"","outline":[]},'
+        '"B":{...},"C":{...},"D":{...}},"insight":""}'
+    )
+
+    def run(self, ctx: SREContext):
+        if not ctx.llm_call:
+            return "스킵(키 없음 — 규칙기반)"
+        payload = {
+            "source": {"kind": ctx.kind, "text": ctx.text[:4000]},
+            "ruleBased": {
+                "reverseEngineering": {
+                    k: ctx.analyses.get(k, {}) for k in
+                    ("contentStructure", "viralDNA", "viewerPsychology",
+                     "emotionDNA", "languageDNA", "voiceDNA")
+                },
+                "strategies": {k: {"angle": v.get("angle"), "hook": v.get("hook"),
+                                   "title": v.get("title")}
+                               for k, v in ctx.strategies.items()},
+            },
+        }
+        import json as _json
+        try:
+            out = ctx.llm_call(self.SYSTEM, _json.dumps(payload, ensure_ascii=False))
+        except Exception as e:
+            return f"LLM 호출 실패 — 규칙기반 유지 ({str(e)[:60]})"
+        if not isinstance(out, dict):
+            return "LLM 응답 없음/무효 — 규칙기반 유지"
+
+        # 6축 해석 텍스트만 덮어씀(측정 구조는 규칙 값 보존)
+        re_ = out.get("reverseEngineering", {})
+        _merge_str(ctx.analyses.get("contentStructure"), re_.get("contentStructure"), ["summary"])
+        _merge_str(ctx.analyses.get("viralDNA"), re_.get("viralDNA"), ["formula", "signals"])
+        _merge_str(ctx.analyses.get("viewerPsychology"), re_.get("viewerPsychology"), ["summary", "triggers"])
+        _merge_str(ctx.analyses.get("emotionDNA"), re_.get("emotionDNA"), ["arc", "summary"])
+        _merge_str(ctx.analyses.get("languageDNA"), re_.get("languageDNA"), ["register", "markers"])
+        _merge_str(ctx.analyses.get("voiceDNA"), re_.get("voiceDNA"), ["pace", "summary"])
+
+        st = out.get("strategies", {})
+        for k in S.STRATEGY_KEYS:
+            _merge_str(ctx.strategies.get(k), st.get(k),
+                       ["hook", "title", "thumbText", "rationale", "outline"])
+
+        ins = out.get("insight")
+        if isinstance(ins, str) and ins.strip():
+            ctx.analyses["_insight"] = ins.strip()
+        return "LLM 심화 반영(6축 + 전략 해석)"
+
+
+def _merge_str(dst: dict | None, src: dict | None, fields: list[str]):
+    """src 의 지정 필드가 비어있지 않으면 dst 에 덮어씀(측정값은 건드리지 않음)."""
+    if not isinstance(dst, dict) or not isinstance(src, dict):
+        return
+    for f in fields:
+        v = src.get(f)
+        if isinstance(v, str) and v.strip():
+            dst[f] = v.strip()
+        elif isinstance(v, list) and v:
+            dst[f] = v
+
+
 # ── 편집장(오케스트레이터·Synthesizer, A19) ──────────────────────
 class SREOrchestrator:
     PIPELINE = [
@@ -487,13 +569,16 @@ class SREOrchestrator:
     ]
 
     def analyze(self, ctx: SREContext) -> dict:
-        for AgentCls in self.PIPELINE:
+        # 규칙기반 backbone(항상) + 있으면 LLM 심화(맨 끝)
+        stages = list(self.PIPELINE) + [Deepener]
+        for AgentCls in stages:
             a = AgentCls()
             t0 = time.perf_counter()
             try:
                 summary = a.run(ctx) or ""
                 ms = int((time.perf_counter() - t0) * 1000)
-                ctx.log(a.code, "ok", ms, f"{a.name}: {summary}")
+                status = "skipped" if (a.code == "A19d" and not ctx.llm_call) else "ok"
+                ctx.log(a.code, status, ms, f"{a.name}: {summary}")
             except Exception as e:   # 스테이지 격리 — 한 에이전트 실패가 전체를 막지 않음
                 ms = int((time.perf_counter() - t0) * 1000)
                 ctx.log(a.code, "failed", ms, a.name, error=str(e))
@@ -528,23 +613,41 @@ class SREOrchestrator:
             rep["critic"] = ctx.critic
 
         rep["metadata"].update({
-            "provider": "mock" if ctx.mock else "llm",
+            "provider": ctx.provider_name,
             "mock": ctx.mock,
             "agentRuns": ctx.agent_log,
             "createdAt": datetime.now(timezone.utc).isoformat(),
         })
+        if ctx.analyses.get("_insight"):
+            rep["metadata"]["insight"] = ctx.analyses["_insight"]
         return rep
 
 
 # ── 외부 진입점(저장 포함) ────────────────────────────────────
 def run_analysis(*, text: str, kind: str = "script", url: str = "",
                  markets=None, project_name: str = "SRE 프로젝트",
-                 llm_call=None, force: bool = False,
+                 llm_call=None, provider: str = "auto", force: bool = False,
                  persist: bool = True, db_path=DB.DB_PATH) -> dict:
-    """입력 → (Idempotency 확인) → 파이프라인 → 스키마 검증 → 저장 → 리포트 반환."""
+    """입력 → (Idempotency 확인) → 파이프라인 → 스키마 검증 → 저장 → 리포트 반환.
+
+    provider: "auto"=키 있으면 자동 LLM 심화, "off"=규칙기반 강제, 또는
+              "openai"/"gemini"/"anthropic" 특정 지정. llm_call 을 직접 주면 그게 우선(테스트).
+    """
     markets = markets or ["KR"]
-    provider = "llm" if llm_call else "mock"
-    idem = DB.idempotency_key(kind, text, markets, provider)
+
+    # 프로바이더 결정 — llm_call 직접주입 > provider 지정 > auto(키 감지)
+    provider_name = "mock"
+    if llm_call is not None:
+        provider_name = "injected"
+    elif provider != "off" and PROV is not None:
+        if provider == "auto" and PROV.is_live():
+            provider_name = PROV.active_provider()
+            llm_call = lambda s, u: PROV.llm_json(s, u)          # noqa: E731
+        elif provider in ("openai", "gemini", "anthropic") and provider in PROV.available():
+            provider_name = provider
+            llm_call = lambda s, u, _p=provider: PROV.llm_json(s, u, _p)  # noqa: E731
+
+    idem = DB.idempotency_key(kind, text, markets, provider_name)
 
     if persist and not force:
         prev = DB.find_done_run(idem, path=db_path)
@@ -556,6 +659,7 @@ def run_analysis(*, text: str, kind: str = "script", url: str = "",
 
     ctx = SREContext(text=text, kind=kind, url=url, markets=markets)
     ctx.llm_call = llm_call
+    ctx.provider_name = provider_name
     report = SREOrchestrator().analyze(ctx)
 
     run_id = idem_ref = ""
@@ -563,7 +667,7 @@ def run_analysis(*, text: str, kind: str = "script", url: str = "",
         pid = DB.create_project(project_name, markets, path=db_path)
         sid = DB.add_source(pid, ctx.kind, text, url, path=db_path)
         run_id = DB.create_run(project_id=pid, source_id=sid, idem=idem,
-                               provider=provider, mock=ctx.mock,
+                               provider=provider_name, mock=ctx.mock,
                                markets=markets, path=db_path)
         for a in ctx.agent_log:
             DB.log_agent(run_id, a["agent"], a["status"], a["ms"],
@@ -641,4 +745,31 @@ if __name__ == "__main__":
                         db_path=tmp, force=True)
     assert not rep3["metadata"].get("reusedRunId"), "force 는 새 Run"
 
-    print("\n✅ sre_runtime self-test 통과 — 12에이전트 파이프라인 + 스키마 + Idempotency")
+    # LLM 심화 경로 — stub llm_call(dict 반환)로 병합 검증(키 없이도 로직 확인)
+    def _stub_llm(system, user):
+        return {
+            "reverseEngineering": {
+                "viralDNA": {"formula": "LLM심화: 첫3초 정보격차 + 반전예고"},
+                "emotionDNA": {"summary": "LLM심화: 눈물→환희 급반등"},
+            },
+            "strategies": {
+                "A": {"hook": "LLM심화 훅 A", "title": "LLM심화 제목 A"},
+                "B": {}, "C": {}, "D": {},
+            },
+            "insight": "LLM심화: 초반 3초에 반전을 예고하면 완주율이 오른다",
+        }
+    rep4 = run_analysis(text=sample, kind="script", markets=["KR"],
+                        db_path=tmp, llm_call=_stub_llm, force=True)
+    assert rep4["metadata"]["provider"] == "injected"
+    assert rep4["metadata"]["mock"] is False
+    assert "LLM심화" in rep4["reverseEngineering"]["viralDNA"]["formula"], "심화가 덮어써야"
+    assert rep4["reverseEngineering"]["emotionDNA"]["curve"], "측정 구조(곡선)는 보존돼야"
+    assert rep4["strategies"]["A"]["hook"] == "LLM심화 훅 A"
+    assert rep4["metadata"].get("insight", "").startswith("LLM심화")
+    deep = [a for a in rep4["metadata"]["agentRuns"] if a["agent"] == "A19d"]
+    assert deep and deep[0]["status"] == "ok", "심화 에이전트 ok"
+    # Mock 경로는 A19d skipped
+    deep0 = [a for a in rep["metadata"]["agentRuns"] if a["agent"] == "A19d"]
+    assert deep0 and deep0[0]["status"] == "skipped", "키 없으면 심화 skipped"
+
+    print("\n✅ sre_runtime self-test 통과 — 13스테이지(12+심화) + 스키마 + Idempotency + LLM병합")

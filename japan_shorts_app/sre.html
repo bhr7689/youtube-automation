@@ -95,7 +95,7 @@
     <main class="main">
       <span class="badge-dot">SRE-OS</span>
       <h1 class="page-title"><span class="gradient-text">역설계</span> 스튜디오</h1>
-      <p class="page-sub">대본·자막·키워드·아이디어를 넣으면 → 역설계 6축 분석 → 바이럴 점수 → A/B/C/D 전략 → KR/JP 대본·SEO 를 한 번에. <b id="mockNote">키 없이도 규칙기반으로 동작</b>합니다.</p>
+      <p class="page-sub">대본·자막·키워드·아이디어를 넣으면 → 역설계 6축 분석 → 바이럴 점수 → A/B/C/D 전략 → KR/JP 대본·SEO 를 한 번에. <b id="mockNote">엔진 확인 중…</b></p>
 
       <!-- 입력 -->
       <div class="sre-panel">
@@ -128,6 +128,7 @@
 
       <!-- 결과 -->
       <div class="hidden" id="resultWrap">
+        <div class="hidden" id="insightBanner" style="background:linear-gradient(135deg,#faf5ff,#fdf2f8);border:1px solid #e9d5ff;border-radius:12px;padding:12px 16px;margin-bottom:14px;font-size:13.5px;color:#6b21a8;line-height:1.6;"></div>
         <div class="tabbar" id="tabbar">
           <button class="tab on" data-t="re">🔬 역설계</button>
           <button class="tab" data-t="score">🔥 점수</button>
@@ -150,6 +151,20 @@
 
   <script>
     const STATE = { kind: "script", markets: new Set(["KR", "JP"]), report: null };
+
+    // 엔진(프로바이더) 상태 표시 — 키 있으면 LLM 심화, 없으면 규칙기반
+    async function loadHealth() {
+      try {
+        const h = await api("/api/sre/health");
+        const p = h.provider || {};
+        const el = document.getElementById("mockNote");
+        if (p.live) el.innerHTML = `🟢 <b>${esc(p.active)}</b> LLM 심화 켜짐 — 규칙기반 위에 해석을 더합니다`;
+        else el.innerHTML = "⚪ 규칙기반(Mock) 모드 — 키 없이 동작 (설정에서 키 저장 시 LLM 심화 자동 켜짐)";
+      } catch (e) {
+        document.getElementById("mockNote").textContent = "키 없이도 규칙기반으로 동작합니다";
+      }
+    }
+    loadHealth();
 
     // 입력 종류 세그먼트
     document.querySelectorAll("#kindSeg button").forEach(b => b.onclick = () => {
@@ -234,6 +249,11 @@
 
     function renderResult(r) {
       const re = r.reverseEngineering || {};
+      // 💡 LLM 심화 인사이트 배너(있을 때만)
+      const insight = (r.metadata || {}).insight;
+      const banner = document.getElementById("insightBanner");
+      if (insight) { banner.innerHTML = `💡 <b>핵심 인사이트</b> — ${esc(insight)}`; banner.classList.remove("hidden"); }
+      else banner.classList.add("hidden");
       // 역설계 6축
       const axis = (t, body) => `<div class="axis"><div class="axis-t">${t}</div><div class="axis-b">${body}</div></div>`;
       const chips = arr => (arr || []).map(x => `<span class="badge">${esc(x)}</span>`).join("") || '<span style="color:#c4bcd6;">—</span>';

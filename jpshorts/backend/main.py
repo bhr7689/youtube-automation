@@ -884,9 +884,11 @@ if _SRE_ROOT not in sys.path:
 try:
     import sre_runtime as _sre
     import sre_store as _sre_db
+    import sre_provider as _sre_prov
     _SRE_OK, _SRE_ERR = True, ""
 except Exception as _e:            # 로드 실패해도 나머지 API 는 계속 동작
     _SRE_OK, _SRE_ERR = False, str(_e)
+    _sre_prov = None
 
 
 class SREReq(BaseModel):
@@ -895,13 +897,16 @@ class SREReq(BaseModel):
     url: str = ""
     markets: list[str] = Field(default_factory=lambda: ["KR"])
     project_name: str = "SRE 프로젝트"
+    provider: str = "auto"         # auto/off/openai/gemini/anthropic
     force: bool = False
 
 
 @app.get("/api/sre/health")
 def sre_health():
+    prov = _sre_prov.status() if _sre_prov else {"active": "mock", "available": [], "live": False}
     return {"ok": _SRE_OK, "error": _SRE_ERR,
-            "mock": not (tr.has_gemini() or bool(os.environ.get("OPENAI_API_KEY"))),
+            "mock": not prov.get("live"),
+            "provider": prov,
             "markets": ["KR", "JP", "US"]}
 
 
@@ -916,7 +921,7 @@ def sre_analyze(req: SREReq):
     try:
         report = _sre.run_analysis(
             text=text, kind=req.kind, url=req.url, markets=markets,
-            project_name=req.project_name, force=req.force)
+            project_name=req.project_name, provider=req.provider, force=req.force)
     except Exception as e:
         raise HTTPException(500, f"분석 중 오류: {e}")
     return report
