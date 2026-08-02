@@ -34,6 +34,19 @@ CONCEPTS = {
     "바다": {"emoji": "🌊", "phrase": "바다로 떠나는 여름", "adj": ["청량한", "시원한"]},
     "풋사과": {"emoji": "🍏", "phrase": "아삭한 풋사과", "adj": ["상큼한", "경쾌한"]},
     "메론소다": {"emoji": "🍹", "phrase": "톡톡 메론소다", "adj": ["청량한", "시원한"]},
+    # ── 비-과일 테마(알고리즘 변화 대응 — 같은 공식에 슬롯) ──
+    "카페": {"emoji": "☕", "phrase": "창가의 따뜻한 카페 한 잔", "adj": ["포근한", "잔잔한"],
+             "mood": ["포근한", "잔잔한", "따뜻한", "아늑한"], "desc_open": "포근한 어느 날,",
+             "genre": ["카페 재즈", "보사노바", "재즈 플레이리스트"], "en_tail": ["Cafe Jazz", "Jazz Playlist", "Chill Jazz BGM"]},
+    "비": {"emoji": "🌧️", "phrase": "비 오는 날 창가", "adj": ["차분한", "촉촉한"],
+           "mood": ["차분한", "촉촉한", "잔잔한", "고요한"], "desc_open": "비 내리는 날,",
+           "genre": ["비 오는 날 재즈", "잔잔한 재즈", "보사노바"], "en_tail": ["Rainy Jazz", "Chill Jazz", "Jazz Playlist"]},
+    "새벽": {"emoji": "🌙", "phrase": "고요한 새벽 감성", "adj": ["잔잔한", "몽환적인"],
+             "mood": ["잔잔한", "몽환적인", "고요한", "깊은"], "desc_open": "고요한 새벽,",
+             "genre": ["새벽 감성 재즈", "잔잔한 재즈", "Lofi 재즈"], "en_tail": ["Late Night Jazz", "Lofi Jazz", "Chill Jazz"]},
+    "난로": {"emoji": "🔥", "phrase": "따뜻한 난로 앞", "adj": ["포근한", "아늑한"],
+             "mood": ["포근한", "아늑한", "따뜻한", "나른한"], "desc_open": "추운 겨울,",
+             "genre": ["겨울 재즈", "따뜻한 재즈", "보사노바"], "en_tail": ["Winter Jazz", "Cozy Jazz", "Jazz Playlist"]},
 }
 
 
@@ -87,7 +100,8 @@ def generate_titles_kr(concept: str = "수박", n_search: int = 5, n_emotion: in
     """🇰🇷 한국 제목 후보. 검색형(밀도형) 우선 + 감성형 보조."""
     c = CONCEPTS.get(concept, CONCEPTS["수박"])
     emoji, phrase = c["emoji"], c["phrase"]
-    genres = KR["genre"]; en = KR["en_tail"]; purp = KR["purpose_short"]; mood = KR["mood"]
+    en = c.get("en_tail", KR["en_tail"]); purp = KR["purpose_short"]
+    genres = c.get("genre", KR["genre"]); mood = c.get("mood", KR["mood"])
 
     # ── 검색형(밀도형) — 목적성 키워드 나열(옵션2). 사장님 1순위 ──
     # 형식: [Playlist] {형용사}{장르} {이모지} {용도1}·{용도2}·{용도3} | {영문}
@@ -130,8 +144,8 @@ def build_description_kr(concept: str = "수박") -> str:
     """🇰🇷 설명글 4단(감성 훅 → 핵심 → 사용맥락 → 트랙리스트/CTA)."""
     c = CONCEPTS.get(concept, CONCEPTS["수박"])
     return (
-        f"무더운 여름, {c['phrase']}의 {c['adj'][0]} 감성으로 지친 하루를 청량하게 채워주는 "
-        f"여름 재즈 플레이리스트입니다. {c['emoji']}🍹\n\n"
+        f"{c.get('desc_open', '무더운 여름,')} {c['phrase']}의 {c['adj'][0]} 감성으로 "
+        f"지친 하루를 채워주는 재즈 플레이리스트입니다. {c['emoji']}🍹\n\n"
         "공부할 때, 일할 때, 카페·매장 배경음악(BGM)으로, 또는 휴식·드라이브할 때 "
         "편안하게 감상해 보세요.\n\n"
         + build_hashtags_kr(concept) + "\n\n"
@@ -365,6 +379,28 @@ def generate_package(country: str = "KR", concept: str = "수박") -> dict:
     pkg = {"KR": generate_package_kr, "JP": generate_package_jp,
            "US": generate_package_us}.get(country.upper(), generate_package_kr)(concept)
     pkg["keyword_tiers"] = keyword_tiers(pkg["country"])   # 3계층 투명 표시
+    return pkg
+
+
+# ── 🧭 적응형 — 지금 뜨는 테마를 trend_meta 에서 받아 자동 슬롯 ──
+def generate_adaptive(country: str = "KR") -> dict:
+    """알고리즘 변화 대응: '지금 뜨는 컨셉'을 감지해 같은 공식에 끼워 생성.
+    과일이 뜨면 과일을, 카페가 뜨면 카페를 자동으로. (trend_meta 연동)
+    라이브/캡처 데이터 없으면 계절 프라이어로 폴백."""
+    try:
+        import trend_meta
+        theme = trend_meta.current_theme(country)
+        boost = trend_meta.rising_boost(country)
+    except Exception:
+        theme, boost = "수박", []
+    if theme not in CONCEPTS:      # 아직 문구가 없는 새 테마면 안전 폴백
+        theme = "수박"
+    pkg = generate_package(country, theme)
+    if boost:                      # 이 시기 실검색어를 태그 앞쪽에 주입(3계층 감성/상황 보강)
+        pkg["tags"] = _dedup(boost + pkg["tags"])
+        pkg["rising_boost"] = boost
+    pkg["picked_theme"] = theme
+    pkg["theme_source"] = "live/seasonal(trend_meta)"
     return pkg
 
 
