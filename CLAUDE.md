@@ -613,6 +613,19 @@ python pipeline.py --init                              # 파이프라인 폴더 
     · 검증: self-test(URL 5종·비교·승자판정) + 백엔드 라이브(compare 공통신호3종·judge D승·
       collect-url graceful) + Playwright E2E(judge 4칸·승리·compare 4축·공통, JS예외 0).
       ⚠️ 실제 자막수집은 사장님 PC(유튜브 접근)에서 완전 동작 — 웹 컨테이너는 프록시가 유튜브 차단.
-  - **다음(Phase 4~)**: ⚠️ **eqO5N(default) 머지해야 사장님 화면 반영** → 실험 성과를 store 에 영속
-    저장(현재 판정만) → asset_ledger 학습 루프 강화 → 다중 소스 '공통 승리공식'을 생성 프롬프트에 자동 주입.
+  - **Phase 4 — 실험 성과 영속 저장 + 공통 승리공식 자동 주입**(2026-08-02, 같은 브랜치):
+    · ① 실험 성과 store 영속: `sre_store.py` 에 `sre_experiment` 테이블 + `save_experiment`
+      (배치·승자표식·run_id) + `list_experiments` + `strategy_leaderboard`(전략별 승리횟수·
+      topStrategy). `/api/sre/judge` 가 저장(batchId·leaderboard 반환) + `/api/sre/experiments`
+      (이력+리더보드) 신설. sre.html 승자판정에 💾 저장됨 + 📈 누적 승률.
+    · ② 공통 승리공식 주입: `sre_sources.winning_formula(comparison)` — 공통 신호·트리거·구조
+      압축. `sre_runtime` SREContext.winning_formula → StrategyGenerator 가 공통 트리거를 최우선
+      각도로 + rationale "공통 승리공식 계승" 표기, Deepener 프롬프트 주입, metadata 기록,
+      idempotency 키에 포함(캐시 분리). compare 가 winningFormula 반환, analyze 가 수용.
+      sre.html: 비교 결과 🏆 공통공식 + "✨ 생성에 주입" 버튼 → 입력창 초록 배너(주입 토글) →
+      다음 역설계에 자동 계승.
+    · 검증: store/sources/runtime self-test + 백엔드 라이브(judge 영속·리더보드 D2승·compare→WF·
+      analyze+WF) + Playwright E2E(주입버튼·배너·계승·저장·누적승률, JS예외 0).
+  - **다음(Phase 5~)**: ⚠️ **eqO5N(default) 머지해야 사장님 화면 반영** → asset_ledger 와 실험
+    리더보드 통합(승자 각도를 metadata_team 추천에 반영) → 실키 end-to-end(사장님 PC) → 소스 URL 배치 수집.
 - (작업하며 갱신할 것)
