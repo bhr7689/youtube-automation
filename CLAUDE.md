@@ -582,7 +582,22 @@ python pipeline.py --init                              # 파이프라인 폴더 
     (health mock=true, analyze score=86, KR/JP SEO 생성) + Playwright E2E(6축·12에이전트·4전략·
     8복붙블록·크리틱·JSON·nav주입, 실제 JS예외 0). ⚠️ 남은 콘솔경고는 컨테이너 프록시가 PWA
     외부아이콘 차단한 것(코드무관, 사장님 PC 정상).
-  - **다음(Phase 2~)**: ⚠️ **eqO5N(default) 머지해야 사장님 화면 반영** → 실제 Provider(Anthropic
-    추가, `concept_maker._llm` 패턴) 로 6축 LLM 심화 + A03/A06/A08 딥분석 → URL 메타·자막 수집
-    (youtube_client·transcript_probe 재사용) → 실험 성과 입력·A/B/C/D 승자판정 → asset_ledger 학습메모리 통합.
+  - **Phase 2 — Provider Adapter + LLM 심화**(2026-08-02, 같은 브랜치):
+    · `sre_provider.py` 신규 — LLM 프로바이더 어댑터(Anthropic/OpenAI/Gemini + Mock).
+      우선순위 SRE_PROVIDER>anthropic>openai>gemini. `llm_json()`=구조화 JSON(코드펜스·잡텍스트
+      방어 파싱), 키없음/라이브러리없음/실패/파싱실패 전부 격리 → None(규칙기반 폴백 신호).
+      `status/available/active_provider/is_live`. 백엔드 concept_maker._llm 과 같은 개념이나
+      루트에서 독립(백엔드 경로 의존 없음).
+    · `sre_runtime.py`: **Deepener(A19d)** 스테이지 추가 — 규칙기반은 항상 backbone(스키마
+      100% 보장), 키 있으면 LLM 이 6축 해석+전략 텍스트만 덮어씀(감정곡선·점수·구조단계 등
+      **측정값은 보존**). `run_analysis(provider="auto"/off/openai/gemini/anthropic)`. 응답없음·
+      실패 시 규칙기반 유지(격리). metadata.insight/provider 기록.
+    · `main.py`: /api/sre/health 에 provider status, analyze 에 provider 옵션.
+    · `sre.html`: 엔진 배지(🟢 {provider} LLM 심화 / ⚪ 규칙기반) + 💡 핵심 인사이트 배너.
+    · 검증: provider self-test + runtime self-test(13스테이지+LLM병합+skipped) + **더미키
+      live배선**(available→openai 선택, 실패→규칙기반 폴백, 스키마 유효) + Playwright(6축·
+      13에이전트·인사이트배너, JS예외 0). ⚠️ 실제 LLM 심화는 사장님 PC(OpenAI 키 연결됨)에서.
+  - **다음(Phase 3~)**: ⚠️ **eqO5N(default) 머지해야 사장님 화면 반영**(2번 요청 시 진행) →
+    URL 메타·자막 자동수집(youtube_client·transcript_probe 재사용) 소스 입력 → 다중 소스 비교 →
+    실험 성과 입력·A/B/C/D 승자판정 → asset_ledger 학습메모리 통합.
 - (작업하며 갱신할 것)
