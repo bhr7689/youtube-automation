@@ -22,6 +22,10 @@ try:
     import trend_meta
 except Exception:
     trend_meta = None
+try:
+    import ref_titles
+except Exception:
+    ref_titles = None
 
 
 @dataclass
@@ -95,38 +99,53 @@ class CompetitorAnalyst(Specialist):
               {"reasons": verdict["reasons"][:3]})
 
 
-# 4) 제목 카피라이터 — 밀도형/감성형, 랭킹
+# 4) 제목 카피라이터 — ① 레퍼런스 조합(1단계 기준) 우선 + 어휘형 보조
 class TitleCopywriter(Specialist):
     role = "✍️ 제목 카피라이터"
     def run(self, b: Brief):
-        t = ME.generate_titles_kr(b.concept) if b.country.upper() == "KR" else \
-            (ME.generate_titles_jp(b.concept) if b.country.upper() == "JP"
-             else ME.generate_titles_us(b.concept))
-        b.artifacts["titles"] = {"search": t["search_titles"], "emotion": t["emotion_titles"],
-                                 "thumb_text": t["thumb_text"]}
-        b.log(self.role,
-              f"검색형(밀도) {len(t['search_titles'])} + 감성형 {len(t['emotion_titles'])} 작성",
-              {"top_pick": t["search_titles"][0]})
+        co = b.country.upper()
+        t = ME.generate_titles_kr(b.concept) if co == "KR" else \
+            (ME.generate_titles_jp(b.concept) if co == "JP" else ME.generate_titles_us(b.concept))
+        # ① 레퍼런스 고조회 제목 재조합 = 첫 단계 기준(사장님 방법)
+        corpus, n_ref = [], 0
+        if ref_titles:
+            try:
+                corpus = ref_titles.combine_titles(co, b.concept, n=5)
+                n_ref = len(ref_titles.all_titles(co))
+            except Exception:
+                corpus = []
+        search = corpus or t["search_titles"]          # 레퍼런스 우선, 없으면 어휘형
+        recommended = search[0]
+        b.artifacts["titles"] = {
+            "search": search, "emotion": t["emotion_titles"], "thumb_text": t["thumb_text"],
+            "recommended": recommended, "ref_count": n_ref,
+            "vocab_search": t["search_titles"],
+        }
+        src = f"레퍼런스 {n_ref}개 재조합" if corpus else "어휘 기반"
+        b.log(self.role, f"제목 {len(search)}(1순위: {src}) + 감성형 {len(t['emotion_titles'])}",
+              {"recommended": recommended})
 
 
-# 5) 설명글 SEO 작가 — 4단, 상단 키워드 밀도
+# 5) 설명글 SEO 작가 — ④ 채택 제목 키워드로 2차 결착
 class DescriptionWriter(Specialist):
     role = "📄 설명글 SEO 작가"
     def run(self, b: Brief):
-        pkg = ME.generate_package(b.country, b.concept)
-        desc = pkg["description"]
+        title = b.artifacts["titles"]["recommended"]
+        desc = ME.describe_from_title(title, b.country, b.concept)   # 제목 키워드 재주입
         top = desc.strip().splitlines()[0]
-        b.artifacts["description"] = {"text": desc, "top_line": top}
-        b.log(self.role, "설명글 4단(상단 키워드 밀도) 작성", {"top_line": top})
+        b.artifacts["description"] = {"text": desc, "top_line": top, "bound_to": title}
+        b.log(self.role, "설명글 4단 + 제목 키워드 재주입(2차 결착)", {"top_line": top})
 
 
-# 6) 태그·해시태그 전략가
+# 6) 태그·해시태그 전략가 — ④ 채택 제목 키워드로 2차 결착
 class TagStrategist(Specialist):
     role = "🏷️ 태그·해시태그 전략가"
     def run(self, b: Brief):
+        title = b.artifacts["titles"]["recommended"]
         pkg = ME.generate_package(b.country, b.concept)
-        b.artifacts["tags"] = {"tags": pkg["tags"], "hashtags": pkg["hashtags"]}
-        b.log(self.role, f"태그 {len(pkg['tags'])}개 + 해시태그", {"hashtags": pkg["hashtags"]})
+        tags = ME.tags_from_title(title, b.country, b.concept)       # 제목 키워드 앞배치
+        b.artifacts["tags"] = {"tags": tags, "hashtags": pkg["hashtags"]}
+        b.log(self.role, f"태그 {len(tags)}개(제목 키워드 앞배치) + 해시태그", {"hashtags": pkg["hashtags"]})
 
 
 # 7) 썸네일 디렉터 — 제목↔썸네일 소재 일치 + 가독성
@@ -229,7 +248,8 @@ class ChiefEditor:
         final = {
             "country": country,
             "theme": b.artifacts["theme"]["theme"],
-            "title_recommended": titles["search"][0],        # 밀도형 1순위
+            "title_recommended": titles["recommended"],      # 레퍼런스 조합 1순위
+            "ref_count": titles.get("ref_count", 0),
             "titles_search": titles["search"],
             "titles_emotion": titles["emotion"],
             "description": b.artifacts["description"]["text"],

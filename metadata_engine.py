@@ -14,6 +14,9 @@ JP·US 는 다음 단계에서 같은 구조로 추가.
 """
 from __future__ import annotations
 import itertools
+import re
+
+_EMOJI = re.compile("[\U0001F300-\U0001FAFF☀-➿\U0001F1E6-\U0001F1FF]")
 
 # ── 🇰🇷 한국 어휘 (실검색어 중심) ─────────────────────────────
 KR = {
@@ -374,12 +377,56 @@ def generate_package_us(concept: str = "수박") -> dict:
             "tags": build_tags_us(concept), "hashtags": build_hashtags_us(concept)}
 
 
+# ══════════════════════════════════════════════════════════
+# 🔗 2차 결착 — 채택된 제목의 키워드로 설명·태그를 재구성
+#   흐름: 레퍼런스 조합 → SERP 검증 → 채택 제목 → 그 제목 키워드로 설명·태그 재주입
+#   = 제목이 고조회와 묶이면, 같은 키워드를 설명·태그에도 심어 한 번 더 알고리즘에 묶음
+# ══════════════════════════════════════════════════════════
+_KW_STOP = {"playlist", "bgm", "summer", "jazz", "music", "플리", "the", "for", "and", "a"}
+
+
+def title_keywords(title: str) -> dict:
+    """제목에서 키워드(구/단어)를 뽑는다 — 접두사·이모지·영문꼬리 제거."""
+    core = re.sub(r"^\s*\[?\s*[Pp]laylist\s*\]?\s*\|?", "", title)
+    if "|" in core:
+        core = core.rsplit("|", 1)[0]          # 마지막 영문 꼬리 제거
+    core = _EMOJI.sub(" ", core)
+    phrases = [re.sub(r"\s+", " ", p.strip()) for p in re.split(r"[·,]", core) if len(p.strip()) >= 2]
+    words = [w for w in re.findall(r"[\w가-힣ぁ-んァ-ヶ一-龥]+", core)
+             if len(w) > 1 and w.lower() not in _KW_STOP]
+    return {"phrases": _dedup(phrases)[:6], "words": _dedup(words)[:10]}
+
+
+_DESC_FN = {}   # 아래에서 채움
+_TAGS_FN = {}
+
+
+def describe_from_title(title: str, country: str = "KR", concept: str = "수박") -> str:
+    """채택 제목의 키워드를 설명 최상단(가중 큰 위치)에 재주입 = 2차 결착."""
+    kw = title_keywords(title)
+    band = " · ".join(kw["phrases"] or kw["words"][:5])
+    base = _DESC_FN.get(country.upper(), build_description_kr)(concept)
+    return f"🎧 {band}\n\n{base}"
+
+
+def tags_from_title(title: str, country: str = "KR", concept: str = "수박") -> list[str]:
+    """채택 제목의 키워드를 태그 앞쪽에 재주입 = 2차 결착."""
+    kw = title_keywords(title)
+    base = _TAGS_FN.get(country.upper(), build_tags_kr)(concept)
+    return _dedup(kw["words"] + base)
+
+
 # ── 국가 디스패처 ──────────────────────────────────────────
 def generate_package(country: str = "KR", concept: str = "수박") -> dict:
     pkg = {"KR": generate_package_kr, "JP": generate_package_jp,
            "US": generate_package_us}.get(country.upper(), generate_package_kr)(concept)
     pkg["keyword_tiers"] = keyword_tiers(pkg["country"])   # 3계층 투명 표시
     return pkg
+
+
+# 2차 결착용 빌더 매핑 (builders 정의 이후 채움)
+_DESC_FN.update({"KR": build_description_kr, "JP": build_description_jp, "US": build_description_us})
+_TAGS_FN.update({"KR": build_tags_kr, "JP": build_tags_jp, "US": build_tags_us})
 
 
 # ── 🧭 적응형 — 지금 뜨는 테마를 trend_meta 에서 받아 자동 슬롯 ──
