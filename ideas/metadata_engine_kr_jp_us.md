@@ -342,3 +342,36 @@ SERP Fit = median_views·0.30 + view_velocity·0.25 + 강채널비율·0.20
 - 넓이: 트렌드·키워드·경쟁·제목·설명·태그·썸네일·현지화·정책·QA **10개 축**을 각각 커버.
 - 깊이: 각 전문가가 자기 분야만 파므로 디테일↑ + 서로 검증(경쟁분석·정책·QA가 교차 견제).
 - 산출: 팀 리포트(누가 뭘 했는지) + 최종 복붙 패키지 + QA 점수·플래그 = 신뢰도 가시화.
+
+---
+
+## ⭐⭐⭐ A-12. 레퍼런스 코퍼스(첫 기준) + 2차 결착 (사장님 원본 방법)
+
+> 사장님 원본 흐름: 내가 만든 어휘가 아니라 **고조회 레퍼런스 제목을 조합·재조합**해
+> 첫 제목 → 시크릿 SERP 검증 → **고조회와 묶이는 제목 채택** → 그 제목으로 **설명·태그를
+> 한 번 더** 짜서 알고리즘에 재결착.
+
+### 전체 파이프라인 (확정)
+```
+① 레퍼런스 코퍼스(고조회 제목)  ─ 첫 단계 기준(BASIS)
+     · 시드 = 사장님이 준 실제 여름 재즈 제목(KR7/JP2/US2)
+     · 실시간 자동수집(collect_auto·youtube_client) + 직접 첨부(add_titles)
+   → combine_titles: 레퍼런스 패턴 재조합 = 제목 후보
+② serp_judge: 시크릿 SERP 검증 → 고조회 풀과 묶이는지 판정
+③ 채택 제목(고조회와 묶임)
+④ 2차 결착: describe_from_title / tags_from_title
+     · 채택 제목의 키워드를 **설명 최상단(가중 큰 위치) + 태그 앞**에 재주입
+     · 제목·설명·태그가 같은 승리 키워드 풀 = 한 번 더 알고리즘 결착
+```
+
+### 신규 코드 (완료)
+- [x] `ref_titles.py` — 코퍼스(시드+첨부+자동수집) · extract_patterns · combine_titles
+- [x] `metadata_engine.title_keywords / describe_from_title / tags_from_title` — 2차 결착
+- [x] `metadata_team` — 제목=레퍼런스 조합 1순위, 설명·태그=채택 제목 기반 재구성
+- [ ] 실시간 수집 cron(PC/Actions) + 화면 첨부칸(붙여넣기 → add_titles) — 백엔드 붙일 때
+
+### 데이터 소스 2경로 (사장님 요구)
+- **실시간 자동수집**: `collect_auto(country, keywords)` — youtube_client 상위 제목 수집(키/PC).
+  cron 이 매일 돌려 `ref_titles.json` 갱신·커밋(무인).
+- **직접 첨부**: `add_titles(country, titles)` — 사장님이 캡처·정리한 제목 붙여넣기.
+  → 화면 첨부칸은 FastAPI 백엔드 연결 시 활성(현재 함수는 준비됨).
