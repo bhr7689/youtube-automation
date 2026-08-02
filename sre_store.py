@@ -73,6 +73,21 @@ CREATE TABLE IF NOT EXISTS sre_result_version (
     created_at   REAL
 );
 CREATE INDEX IF NOT EXISTS idx_result_run ON sre_result_version(run_id);
+
+CREATE TABLE IF NOT EXISTS sre_experiment (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id     TEXT,          -- 한 번의 판정 = 한 배치
+    run_id       TEXT,          -- 어느 분석 결과에 대한 실험인지(옵션)
+    strategy     TEXT,          -- A/B/C/D
+    metric_name  TEXT,
+    value        REAL,
+    is_winner    INTEGER,       -- 1=이 배치의 승자
+    title        TEXT,
+    note         TEXT,
+    created_at   REAL
+);
+CREATE INDEX IF NOT EXISTS idx_exp_run ON sre_experiment(run_id);
+CREATE INDEX IF NOT EXISTS idx_exp_batch ON sre_experiment(batch_id);
 """
 
 
@@ -225,6 +240,61 @@ def result_versions(run_id: str, path: str | Path = DB_PATH) -> list[int]:
     return [r["version"] for r in rows]
 
 
+# ── 실험 성과(A/B/C/D 승자판정 영속) ───────────────────────────
+def save_experiment(entries: list[dict], winner: str, *, run_id: str = "",
+                    path: str | Path = DB_PATH) -> str:
+    """한 배치의 전략별 성과 + 승자 표식을 저장 → batch_id 반환.
+
+    entries: [{"strategy","metricName","value","title","note"}]
+    """
+    init_db(path)
+    batch = _uid("exp")
+    now = _now()
+    with connect(path) as conn:
+        for e in entries:
+            conn.execute(
+                "INSERT INTO sre_experiment(batch_id,run_id,strategy,metric_name,"
+                "value,is_winner,title,note,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                (batch, run_id, e.get("strategy", ""), e.get("metricName", ""),
+                 e.get("value"), 1 if e.get("strategy") == winner else 0,
+                 e.get("title", ""), e.get("note", ""), now),
+            )
+    return batch
+
+
+def list_experiments(*, run_id: str | None = None, limit: int = 100,
+                     path: str | Path = DB_PATH) -> list[dict]:
+    init_db(path)
+    q = ("SELECT batch_id,run_id,strategy,metric_name,value,is_winner,title,created_at"
+         " FROM sre_experiment")
+    args: tuple = ()
+    if run_id:
+        q += " WHERE run_id=?"
+        args = (run_id,)
+    q += " ORDER BY id DESC LIMIT ?"
+    args = args + (limit,)
+    with connect(path) as conn:
+        rows = conn.execute(q, args).fetchall()
+    return [dict(r) for r in rows]
+
+
+def strategy_leaderboard(path: str | Path = DB_PATH) -> dict:
+    """전략별 승리 횟수·참여 배치 수 집계 → 학습 신호(어느 각도가 자주 이기는지)."""
+    init_db(path)
+    with connect(path) as conn:
+        wins = conn.execute(
+            "SELECT strategy, COUNT(*) AS n FROM sre_experiment"
+            " WHERE is_winner=1 GROUP BY strategy").fetchall()
+        batches = conn.execute(
+            "SELECT COUNT(DISTINCT batch_id) AS n FROM sre_experiment").fetchone()
+    win_map = {r["strategy"]: r["n"] for r in wins}
+    total = batches["n"] if batches else 0
+    board = sorted(win_map.items(), key=lambda kv: -kv[1])
+    return {"totalBatches": total, "wins": win_map,
+            "ranking": [{"strategy": s, "wins": n} for s, n in board],
+            "topStrategy": board[0][0] if board else ""}
+
+
 # ── 자기검증 ──────────────────────────────────────────────────
 if __name__ == "__main__":
     import tempfile
@@ -255,4 +325,19 @@ if __name__ == "__main__":
     found = find_done_run(idem, path=tmp)
     assert found and found["run_id"] == rid, "완료 Run 재사용 가능해야"
 
-    print("✅ sre_store self-test 통과 — 프로젝트/소스/Run/Idempotency/에이전트/버전")
+    # 실험 성과 영속 + 리더보드
+    b1 = save_experiment(
+        [{"strategy": "A", "metricName": "3초유지율", "value": 62, "title": "체험"},
+         {"strategy": "D", "metricName": "3초유지율", "value": 74, "title": "호기심"}],
+        winner="D", run_id=rid, path=tmp)
+    save_experiment(
+        [{"strategy": "D", "value": 55}, {"strategy": "C", "value": 40}],
+        winner="D", path=tmp)
+    assert b1.startswith("exp_")
+    exps = list_experiments(run_id=rid, path=tmp)
+    assert len(exps) == 2 and any(e["is_winner"] for e in exps)
+    lb = strategy_leaderboard(path=tmp)
+    assert lb["topStrategy"] == "D" and lb["wins"]["D"] == 2
+    assert lb["totalBatches"] == 2
+
+    print("✅ sre_store self-test 통과 — 프로젝트/소스/Run/Idempotency/에이전트/버전/실험·리더보드")

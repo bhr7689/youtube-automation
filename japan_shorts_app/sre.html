@@ -118,6 +118,11 @@
           <span class="sre-chip on" data-m="JP">🇯🇵 JP</span>
           <span class="sre-chip" data-m="US">🇺🇸 US</span>
         </div>
+        <div id="wfBanner" class="hidden" style="background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border:1px solid #bbf7d0;border-radius:10px;padding:9px 13px;margin-top:10px;font-size:12.5px;color:#166534;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span id="wfBannerText" style="flex:1;">🏆 공통 승리공식 준비됨</span>
+          <label style="cursor:pointer;display:flex;align-items:center;gap:4px;font-weight:700;"><input type="checkbox" id="wfInject" checked> 생성에 주입</label>
+          <button class="btn-copy" style="float:none;" onclick="clearWF()">✕ 해제</button>
+        </div>
         <div class="sre-controls">
           <button class="btn-run" id="runBtn" onclick="runAnalyze(this)">🧬 역설계 실행</button>
           <label style="font-size:12px;color:#8a80a5;cursor:pointer;display:flex;align-items:center;gap:5px;"><input type="checkbox" id="forceRe"> 강제 재분석(캐시 무시)</label>
@@ -178,7 +183,7 @@
   </div>
 
   <script>
-    const STATE = { kind: "script", markets: new Set(["KR", "JP"]), report: null };
+    const STATE = { kind: "script", markets: new Set(["KR", "JP"]), report: null, winningFormula: null };
 
     // 엔진(프로바이더) 상태 표시 — 키 있으면 LLM 심화, 없으면 규칙기반
     async function loadHealth() {
@@ -243,11 +248,13 @@
       document.getElementById("progPanel").classList.remove("hidden");
       document.getElementById("progBox").innerHTML = '<div style="color:#a99fc0;font-size:13px;">에이전트 파이프라인 실행 중…</div>';
       document.getElementById("resultWrap").classList.add("hidden");
+      const useWF = STATE.winningFormula && document.getElementById("wfInject").checked;
       try {
         const r = await api("/api/sre/analyze", {
           method: "POST",
           body: JSON.stringify({
             text, kind: STATE.kind, markets: [...STATE.markets],
+            winning_formula: useWF ? STATE.winningFormula : null,
             force: document.getElementById("forceRe").checked,
           }),
         });
@@ -380,6 +387,22 @@
       btn.classList.remove("busy"); btn.textContent = o;
     }
 
+    // ── 🏆 공통 승리공식 주입 상태 ───────────────────
+    function setWF(wf) {
+      if (!wf || (!(wf.signals || []).length && !(wf.triggers || []).length)) return;
+      STATE.winningFormula = wf;
+      document.getElementById("wfBannerText").innerHTML = `🏆 <b>공통 승리공식</b> — ${esc(wf.summary || "")}`;
+      document.getElementById("wfInject").checked = true;
+      document.getElementById("wfBanner").classList.remove("hidden");
+      toast("✓ 공통 공식 캡처 — 다음 역설계 실행에 자동 주입됩니다");
+      document.querySelector(".main").scrollTo({ top: 0, behavior: "smooth" });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+    function clearWF() {
+      STATE.winningFormula = null;
+      document.getElementById("wfBanner").classList.add("hidden");
+    }
+
     // ── 🏆 A/B/C/D 승자판정 ──────────────────────────
     function renderJudgeInputs(r) {
       const strat = r.strategies || {};
@@ -406,18 +429,23 @@
                  metricName: (s.experiment || {}).metric || "", title: s.title || "" };
       }).filter(e => e.value !== null && !isNaN(e.value));
       if (entries.length < 1) return toast("성과값을 최소 1개 입력하세요");
+      const runId = (r.metadata || {}).runId || "";
       btn.classList.add("busy"); const o = btn.textContent; btn.textContent = "판정 중…";
       try {
-        const j = await api("/api/sre/judge", { method: "POST", body: JSON.stringify({ entries }) });
+        const j = await api("/api/sre/judge", { method: "POST", body: JSON.stringify({ entries, run_id: runId }) });
         const w = j.winner;
+        const lb = j.leaderboard || {};
+        const lbRows = (lb.ranking || []).map(e => `${e.strategy}: ${e.wins}승`).join(" · ");
         document.getElementById("judgeResult").innerHTML =
           `<div class="strat" style="background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border-color:#bbf7d0;">
             <div>🏆 <span class="strat-key" style="background:#16a34a;">${esc(w.strategy)}</span> <b>승리</b> — ${esc(w.metricName || "")} ${w.value}</div>
             <div class="strat-title" style="margin:6px 0;">${esc(w.title || "")}</div>
             <div style="font-size:12.5px;color:#166534;line-height:1.8;">${(j.reasons || []).map(x => "· " + esc(x)).join("<br>")}</div>
             <div style="font-size:12px;color:#4b5563;margin-top:8px;">순위: ${(j.ranking || []).map(e => e.strategy + "(" + e.value + ")").join(" › ")}</div>
+            ${j.batchId ? '<div style="font-size:11px;color:#16a34a;margin-top:6px;">💾 성과 저장됨 — 학습 누적</div>' : ""}
+            ${lbRows ? `<div style="font-size:12px;color:#6b21a8;margin-top:8px;border-top:1px dashed #bbf7d0;padding-top:8px;">📈 <b>누적 승률</b>(${lb.totalBatches || 0}회) — ${esc(lbRows)}</div>` : ""}
           </div>`;
-        toast("🏆 " + w.strategy + " 전략 승리");
+        toast("🏆 " + w.strategy + " 전략 승리" + (j.batchId ? " · 저장됨" : ""));
       } catch (e) { toast("오류: " + (e.message || e)); }
       btn.classList.remove("busy"); btn.textContent = o;
     }
@@ -447,13 +475,13 @@
       btn.classList.add("busy"); const o = btn.textContent; btn.textContent = "비교 중…";
       try {
         const res = await api("/api/sre/compare", { method: "POST", body: JSON.stringify({ sources }) });
-        renderCompare(res.comparison);
+        renderCompare(res.comparison, res.winningFormula);
         toast("✓ 비교 완료");
       } catch (e) { toast("오류: " + (e.message || e)); }
       btn.classList.remove("busy"); btn.textContent = o;
     }
 
-    function renderCompare(c) {
+    function renderCompare(c, wf) {
       if (!c || !c.ok) { document.getElementById("cmpResult").innerHTML = `<div style="color:#a99fc0;">${esc((c && c.error) || "비교 불가")}</div>`; return; }
       const chips = (arr, cls) => (arr || []).map(x => `<span class="badge" ${cls || ""}>${esc(x)}</span>`).join("") || '<span style="color:#c4bcd6;">—</span>';
       const axisBlock = (title, ax) => {
@@ -468,12 +496,19 @@
       };
       const scoreRows = (c.scores || []).map(([lbl, sc], i) =>
         `<div style="display:flex;justify-content:space-between;font-size:13px;padding:2px 0;"><span>${i === 0 ? "🥇 " : ""}${esc(lbl)}</span><b>${sc}</b></div>`).join("");
+      const hasWF = wf && ((wf.signals || []).length || (wf.triggers || []).length);
+      window.__lastWF = hasWF ? wf : null;
       document.getElementById("cmpResult").innerHTML =
         `<div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:10px;padding:10px 14px;font-size:13px;color:#6b21a8;margin-bottom:12px;">📊 ${esc(c.summary)}</div>` +
         axisBlock("🔥 바이럴 신호", c.viralSignals) +
         axisBlock("🧠 심리 트리거", c.psychTriggers) +
         `<div class="axis"><div class="axis-t">🧩 공통 구조 단계</div><div>${chips(c.commonStages)}</div></div>` +
-        `<div class="axis"><div class="axis-t">🔥 바이럴 점수 순위</div>${scoreRows}</div>`;
+        `<div class="axis"><div class="axis-t">🔥 바이럴 점수 순위</div>${scoreRows}</div>` +
+        (hasWF ? `<div class="axis" style="border-color:#bbf7d0;background:#f0fdf4;">
+          <div class="axis-t" style="color:#166534;">🏆 이 계열의 공통 승리공식</div>
+          <div class="axis-b">${esc(wf.summary)}</div>
+          <button class="btn-run" style="margin-top:8px;padding:8px 16px;font-size:13px;background:#16a34a;" onclick="setWF(window.__lastWF)">✨ 이 공식을 새 소재 생성에 주입</button>
+        </div>` : "");
     }
 
     // 비교 패널 기본 2칸

@@ -167,6 +167,33 @@ def compare_sources(reports: list[dict], labels: list[str] | None = None) -> dic
     }
 
 
+def winning_formula(comparison: dict) -> dict:
+    """비교 결과 → 생성에 주입할 '공통 승리공식' 브리프.
+
+    공통(전부 등장) 신호·트리거·구조 + 최고 점수 소스만 뽑아 압축.
+    이걸 run_analysis(winning_formula=...) 로 넣으면 신규 전략이 검증된 공통 공식을 계승.
+    """
+    if not comparison or not comparison.get("ok"):
+        return {}
+    vs = comparison.get("viralSignals", {}).get("common", [])
+    pt = comparison.get("psychTriggers", {}).get("common", [])
+    stages = comparison.get("commonStages", [])
+    top = comparison.get("topLabel", "")
+    bits = []
+    if vs:
+        bits.append("공통 바이럴 신호: " + ", ".join(vs))
+    if pt:
+        bits.append("공통 심리 트리거: " + ", ".join(pt))
+    if stages:
+        bits.append("공통 구조: " + " → ".join(stages))
+    return {
+        "signals": vs, "triggers": pt, "stages": stages,
+        "topLabel": top,
+        "summary": " · ".join(bits) or "뚜렷한 공통 공식 없음",
+        "sourceCount": comparison.get("count", 0),
+    }
+
+
 def _compare_summary(vs, pt, stages, scores) -> str:
     bits = []
     if vs["common"]:
@@ -270,6 +297,13 @@ if __name__ == "__main__":
     a_uniq = next(x["unique"] for x in cmp["viralSignals"]["individual"] if x["label"] == "A영상")
     assert "짧은 훅" in a_uniq
     print(f"✅ 다중 소스 비교 — {cmp['summary']}")
+
+    # 3b) 공통 승리공식 추출
+    wf = winning_formula(cmp)
+    assert "숫자(구체성)" in wf["signals"] and "호기심 격차" in wf["triggers"]
+    assert wf["stages"] == ["hook"] and wf["sourceCount"] == 2
+    assert winning_formula({"ok": False}) == {}
+    print(f"✅ 공통 승리공식 — {wf['summary']}")
 
     # 4) A/B/C/D 승자판정
     j = judge_experiment([

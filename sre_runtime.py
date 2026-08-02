@@ -50,6 +50,7 @@ class SREContext:
     markets: list = field(default_factory=lambda: ["KR"])
     llm_call = None               # (system, user)->dict|None, 없으면 규칙기반(Mock)
     provider_name: str = "mock"   # 실제 사용 프로바이더(mock/openai/gemini/anthropic)
+    winning_formula: dict = field(default_factory=dict)  # 다중 소스 공통 승리공식(선택 주입)
 
     # 에이전트가 채우는 중간 산출물
     tokens: list = field(default_factory=list)
@@ -323,7 +324,14 @@ class StrategyGenerator(Agent):
         kws = ev.get("topKeywords", [])[:3]
         core = " ".join(kws) if kws else (ctx.text[:14] or "이 주제")
         triggers = ctx.analyses.get("viewerPsychology", {}).get("triggers", [])
-        vp_hint = triggers[0] if triggers else "호기심 격차"
+        # 🏆 공통 승리공식이 주입됐으면 그 트리거를 최우선 각도로(검증된 공식 계승)
+        wf = ctx.winning_formula or {}
+        wf_triggers = wf.get("triggers", [])
+        vp_hint = (wf_triggers[0] if wf_triggers else
+                   (triggers[0] if triggers else "호기심 격차"))
+        wf_note = ""
+        if wf.get("summary") and (wf.get("signals") or wf.get("triggers")):
+            wf_note = f" [공통 승리공식 계승 — {wf['summary']}]"
         for k in S.STRATEGY_KEYS:
             angle, hook_stub, tail = self.ANGLES[k]
             st = S.empty_strategy(k)
@@ -339,7 +347,7 @@ class StrategyGenerator(Agent):
             ]
             st["rationale"] = (
                 f"이 소재의 '{vp_hint}' 신호를 {angle} 각도로 증폭 — "
-                f"A/B/C/D 는 심리 작동방식이 달라 같은 소재도 반응층이 갈림.")
+                f"A/B/C/D 는 심리 작동방식이 달라 같은 소재도 반응층이 갈림." + wf_note)
             st["experiment"] = {
                 "hypothesis": f"{angle} 각도가 이 소재의 초반 이탈을 줄인다",
                 "metric": self.METRIC[k],
@@ -493,7 +501,9 @@ class Deepener(Agent):
     SYSTEM = (
         "너는 유튜브 쇼츠 역설계 분석가다. 규칙기반 1차 분석과 원본 소재를 받아, "
         "각 축의 해석을 더 날카롭고 실전적으로 다듬는다. 특정 크리에이터의 고유 표현을 "
-        "복제하지 말고 일반화된 패턴만 쓴다. 반드시 아래 JSON 스키마 그대로 한국어로 채워라:\n"
+        "복제하지 말고 일반화된 패턴만 쓴다. winningFormula(다중 소스에서 검증된 공통 "
+        "공식)가 비어있지 않으면, 전략 hook/title/thumbText 가 그 공통 신호·트리거를 "
+        "반드시 계승하도록 작성하라. 반드시 아래 JSON 스키마 그대로 한국어로 채워라:\n"
         '{"reverseEngineering":{"contentStructure":{"summary":""},'
         '"viralDNA":{"formula":"","signals":[]},'
         '"viewerPsychology":{"summary":"","triggers":[]},'
@@ -509,6 +519,7 @@ class Deepener(Agent):
             return "스킵(키 없음 — 규칙기반)"
         payload = {
             "source": {"kind": ctx.kind, "text": ctx.text[:4000]},
+            "winningFormula": ctx.winning_formula or {},   # 검증된 공통 공식(있으면 계승)
             "ruleBased": {
                 "reverseEngineering": {
                     k: ctx.analyses.get(k, {}) for k in
@@ -620,13 +631,17 @@ class SREOrchestrator:
         })
         if ctx.analyses.get("_insight"):
             rep["metadata"]["insight"] = ctx.analyses["_insight"]
+        if ctx.winning_formula and (ctx.winning_formula.get("signals")
+                                    or ctx.winning_formula.get("triggers")):
+            rep["metadata"]["winningFormula"] = ctx.winning_formula
         return rep
 
 
 # ── 외부 진입점(저장 포함) ────────────────────────────────────
 def run_analysis(*, text: str, kind: str = "script", url: str = "",
                  markets=None, project_name: str = "SRE 프로젝트",
-                 llm_call=None, provider: str = "auto", force: bool = False,
+                 llm_call=None, provider: str = "auto",
+                 winning_formula: dict | None = None, force: bool = False,
                  persist: bool = True, db_path=DB.DB_PATH) -> dict:
     """입력 → (Idempotency 확인) → 파이프라인 → 스키마 검증 → 저장 → 리포트 반환.
 
@@ -647,7 +662,15 @@ def run_analysis(*, text: str, kind: str = "script", url: str = "",
             provider_name = provider
             llm_call = lambda s, u, _p=provider: PROV.llm_json(s, u, _p)  # noqa: E731
 
-    idem = DB.idempotency_key(kind, text, markets, provider_name)
+    # 공통 승리공식이 주입되면 결과가 달라지므로 idempotency 키에 포함
+    wf = winning_formula or {}
+    idem_seed = provider_name
+    if wf.get("signals") or wf.get("triggers"):
+        import json as _json
+        idem_seed += "|wf:" + _json.dumps(
+            {"s": sorted(wf.get("signals", [])), "t": sorted(wf.get("triggers", []))},
+            ensure_ascii=False, sort_keys=True)
+    idem = DB.idempotency_key(kind, text, markets, idem_seed)
 
     if persist and not force:
         prev = DB.find_done_run(idem, path=db_path)
@@ -660,6 +683,7 @@ def run_analysis(*, text: str, kind: str = "script", url: str = "",
     ctx = SREContext(text=text, kind=kind, url=url, markets=markets)
     ctx.llm_call = llm_call
     ctx.provider_name = provider_name
+    ctx.winning_formula = wf
     report = SREOrchestrator().analyze(ctx)
 
     run_id = idem_ref = ""
@@ -772,4 +796,18 @@ if __name__ == "__main__":
     deep0 = [a for a in rep["metadata"]["agentRuns"] if a["agent"] == "A19d"]
     assert deep0 and deep0[0]["status"] == "skipped", "키 없으면 심화 skipped"
 
-    print("\n✅ sre_runtime self-test 통과 — 13스테이지(12+심화) + 스키마 + Idempotency + LLM병합")
+    # 🏆 공통 승리공식 주입 — 전략 rationale 에 계승 + metadata 기록 + 별도 Run
+    wf = {"signals": ["숫자(구체성)", "짧은 훅(3초 내 읽힘)"],
+          "triggers": ["호기심 격차", "반전"], "stages": ["hook", "reveal"],
+          "summary": "공통 바이럴 신호: 숫자, 짧은 훅 · 공통 심리 트리거: 호기심 격차, 반전",
+          "sourceCount": 2}
+    rep5 = run_analysis(text=sample, kind="script", markets=["KR"],
+                        db_path=tmp, winning_formula=wf, force=True)
+    assert rep5["metadata"].get("winningFormula"), "공통 공식이 metadata 에 기록돼야"
+    assert any("공통 승리공식 계승" in rep5["strategies"][k]["rationale"]
+               for k in S.STRATEGY_KEYS), "전략 rationale 에 공식 계승 표기"
+    # 공식 주입 버전은 미주입 버전과 다른 Run(캐시 분리)
+    rep6 = run_analysis(text=sample, kind="script", markets=["KR"], db_path=tmp)
+    assert not rep6["metadata"].get("winningFormula"), "미주입 버전엔 공식 없음"
+
+    print("\n✅ sre_runtime self-test 통과 — 13스테이지 + 스키마 + Idempotency + LLM병합 + 공통공식 주입")

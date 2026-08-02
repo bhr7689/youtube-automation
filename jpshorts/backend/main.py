@@ -900,6 +900,7 @@ class SREReq(BaseModel):
     markets: list[str] = Field(default_factory=lambda: ["KR"])
     project_name: str = "SRE 프로젝트"
     provider: str = "auto"         # auto/off/openai/gemini/anthropic
+    winning_formula: dict | None = None   # 다중 소스 공통 승리공식(선택 주입)
     force: bool = False
 
 
@@ -923,7 +924,8 @@ def sre_analyze(req: SREReq):
     try:
         report = _sre.run_analysis(
             text=text, kind=req.kind, url=req.url, markets=markets,
-            project_name=req.project_name, provider=req.provider, force=req.force)
+            project_name=req.project_name, provider=req.provider,
+            winning_formula=req.winning_formula, force=req.force)
     except Exception as e:
         raise HTTPException(500, f"분석 중 오류: {e}")
     return report
@@ -985,7 +987,9 @@ def sre_compare(req: SRECompareReq):
         reports.append(rep)
         labels.append(s.label.strip() or f"소스{i+1}")
     comparison = _sre_src.compare_sources(reports, labels)
-    return {"reports": reports, "comparison": comparison, "labels": labels}
+    formula = _sre_src.winning_formula(comparison)
+    return {"reports": reports, "comparison": comparison,
+            "winningFormula": formula, "labels": labels}
 
 
 class SREJudgeEntry(BaseModel):
@@ -1001,6 +1005,8 @@ class SREJudgeReq(BaseModel):
     country: str | None = None
     niche: str | None = None
     record: bool = False
+    run_id: str = ""               # 어느 분석 결과에 대한 실험인지(옵션)
+    persist: bool = True           # 성과를 store 에 영속 저장
 
 
 @app.post("/api/sre/judge")
@@ -1013,7 +1019,25 @@ def sre_judge(req: SREJudgeReq):
         country=req.country, niche=req.niche, record=req.record)
     if not res.get("ok"):
         raise HTTPException(400, res.get("error", "판정 실패"))
+    # 실험 성과 영속 저장(승자 표식 포함) — 학습 리더보드로 축적
+    if req.persist:
+        scored = [e for e in entries if isinstance(e.get("value"), (int, float))]
+        try:
+            batch = _sre_db.save_experiment(
+                scored, winner=res["winner"]["strategy"], run_id=req.run_id)
+            res["batchId"] = batch
+            res["leaderboard"] = _sre_db.strategy_leaderboard()
+        except Exception as e:
+            res["persistError"] = str(e)
     return res
+
+
+@app.get("/api/sre/experiments")
+def sre_experiments(run_id: str = ""):
+    if not (_SRE_OK and _sre_db):
+        raise HTTPException(500, "SRE 저장소 미로드")
+    return {"experiments": _sre_db.list_experiments(run_id=run_id or None, limit=100),
+            "leaderboard": _sre_db.strategy_leaderboard()}
 
 
 # ── 정적 UI (japan_shorts_app) — 같은 포트에서 서빙 ─────
