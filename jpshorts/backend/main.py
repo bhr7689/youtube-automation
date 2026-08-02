@@ -885,10 +885,12 @@ try:
     import sre_runtime as _sre
     import sre_store as _sre_db
     import sre_provider as _sre_prov
+    import sre_sources as _sre_src
     _SRE_OK, _SRE_ERR = True, ""
 except Exception as _e:            # 로드 실패해도 나머지 API 는 계속 동작
     _SRE_OK, _SRE_ERR = False, str(_e)
     _sre_prov = None
+    _sre_src = None
 
 
 class SREReq(BaseModel):
@@ -937,6 +939,81 @@ def sre_run(run_id: str):
     if not rep:
         raise HTTPException(404, "결과를 찾을 수 없어요")
     return rep
+
+
+# ── Phase 3: URL 자동수집 · 다중 소스 비교 · A/B/C/D 승자판정 ─────
+class SRECollectReq(BaseModel):
+    url: str
+    allow_whisper: bool = False
+
+
+@app.post("/api/sre/collect-url")
+def sre_collect_url(req: SRECollectReq):
+    if not (_SRE_OK and _sre_src):
+        raise HTTPException(500, "SRE 소스 모듈 미로드")
+    url = (req.url or "").strip()
+    if not url:
+        raise HTTPException(400, "URL 을 입력해주세요.")
+    key = os.environ.get("OPENAI_API_KEY", "").strip() or None
+    return _sre_src.collect_source(url, allow_whisper=req.allow_whisper, openai_key=key)
+
+
+class SRESourceItem(BaseModel):
+    label: str = ""
+    text: str = ""
+    kind: str = "script"
+
+
+class SRECompareReq(BaseModel):
+    sources: list[SRESourceItem] = Field(default_factory=list)
+    markets: list[str] = Field(default_factory=lambda: ["KR"])
+    provider: str = "off"          # 비교는 규칙기반 기본(빠름·결정론)
+
+
+@app.post("/api/sre/compare")
+def sre_compare(req: SRECompareReq):
+    if not (_SRE_OK and _sre_src):
+        raise HTTPException(500, "SRE 소스 모듈 미로드")
+    items = [s for s in req.sources if (s.text or "").strip()]
+    if len(items) < 2:
+        raise HTTPException(400, "비교하려면 본문 있는 소스가 2개 이상 필요해요.")
+    reports, labels = [], []
+    for i, s in enumerate(items):
+        rep = _sre.run_analysis(text=s.text.strip(), kind=s.kind,
+                                markets=req.markets, provider=req.provider,
+                                persist=False)
+        reports.append(rep)
+        labels.append(s.label.strip() or f"소스{i+1}")
+    comparison = _sre_src.compare_sources(reports, labels)
+    return {"reports": reports, "comparison": comparison, "labels": labels}
+
+
+class SREJudgeEntry(BaseModel):
+    strategy: str
+    metricName: str = ""
+    value: float | None = None
+    title: str = ""
+
+
+class SREJudgeReq(BaseModel):
+    entries: list[SREJudgeEntry] = Field(default_factory=list)
+    higher_is_better: bool = True
+    country: str | None = None
+    niche: str | None = None
+    record: bool = False
+
+
+@app.post("/api/sre/judge")
+def sre_judge(req: SREJudgeReq):
+    if not (_SRE_OK and _sre_src):
+        raise HTTPException(500, "SRE 소스 모듈 미로드")
+    entries = [e.model_dump() for e in req.entries]
+    res = _sre_src.judge_experiment(
+        entries, higher_is_better=req.higher_is_better,
+        country=req.country, niche=req.niche, record=req.record)
+    if not res.get("ok"):
+        raise HTTPException(400, res.get("error", "판정 실패"))
+    return res
 
 
 # ── 정적 UI (japan_shorts_app) — 같은 포트에서 서빙 ─────

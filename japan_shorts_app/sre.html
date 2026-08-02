@@ -100,7 +100,11 @@
       <!-- 입력 -->
       <div class="sre-panel">
         <div class="sre-h">1️⃣ 소재 입력</div>
-        <div class="sre-sub">터진 영상의 대본/자막을 붙여넣거나, 만들고 싶은 키워드·아이디어를 적어주세요.</div>
+        <div class="sre-sub">터진 영상의 대본/자막을 붙여넣거나, <b>유튜브 링크</b>를 넣어 자막을 자동수집하거나, 만들고 싶은 키워드·아이디어를 적어주세요.</div>
+        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+          <input class="add-input" id="inUrl" style="flex:1;min-width:200px;border:1px solid #e5d9f5;border-radius:10px;padding:9px 13px;font-size:13px;outline:none;" placeholder="🔗 유튜브 링크 붙여넣기 (watch·youtu.be·shorts)">
+          <button class="sre-chip" style="border:none;background:#7c3aed;color:#fff;" onclick="collectUrl(this)">📥 링크에서 자막 수집</button>
+        </div>
         <textarea class="sre-in" id="inText" placeholder="예) 여러분 이거 진짜 몰랐어요. 사실 대부분 잘못 알고 있거든요. 제가 직접 30일 해봤는데…"></textarea>
         <div class="sre-controls">
           <div class="sre-seg" id="kindSeg">
@@ -145,6 +149,30 @@
           <div class="tabpanel" id="p_critic"></div>
           <div class="tabpanel" id="p_json"></div>
         </div>
+
+        <!-- A/B/C/D 성과 승자판정 -->
+        <div class="sre-panel">
+          <div class="sre-h">🏆 A/B/C/D 성과 승자판정</div>
+          <div class="sre-sub">실제로 올려본 뒤 각 전략의 성과(예: 3초 유지율·CTR·평균시청)를 숫자로 넣으면 승자를 가려줍니다. 이긴 각도는 시리즈화 후보 + 학습 자산으로 축적돼요.</div>
+          <div id="judgeInputs"></div>
+          <div class="sre-controls">
+            <button class="btn-run" onclick="runJudge(this)" style="padding:9px 18px;font-size:13px;">🏆 승자 판정</button>
+            <span style="font-size:12px;color:#8a80a5;">지표는 높을수록 좋다고 가정</span>
+          </div>
+          <div id="judgeResult" style="margin-top:12px;"></div>
+        </div>
+      </div>
+
+      <!-- 다중 소스 비교 -->
+      <div class="sre-panel">
+        <div class="sre-h">⚖️ 다중 소스 비교 <span style="font-weight:400;color:#8a80a5;font-size:12px;">— 여러 터진 영상의 공통 패턴 찾기</span></div>
+        <div class="sre-sub">2~4개 소재(대본/자막)를 넣으면 <b>공통 패턴</b>(전부 등장) vs <b>개별 특성</b>(그 소스만) vs <b>검증필요</b>를 갈라줍니다. 공통 = 그 계열의 승리 공식.</div>
+        <div id="cmpSources"></div>
+        <div class="sre-controls">
+          <button class="sre-chip" onclick="addCmpSource()">+ 소스 추가</button>
+          <button class="btn-run" onclick="runCompare(this)" style="padding:9px 18px;font-size:13px;">⚖️ 비교 분석</button>
+        </div>
+        <div id="cmpResult" style="margin-top:14px;"></div>
       </div>
     </main>
   </div>
@@ -327,7 +355,129 @@
       document.getElementById("p_json").innerHTML =
         "<div style='font-size:12px;color:#8a80a5;margin-bottom:6px;'>전체 리포트 JSON — 복사하거나 저장해 재사용하세요</div>" +
         block(JSON.stringify(r, null, 2));
+
+      renderJudgeInputs(r);   // 이번 결과의 A/B/C/D 로 승자판정 입력칸 준비
     }
+
+    // ── 🔗 URL 자막 자동수집 ─────────────────────────
+    async function collectUrl(btn) {
+      const url = document.getElementById("inUrl").value.trim();
+      if (!url) return toast("유튜브 링크를 넣어주세요");
+      btn.classList.add("busy"); const o = btn.textContent; btn.textContent = "수집 중…";
+      try {
+        const r = await api("/api/sre/collect-url", { method: "POST", body: JSON.stringify({ url }) });
+        if (r.text) {
+          document.getElementById("inText").value = r.text;
+          // 입력 종류를 수집 결과에 맞춤
+          const seg = document.querySelector(`#kindSeg button[data-k="${r.kind}"]`);
+          if (seg) seg.click();
+          if (r.degraded) toast("⚠️ 자막은 못 받았어요(제목만). " + (r.error || "PC에서 실행하거나 자막을 직접 붙여넣기"));
+          else toast(`✓ 수집 완료 — ${r.title || r.video_id} (${r.source || "자막"})`);
+        } else {
+          toast("수집 실패: " + (r.error || "자막·제목을 못 받았어요"));
+        }
+      } catch (e) { toast("오류: " + (e.message || e)); }
+      btn.classList.remove("busy"); btn.textContent = o;
+    }
+
+    // ── 🏆 A/B/C/D 승자판정 ──────────────────────────
+    function renderJudgeInputs(r) {
+      const strat = r.strategies || {};
+      const metric = (k) => (strat[k] && strat[k].experiment && strat[k].experiment.metric) || "";
+      document.getElementById("judgeInputs").innerHTML = ["A", "B", "C", "D"].map(k => {
+        const s = strat[k] || {};
+        return `<div style="display:flex;gap:10px;align-items:center;padding:6px 2px;flex-wrap:wrap;">
+          <span class="strat-key">${k}</span>
+          <span style="font-size:12px;color:#4b5563;flex:1;min-width:140px;">${esc((s.title || "").slice(0, 40))}</span>
+          <span style="font-size:11px;color:#a99fc0;">${esc(metric(k))}</span>
+          <input class="add-input" id="jv_${k}" type="number" step="any" style="width:110px;border:1px solid #e5d9f5;border-radius:8px;padding:6px 10px;font-size:13px;" placeholder="성과값">
+        </div>`;
+      }).join("");
+      document.getElementById("judgeResult").innerHTML = "";
+    }
+
+    async function runJudge(btn) {
+      const r = STATE.report; if (!r) return toast("먼저 역설계를 실행하세요");
+      const strat = r.strategies || {};
+      const entries = ["A", "B", "C", "D"].map(k => {
+        const v = document.getElementById("jv_" + k).value;
+        const s = strat[k] || {};
+        return { strategy: k, value: v === "" ? null : parseFloat(v),
+                 metricName: (s.experiment || {}).metric || "", title: s.title || "" };
+      }).filter(e => e.value !== null && !isNaN(e.value));
+      if (entries.length < 1) return toast("성과값을 최소 1개 입력하세요");
+      btn.classList.add("busy"); const o = btn.textContent; btn.textContent = "판정 중…";
+      try {
+        const j = await api("/api/sre/judge", { method: "POST", body: JSON.stringify({ entries }) });
+        const w = j.winner;
+        document.getElementById("judgeResult").innerHTML =
+          `<div class="strat" style="background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border-color:#bbf7d0;">
+            <div>🏆 <span class="strat-key" style="background:#16a34a;">${esc(w.strategy)}</span> <b>승리</b> — ${esc(w.metricName || "")} ${w.value}</div>
+            <div class="strat-title" style="margin:6px 0;">${esc(w.title || "")}</div>
+            <div style="font-size:12.5px;color:#166534;line-height:1.8;">${(j.reasons || []).map(x => "· " + esc(x)).join("<br>")}</div>
+            <div style="font-size:12px;color:#4b5563;margin-top:8px;">순위: ${(j.ranking || []).map(e => e.strategy + "(" + e.value + ")").join(" › ")}</div>
+          </div>`;
+        toast("🏆 " + w.strategy + " 전략 승리");
+      } catch (e) { toast("오류: " + (e.message || e)); }
+      btn.classList.remove("busy"); btn.textContent = o;
+    }
+
+    // ── ⚖️ 다중 소스 비교 ────────────────────────────
+    let CMP_N = 0;
+    function addCmpSource(label, text) {
+      if (CMP_N >= 4) return toast("최대 4개까지");
+      CMP_N++;
+      const box = document.getElementById("cmpSources");
+      const div = document.createElement("div");
+      div.style.cssText = "border:1px solid #f0ecf7;border-radius:10px;padding:10px 12px;margin-bottom:8px;";
+      div.innerHTML = `
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+          <input class="add-input cmp-label" style="width:130px;border:1px solid #e5d9f5;border-radius:8px;padding:5px 9px;font-size:12px;" placeholder="이름" value="${esc(label || ("소스" + CMP_N))}">
+          <span style="font-size:11px;color:#a99fc0;">대본/자막 붙여넣기</span>
+        </div>
+        <textarea class="sre-in cmp-text" style="min-height:70px;font-size:13px;">${esc(text || "")}</textarea>`;
+      box.appendChild(div);
+    }
+
+    async function runCompare(btn) {
+      const labels = [...document.querySelectorAll("#cmpSources .cmp-label")].map(i => i.value.trim());
+      const texts = [...document.querySelectorAll("#cmpSources .cmp-text")].map(i => i.value.trim());
+      const sources = texts.map((t, i) => ({ label: labels[i], text: t, kind: "transcript" })).filter(s => s.text);
+      if (sources.length < 2) return toast("본문 있는 소스가 2개 이상 필요해요");
+      btn.classList.add("busy"); const o = btn.textContent; btn.textContent = "비교 중…";
+      try {
+        const res = await api("/api/sre/compare", { method: "POST", body: JSON.stringify({ sources }) });
+        renderCompare(res.comparison);
+        toast("✓ 비교 완료");
+      } catch (e) { toast("오류: " + (e.message || e)); }
+      btn.classList.remove("busy"); btn.textContent = o;
+    }
+
+    function renderCompare(c) {
+      if (!c || !c.ok) { document.getElementById("cmpResult").innerHTML = `<div style="color:#a99fc0;">${esc((c && c.error) || "비교 불가")}</div>`; return; }
+      const chips = (arr, cls) => (arr || []).map(x => `<span class="badge" ${cls || ""}>${esc(x)}</span>`).join("") || '<span style="color:#c4bcd6;">—</span>';
+      const axisBlock = (title, ax) => {
+        const indiv = (ax.individual || []).map(it =>
+          `<div style="font-size:12px;margin-top:3px;"><b>${esc(it.label)}</b>만: ${chips(it.unique)}</div>`).join("");
+        return `<div class="axis">
+          <div class="axis-t">${title}</div>
+          <div style="font-size:12px;color:#16a34a;font-weight:700;">✅ 공통(전부 등장): </div><div>${chips(ax.common)}</div>
+          <div style="margin-top:6px;">${indiv}</div>
+          ${(ax.partial && ax.partial.length) ? `<div style="font-size:12px;color:#92400e;margin-top:6px;">🔎 검증필요(일부만): ${chips(ax.partial)}</div>` : ""}
+        </div>`;
+      };
+      const scoreRows = (c.scores || []).map(([lbl, sc], i) =>
+        `<div style="display:flex;justify-content:space-between;font-size:13px;padding:2px 0;"><span>${i === 0 ? "🥇 " : ""}${esc(lbl)}</span><b>${sc}</b></div>`).join("");
+      document.getElementById("cmpResult").innerHTML =
+        `<div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:10px;padding:10px 14px;font-size:13px;color:#6b21a8;margin-bottom:12px;">📊 ${esc(c.summary)}</div>` +
+        axisBlock("🔥 바이럴 신호", c.viralSignals) +
+        axisBlock("🧠 심리 트리거", c.psychTriggers) +
+        `<div class="axis"><div class="axis-t">🧩 공통 구조 단계</div><div>${chips(c.commonStages)}</div></div>` +
+        `<div class="axis"><div class="axis-t">🔥 바이럴 점수 순위</div>${scoreRows}</div>`;
+    }
+
+    // 비교 패널 기본 2칸
+    addCmpSource(); addCmpSource();
   </script>
 </body>
 </html>
