@@ -37,6 +37,44 @@ CONCEPTS = {
 }
 
 
+# ══════════════════════════════════════════════════════════
+# 🎯 3계층 키워드 모델 (제목·설명·태그에 모두 심는다)
+#   ① 메인(검색량 핵심)  ② 감성/상황(클릭률)  ③ 영문/글로벌(해외 유입)
+#   → 인기 영상과 공통 키워드 조합을 만들어 '연관 동영상'에 묶이게 함
+# ══════════════════════════════════════════════════════════
+TIERS = {
+    "KR": {
+        "main": ["playlist", "플리", "여름 재즈", "여름 음악", "재즈 플레이리스트"],
+        "emotion": ["시원한 음악", "청량한 재즈", "달콤한", "수박", "일할 때 듣는 음악",
+                    "공부할 때 듣는 음악", "드라이브", "카페 BGM"],
+        "global": ["Summer Jazz", "Summer Jazz Playlist", "BGM", "Chill", "Jazz Playlist"],
+    },
+    "JP": {
+        "main": ["playlist", "プレイリスト", "夏のジャズ", "洋楽ジャズ", "作業用BGM"],
+        "emotion": ["爽やかなジャズ", "涼しげな", "スイカ", "勉強用BGM", "カフェBGM",
+                    "店舗BGM", "リラックス ジャズ", "テンションが上がる"],
+        "global": ["Summer Jazz", "Summer Jazz Music", "BGM", "Chill", "Jazz Playlist"],
+    },
+    "US": {
+        "main": ["playlist", "summer jazz", "jazz playlist", "background music"],
+        "emotion": ["relaxing jazz", "chill jazz", "refreshing", "watermelon",
+                    "music for work", "study music", "cafe music", "for relaxing"],
+        "global": ["Summer Jazz", "BGM", "Chill", "Bossa Nova", "Lofi", "instrumental"],
+    },
+}
+
+
+def keyword_tiers(country: str = "KR") -> dict:
+    """그 나라의 3계층 키워드(화면 표시용 — 어떤 계층을 심었는지 투명하게)."""
+    return TIERS.get(country.upper(), TIERS["KR"])
+
+
+def _tier_tags(country: str, extra: list[str] | None = None) -> list[str]:
+    """3계층 전부 + 컨셉/추가어를 합친 태그 세트 (연관추천 묶임 최적)."""
+    t = keyword_tiers(country)
+    return _dedup(t["main"] + t["emotion"] + t["global"] + (extra or []))
+
+
 def _dedup(seq):
     seen, out = set(), []
     for x in seq:
@@ -103,12 +141,9 @@ def build_description_kr(concept: str = "수박") -> str:
 
 
 def build_tags_kr(concept: str = "수박") -> list[str]:
-    """🇰🇷 태그 — 한글 실검색어 + 영문 반반."""
-    base = ["playlist", "플리", "여름 재즈", "재즈 플레이리스트",
-            "공부할 때 듣는 음악", "일할 때 듣는 음악", "카페 BGM", "매장 음악",
-            "작업용 BGM", "집중 음악", "휴식 음악",
-            "Summer Jazz", "Summer Jazz Playlist", "Jazz Playlist", "BGM"]
-    return _dedup(base + [concept, f"{concept} 재즈"])
+    """🇰🇷 태그 — 3계층(메인·감성상황·영문글로벌) + 컨셉."""
+    return _tier_tags("KR", ["매장 음악", "작업용 BGM", "집중 음악", "휴식 음악",
+                             concept, f"{concept} 재즈"])
 
 
 def build_hashtags_kr(concept: str = "수박") -> str:
@@ -125,6 +160,7 @@ def generate_package_kr(concept: str = "수박") -> dict:
         "description": build_description_kr(concept),
         "tags": build_tags_kr(concept),
         "hashtags": build_hashtags_kr(concept),
+        "keyword_tiers": keyword_tiers("KR"),
     }
 
 
@@ -211,13 +247,9 @@ def build_description_jp(concept: str = "수박") -> str:
 
 
 def build_tags_jp(concept: str = "수박") -> list[str]:
-    """🇯🇵 태그 — 3대장 + 洋楽 + 영문 (예시 그대로)."""
+    """🇯🇵 태그 — 3계층 + 洋楽/3대장 + 컨셉 (예시 그대로)."""
     jp = CONCEPTS_JP.get(concept, CONCEPTS_JP["수박"])["jp"]
-    return _dedup([
-        "作業用BGM", "勉強用BGM", "カフェBGM", "洋楽", "洋楽ジャズ",
-        "Playlist", "プレイリスト", "夏のジャズ", jp, "夏 BGM", "爽やかなジャズ",
-        "Summer Jazz", "Summer Jazz Music", "店舗BGM", "テンションが上がる", "リラックス ジャズ",
-    ])
+    return _tier_tags("JP", ["勉強用", "洋楽", "夏 BGM", jp, f"{jp}ジャズ"])
 
 
 def build_hashtags_jp(concept: str = "수박") -> str:
@@ -231,13 +263,109 @@ def build_hashtags_jp(concept: str = "수박") -> str:
 def generate_package_jp(concept: str = "수박") -> dict:
     t = generate_titles_jp(concept)
     return {**t, "description": build_description_jp(concept),
-            "tags": build_tags_jp(concept), "hashtags": build_hashtags_jp(concept)}
+            "tags": build_tags_jp(concept), "hashtags": build_hashtags_jp(concept),
+            "keyword_tiers": keyword_tiers("JP")}
+
+
+# ══════════════════════════════════════════════════════════
+# 🇺🇸 미국/영어권 — use-case first (언제·왜 듣는지 앞세움)
+# ══════════════════════════════════════════════════════════
+CONCEPTS_US = {
+    "수박": {"en": "watermelon", "emoji": "🍉", "phrase": "A Sweet Bite of Watermelon",
+             "adj": "Cool & Refreshing"},
+    "레몬": {"en": "lemon", "emoji": "🍋", "phrase": "A Splash of Fresh Lemon",
+             "adj": "Zesty & Refreshing"},
+    "복숭아": {"en": "peach", "emoji": "🍑", "phrase": "A Sweet Ripe Peach",
+               "adj": "Sweet & Mellow"},
+    "바다": {"en": "ocean", "emoji": "🌊", "phrase": "An Escape to the Summer Sea",
+             "adj": "Cool & Breezy"},
+    "풋사과": {"en": "green apple", "emoji": "🍏", "phrase": "A Crisp Green Apple",
+               "adj": "Crisp & Upbeat"},
+    "메론소다": {"en": "melon soda", "emoji": "🍹", "phrase": "A Fizzy Melon Soda",
+                 "adj": "Cool & Bubbly"},
+}
+
+
+def generate_titles_us(concept: str = "수박", n_search: int = 5, n_emotion: int = 5) -> dict:
+    """🇺🇸 영어권 제목. use-case first(밀도형) 우선 + 감성형 보조."""
+    c = CONCEPTS_US.get(concept, CONCEPTS_US["수박"])
+    emoji = c["emoji"]
+    genres = ["Summer Jazz", "Bossa Nova Jazz", "Chill Jazz", "Smooth Jazz"]
+    en_tail = ["Summer Jazz BGM", "Jazz Playlist", "Chill Background Music", "Bossa Nova BGM"]
+
+    # ── use-case first(밀도형) — Music for Work/Study/Relax 나열 ──
+    leads = itertools.cycle([
+        "Refreshing Summer Jazz",
+        "Cool Summer Jazz Playlist",
+        "Relaxing Summer Bossa Nova",
+        "Fresh & Breezy Summer Jazz",
+        "Chill Summer Jazz",
+    ])
+    uses = itertools.cycle([
+        "Music for Work, Study & Café",
+        "for Work, Focus & Relax",
+        "for Study, Café & Chill",
+        "for Work, Sleep & Relaxing",
+        "for Focus, Café & Good Vibes",
+    ])
+    search = []
+    for i in range(n_search):
+        search.append(f"[Playlist] {next(leads)} {emoji} {next(uses)} | {en_tail[i % len(en_tail)]}")
+
+    # ── 감성형(문장형) 보조 ──
+    emotion = []
+    for i in range(n_emotion):
+        g = genres[i % len(genres)]
+        emotion.append(f"Playlist | {c['phrase']} {emoji} {c['adj']} {g} | Summer Jazz BGM")
+
+    my_keywords = _dedup(["summer jazz", "jazz playlist", "study music", "cafe music",
+                          "background music", "chill jazz", c["en"]])
+    return {"country": "US", "concept": concept,
+            "search_titles": search, "emotion_titles": emotion,
+            "my_keywords": my_keywords, "thumb_text": f"{c['phrase']} {emoji}"}
+
+
+def build_description_us(concept: str = "수박") -> str:
+    """🇺🇸 설명글 4단(영어, 복사용)."""
+    c = CONCEPTS_US.get(concept, CONCEPTS_US["수박"])
+    return (
+        f"A sweet and refreshing summer jazz playlist — like {c['phrase'].lower()} "
+        f"on a hot summer day. {c['emoji']}🍹\n\n"
+        "Perfect as background music for work, study, focus, at a café or shop, "
+        "or during your relaxing moments.\n\n"
+        + build_hashtags_us(concept) + "\n\n"
+        "--------------------------------------------------\n"
+        "[Tracklist]\n00:00 Song Title 1\n03:15 Song Title 2\n..."
+    )
+
+
+def build_tags_us(concept: str = "수박") -> list[str]:
+    """🇺🇸 태그 — 3계층 + use-case + 컨셉."""
+    en = CONCEPTS_US.get(concept, CONCEPTS_US["수박"])["en"]
+    return _tier_tags("US", ["work music", "sleep music", "no lyrics",
+                             "Summer Jazz Playlist", en, f"{en} jazz"])
+
+
+def build_hashtags_us(concept: str = "수박") -> str:
+    """🇺🇸 해시태그 3~5개."""
+    en = CONCEPTS_US.get(concept, CONCEPTS_US["수박"])["en"]
+    cap = en.title().replace(" ", "")
+    tags = ["#SummerJazz", "#JazzPlaylist", "#StudyMusic", f"#{cap}Jazz", "#CafeMusic"]
+    return " ".join(tags[:5])
+
+
+def generate_package_us(concept: str = "수박") -> dict:
+    t = generate_titles_us(concept)
+    return {**t, "description": build_description_us(concept),
+            "tags": build_tags_us(concept), "hashtags": build_hashtags_us(concept)}
 
 
 # ── 국가 디스패처 ──────────────────────────────────────────
 def generate_package(country: str = "KR", concept: str = "수박") -> dict:
-    return {"KR": generate_package_kr, "JP": generate_package_jp}.get(
-        country.upper(), generate_package_kr)(concept)
+    pkg = {"KR": generate_package_kr, "JP": generate_package_jp,
+           "US": generate_package_us}.get(country.upper(), generate_package_kr)(concept)
+    pkg["keyword_tiers"] = keyword_tiers(pkg["country"])   # 3계층 투명 표시
+    return pkg
 
 
 # ── 자기검증 (키·네트워크 불필요) ──────────────────────────
@@ -291,3 +419,27 @@ if __name__ == "__main__":
     for cc in CONCEPTS_JP:
         assert generate_titles_jp(cc)["search_titles"], cc
     print("\n✅ metadata_engine JP self-test 통과")
+
+    print("\n" + "=" * 55)
+    us = generate_package_us("수박")
+    print("🇺🇸 use-case first(밀도형) 제목 — 1순위")
+    for s in us["search_titles"]:
+        print("  ", s)
+    print("\n🇺🇸 emotional 제목 — 보조")
+    for s in us["emotion_titles"][:3]:
+        print("  ", s)
+    print("\n썸네일 문구:", us["thumb_text"])
+    print("해시태그:", us["hashtags"])
+    print("태그:", ", ".join(us["tags"]))
+    print("\n설명글:\n" + us["description"])
+    for cc in CONCEPTS_US:
+        assert generate_titles_us(cc)["search_titles"], cc
+
+    # 3계층 투명 확인
+    print("\n" + "=" * 55)
+    for co in ("KR", "JP", "US"):
+        t = keyword_tiers(co)
+        print(f"🎯 {co} 3계층 — 메인:{len(t['main'])} 감성상황:{len(t['emotion'])} 영문:{len(t['global'])}")
+        pkg = generate_package(co, "수박")
+        assert pkg["keyword_tiers"] and pkg["tags"] and pkg["description"], co
+    print("\n✅ metadata_engine US + 3계층 self-test 통과 (KR/JP/US 완비)")
