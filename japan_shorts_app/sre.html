@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🧬 SRE 역설계 · RefTracker</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/api.js"></script>
+  <style>
+    .sre-panel{background:#fff;border:1px solid #f0ecf7;border-radius:16px;padding:18px 20px;margin-bottom:16px;box-shadow:0 2px 10px rgba(120,60,180,.05);}
+    .sre-h{font-size:15px;font-weight:800;margin-bottom:4px;}
+    .sre-sub{font-size:12px;color:#8a80a5;margin-bottom:12px;line-height:1.6;}
+    textarea.sre-in{width:100%;min-height:150px;border:1px solid #e5d9f5;border-radius:12px;padding:12px 14px;font-size:14px;line-height:1.6;outline:none;resize:vertical;font-family:inherit;box-sizing:border-box;}
+    textarea.sre-in:focus{border-color:#7c3aed;box-shadow:0 0 0 3px rgba(124,58,237,.12);}
+    .sre-controls{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:12px;}
+    .sre-chip{font-size:12px;font-weight:700;padding:6px 13px;border-radius:999px;border:1px solid #e5d9f5;background:#faf8ff;color:#6b21a8;cursor:pointer;user-select:none;}
+    .sre-chip.on{background:#7c3aed;color:#fff;border-color:#7c3aed;}
+    .sre-seg{display:inline-flex;border:1px solid #e5d9f5;border-radius:10px;overflow:hidden;}
+    .sre-seg button{border:none;background:#fff;color:#6b21a8;font-size:12px;font-weight:700;padding:7px 12px;cursor:pointer;}
+    .sre-seg button.on{background:#7c3aed;color:#fff;}
+    .btn-run{background:#7c3aed;color:#fff;border:none;border-radius:10px;padding:11px 22px;font-size:14px;font-weight:800;cursor:pointer;}
+    .btn-run:hover{background:#6d28d9;}
+    .btn-run.busy{opacity:.5;pointer-events:none;}
+    .btn-copy{background:#f3e8ff;color:#6b21a8;border:none;border-radius:8px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;float:right;}
+    .btn-copy:hover{background:#e9d5ff;}
+    /* 진행 표시 */
+    .ag-row{display:flex;align-items:center;gap:10px;padding:6px 2px;font-size:13px;border-bottom:1px dashed #f4f0fb;}
+    .ag-row:last-child{border-bottom:none;}
+    .ag-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+    .ag-dot.ok{background:#22c55e;} .ag-dot.failed{background:#ef4444;} .ag-dot.skipped{background:#d1d5db;}
+    .ag-code{font-family:monospace;font-size:11px;color:#a99fc0;min-width:38px;}
+    .ag-ms{font-size:11px;color:#c4bcd6;margin-left:auto;}
+    /* 탭 */
+    .tabbar{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:14px;}
+    .tab{white-space:nowrap;font-size:13px;font-weight:700;padding:8px 14px;border-radius:999px;background:#f4f0fb;color:#6b21a8;border:none;cursor:pointer;}
+    .tab.on{background:#7c3aed;color:#fff;}
+    .tabpanel{display:none;} .tabpanel.on{display:block;}
+    /* 역설계 카드 */
+    .axis{border:1px solid #f0ecf7;border-radius:12px;padding:13px 15px;margin-bottom:10px;}
+    .axis-t{font-size:13px;font-weight:800;color:#4c1d95;margin-bottom:5px;}
+    .axis-b{font-size:13px;color:#4b5563;line-height:1.7;}
+    .badge{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:#ede9fe;color:#6d28d9;margin:2px 4px 2px 0;}
+    /* 점수 */
+    .score-big{font-size:44px;font-weight:900;background:linear-gradient(90deg,#7c3aed,#db2777);-webkit-background-clip:text;background-clip:text;color:transparent;line-height:1;}
+    .bar{height:9px;border-radius:999px;background:#f0ecf7;overflow:hidden;margin:6px 0;}
+    .bar > i{display:block;height:100%;background:linear-gradient(90deg,#7c3aed,#db2777);}
+    /* 전략 */
+    .strat{border:1px solid #f0ecf7;border-radius:14px;padding:15px 17px;margin-bottom:12px;background:linear-gradient(135deg,#fbfaff,#fdf4ff);}
+    .strat-key{font-size:12px;font-weight:900;color:#fff;background:#7c3aed;border-radius:8px;padding:3px 10px;margin-right:8px;}
+    .strat-title{font-size:15px;font-weight:800;margin:8px 0;}
+    .exp{background:#fff;border:1px dashed #e5d9f5;border-radius:10px;padding:10px 13px;margin-top:9px;font-size:12.5px;line-height:1.8;color:#4b5563;}
+    pre.copyblock{background:#0f172a;color:#e2e8f0;border-radius:10px;padding:12px 14px;font-size:12.5px;line-height:1.6;overflow-x:auto;white-space:pre-wrap;word-break:break-word;margin:6px 0;}
+    .kv{font-size:13px;color:#4b5563;line-height:1.9;}
+    .kv b{color:#4c1d95;}
+    .risk{display:inline-block;font-size:12px;font-weight:800;padding:4px 12px;border-radius:999px;}
+    .risk.LOW{background:#dcfce7;color:#166534;} .risk.MEDIUM{background:#fef3c7;color:#92400e;}
+    .risk.HIGH{background:#fee2e2;color:#991b1b;} .risk.BLOCKED{background:#1f2937;color:#fff;}
+    .stage-tag{font-size:10px;font-weight:700;color:#7c3aed;background:#f3e8ff;border-radius:5px;padding:1px 6px;margin-right:6px;}
+    .hidden{display:none;}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <div class="sidebar-brand">RefTracker</div>
+        <div class="sidebar-brand-sub">레퍼런스 채널 추적</div>
+      </div>
+      <nav class="nav-section">
+        <a href="trend.html" class="nav-item">🔥 트렌드 피드</a>
+        <a href="global_surge.html" class="nav-item">🌍 글로벌 급등</a>
+        <a href="youtube_discover.html" class="nav-item">🌐 YouTube 발굴</a>
+        <a href="search.html" class="nav-item">🔍 검색</a>
+        <a href="source_finder.html" class="nav-item">🕵️ 원본 소스 찾기</a>
+        <a href="surge_analysis.html" class="nav-item">📊 급등 규칙 분석</a>
+        <a href="keyword_radar.html" class="nav-item">🌡️ 키워드 레이더</a>
+        <a href="sre.html" class="nav-item active">🧬 SRE 역설계</a>
+        <a href="scriptwriter.html" class="nav-item">✍️ 대본 작성</a>
+        <a href="concept_maker.html" class="nav-item">🎨 플리 컨셉 제조기</a>
+        <a href="channels.html" class="nav-item">📺 레퍼런스 채널</a>
+        <a href="collections.html" class="nav-item">📁 컬렉션</a>
+        <a href="bookmarks.html" class="nav-item">⭐ 북마크</a>
+        <a href="notifications.html" class="nav-item">🔔 알림·작업 기록</a>
+        <a href="settings.html" class="nav-item">⚙️ 설정</a>
+      </nav>
+      <div class="nav-divider"></div>
+      <nav class="nav-section">
+        <a href="index.html" class="nav-item-secondary"><span>🏠 포털 메인</span><span>›</span></a>
+        <a href="translator.html" class="nav-item-secondary"><span>🌸 일본어 번역봇</span><span>›</span></a>
+        <a href="editor.html" class="nav-item-secondary"><span>✂️ 자동 컷편집</span><span>›</span></a>
+      </nav>
+      <div class="version">v0.4.0</div>
+    </aside>
+
+    <main class="main">
+      <span class="badge-dot">SRE-OS</span>
+      <h1 class="page-title"><span class="gradient-text">역설계</span> 스튜디오</h1>
+      <p class="page-sub">대본·자막·키워드·아이디어를 넣으면 → 역설계 6축 분석 → 바이럴 점수 → A/B/C/D 전략 → KR/JP 대본·SEO 를 한 번에. <b id="mockNote">키 없이도 규칙기반으로 동작</b>합니다.</p>
+
+      <!-- 입력 -->
+      <div class="sre-panel">
+        <div class="sre-h">1️⃣ 소재 입력</div>
+        <div class="sre-sub">터진 영상의 대본/자막을 붙여넣거나, 만들고 싶은 키워드·아이디어를 적어주세요.</div>
+        <textarea class="sre-in" id="inText" placeholder="예) 여러분 이거 진짜 몰랐어요. 사실 대부분 잘못 알고 있거든요. 제가 직접 30일 해봤는데…"></textarea>
+        <div class="sre-controls">
+          <div class="sre-seg" id="kindSeg">
+            <button data-k="script" class="on">📜 대본</button>
+            <button data-k="transcript">💬 자막</button>
+            <button data-k="keyword">🔑 키워드</button>
+            <button data-k="idea">💡 아이디어</button>
+          </div>
+          <span style="font-size:12px;color:#8a80a5;">시장:</span>
+          <span class="sre-chip on" data-m="KR">🇰🇷 KR</span>
+          <span class="sre-chip on" data-m="JP">🇯🇵 JP</span>
+          <span class="sre-chip" data-m="US">🇺🇸 US</span>
+        </div>
+        <div class="sre-controls">
+          <button class="btn-run" id="runBtn" onclick="runAnalyze(this)">🧬 역설계 실행</button>
+          <label style="font-size:12px;color:#8a80a5;cursor:pointer;display:flex;align-items:center;gap:5px;"><input type="checkbox" id="forceRe"> 강제 재분석(캐시 무시)</label>
+        </div>
+      </div>
+
+      <!-- 진행 -->
+      <div class="sre-panel hidden" id="progPanel">
+        <div class="sre-h">2️⃣ 에이전트 실행 <span id="progTag" style="font-weight:400;color:#8a80a5;font-size:12px;"></span></div>
+        <div id="progBox"></div>
+      </div>
+
+      <!-- 결과 -->
+      <div class="hidden" id="resultWrap">
+        <div class="tabbar" id="tabbar">
+          <button class="tab on" data-t="re">🔬 역설계</button>
+          <button class="tab" data-t="score">🔥 점수</button>
+          <button class="tab" data-t="strat">🎯 전략 A/B/C/D</button>
+          <button class="tab" data-t="loc">🌐 KR/JP 대본·SEO</button>
+          <button class="tab" data-t="critic">🛡️ 크리틱</button>
+          <button class="tab" data-t="json">📦 JSON</button>
+        </div>
+        <div class="sre-panel">
+          <div class="tabpanel on" id="p_re"></div>
+          <div class="tabpanel" id="p_score"></div>
+          <div class="tabpanel" id="p_strat"></div>
+          <div class="tabpanel" id="p_loc"></div>
+          <div class="tabpanel" id="p_critic"></div>
+          <div class="tabpanel" id="p_json"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const STATE = { kind: "script", markets: new Set(["KR", "JP"]), report: null };
+
+    // 입력 종류 세그먼트
+    document.querySelectorAll("#kindSeg button").forEach(b => b.onclick = () => {
+      document.querySelectorAll("#kindSeg button").forEach(x => x.classList.remove("on"));
+      b.classList.add("on"); STATE.kind = b.dataset.k;
+    });
+    // 시장 칩
+    document.querySelectorAll(".sre-chip").forEach(c => c.onclick = () => {
+      const m = c.dataset.m;
+      if (STATE.markets.has(m)) { STATE.markets.delete(m); c.classList.remove("on"); }
+      else { STATE.markets.add(m); c.classList.add("on"); }
+    });
+    // 탭
+    document.querySelectorAll("#tabbar .tab").forEach(t => t.onclick = () => {
+      document.querySelectorAll("#tabbar .tab").forEach(x => x.classList.remove("on"));
+      document.querySelectorAll(".tabpanel").forEach(x => x.classList.remove("on"));
+      t.classList.add("on"); document.getElementById("p_" + t.dataset.t).classList.add("on");
+    });
+
+    // metadata_team 은 tags=배열, hashtags=문자열 로 줄 수 있어 둘 다 안전 처리
+    function asText(v, sep) {
+      if (Array.isArray(v)) return v.join(sep);
+      return v == null ? "" : ("" + v);
+    }
+
+    function copyText(txt, btn) {
+      navigator.clipboard.writeText(txt).then(() => {
+        const o = btn.textContent; btn.textContent = "✓ 복사됨";
+        setTimeout(() => btn.textContent = o, 1200);
+      }).catch(() => toast("복사 실패 — 길게 눌러 직접 복사하세요"));
+    }
+    // 복붙 블록 — 인라인 <script> 없이(innerHTML 로 삽입돼도 안전) esc 로 텍스트 고정.
+    // 복사 버튼은 실제 렌더된 <pre> 의 textContent 를 읽어 복사.
+    function block(txt) {
+      return `<div class="cbwrap"><button class="btn-copy" onclick="copyPre(this)">📋 복사</button>`
+        + `<pre class="copyblock">${esc(txt == null ? "" : "" + txt)}</pre></div>`;
+    }
+    function copyPre(btn) {
+      const pre = btn.parentElement.querySelector("pre.copyblock");
+      if (pre) copyText(pre.textContent, btn);
+    }
+
+    async function runAnalyze(btn) {
+      const text = document.getElementById("inText").value.trim();
+      if (!text) return toast("소재를 입력해주세요");
+      if (STATE.markets.size === 0) return toast("시장을 최소 1개 선택하세요");
+      btn.classList.add("busy"); const orig = btn.textContent; btn.textContent = "분석 중…";
+      document.getElementById("progPanel").classList.remove("hidden");
+      document.getElementById("progBox").innerHTML = '<div style="color:#a99fc0;font-size:13px;">에이전트 파이프라인 실행 중…</div>';
+      document.getElementById("resultWrap").classList.add("hidden");
+      try {
+        const r = await api("/api/sre/analyze", {
+          method: "POST",
+          body: JSON.stringify({
+            text, kind: STATE.kind, markets: [...STATE.markets],
+            force: document.getElementById("forceRe").checked,
+          }),
+        });
+        STATE.report = r;
+        renderProgress(r);
+        renderResult(r);
+        document.getElementById("resultWrap").classList.remove("hidden");
+        toast("✓ 역설계 완료 — 아래 탭에서 결과를 확인하세요");
+      } catch (e) { toast("오류: " + (e.message || e)); }
+      btn.classList.remove("busy"); btn.textContent = orig;
+    }
+
+    function renderProgress(r) {
+      const md = r.metadata || {};
+      const runs = md.agentRuns || [];
+      document.getElementById("progTag").textContent =
+        `— ${md.provider === "mock" ? "규칙기반(키 없음)" : "LLM"} · run ${md.runId || "?"}` +
+        (md.reusedRunId ? " · ♻️ 캐시 재사용" : "");
+      document.getElementById("progBox").innerHTML = runs.map(a => `
+        <div class="ag-row">
+          <span class="ag-dot ${a.status}"></span>
+          <span class="ag-code">${esc(a.agent)}</span>
+          <span>${esc(a.summary || "")}${a.error ? " · ⚠️ " + esc(a.error) : ""}</span>
+          <span class="ag-ms">${a.ms}ms</span>
+        </div>`).join("") || '<div style="color:#a99fc0;">기록 없음(캐시 재사용)</div>';
+    }
+
+    function renderResult(r) {
+      const re = r.reverseEngineering || {};
+      // 역설계 6축
+      const axis = (t, body) => `<div class="axis"><div class="axis-t">${t}</div><div class="axis-b">${body}</div></div>`;
+      const chips = arr => (arr || []).map(x => `<span class="badge">${esc(x)}</span>`).join("") || '<span style="color:#c4bcd6;">—</span>';
+      const cs = re.contentStructure || {}, vd = re.viralDNA || {}, vp = re.viewerPsychology || {},
+            em = re.emotionDNA || {}, ld = re.languageDNA || {}, vo = re.voiceDNA || {};
+      const stageRows = (cs.stages || []).map(s =>
+        `<div style="font-size:12px;color:#4b5563;padding:2px 0;"><span class="stage-tag">${esc(s.stage)}</span>${esc(s.text || "")}</div>`).join("");
+      document.getElementById("p_re").innerHTML =
+        axis("🧩 콘텐츠 구조 (쇼츠 7단)", `${esc(cs.summary || "")}<div style="margin-top:7px;">${stageRows}</div>`) +
+        axis("🔥 바이럴 DNA", `공식: <b>${esc(vd.formula || "")}</b> <span class="badge">확신도 ${vd.confidence ?? 0}</span><div style="margin-top:5px;">${chips(vd.signals)}</div>`) +
+        axis("🧠 시청자 심리 트리거", `${esc(vp.summary || "")}<div style="margin-top:5px;">${chips(vp.triggers)}</div>`) +
+        axis("💓 감정 DNA", `${esc(em.summary || "")} <span class="badge">아크: ${esc(em.arc || "")}</span><div style="font-size:11px;color:#a99fc0;margin-top:4px;">곡선(문장별 감정): ${(em.curve || []).join(", ")}</div>`) +
+        axis("🗣️ 언어 DNA", `어투 <b>${esc(ld.register || "")}</b> · 평균 ${ld.sentenceLen ?? 0}자 · 명령형 ${ld.imperativeRatio ?? 0}<div style="margin-top:5px;">${chips(ld.markers)}</div>`) +
+        axis("🎙️ 보이스 DNA", `${esc(vo.summary || "")} <span class="badge">쉼밀도 ${vo.pauseDensity ?? 0}</span><div style="margin-top:5px;">${chips(vo.emphasis)}</div>`);
+
+      // 점수
+      const sc = (r.scores || {}).viralPotential || { score: 0, confidence: 0, factors: [] };
+      document.getElementById("p_score").innerHTML =
+        `<div style="text-align:center;margin-bottom:6px;"><span class="score-big">${sc.score}</span><span style="font-size:18px;color:#a99fc0;font-weight:700;">/100</span></div>` +
+        `<div class="bar"><i style="width:${sc.score}%"></i></div>` +
+        `<div style="text-align:center;font-size:12px;color:#8a80a5;margin-bottom:14px;">확신도 ${Math.round((sc.confidence || 0) * 100)}% ${r.metadata && r.metadata.mock ? "· 규칙기반 추정" : ""}</div>` +
+        (sc.factors || []).map(f => `
+          <div style="margin-bottom:9px;">
+            <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;"><span>${esc(f.name)}</span><span>+${f.points}</span></div>
+            <div class="bar"><i style="width:${Math.min(100, f.points * 3)}%"></i></div>
+            <div style="font-size:11px;color:#a99fc0;">${esc(f.why || "")}</div>
+          </div>`).join("");
+
+      // 전략 A/B/C/D
+      const strat = r.strategies || {};
+      document.getElementById("p_strat").innerHTML = ["A", "B", "C", "D"].map(k => {
+        const s = strat[k]; if (!s) return "";
+        const e = s.experiment || {};
+        return `<div class="strat">
+          <div><span class="strat-key">${k}</span><b>${esc(s.label || "")}</b></div>
+          <div class="strat-title">${esc(s.title || "")}</div>
+          <div class="kv"><b>각도</b> ${esc(s.angle || "")}<br><b>훅</b> ${esc(s.hook || "")}<br><b>썸네일 문구</b> ${esc(s.thumbText || "")}</div>
+          <div style="margin:8px 0;font-size:12.5px;color:#4b5563;">${(s.outline || []).map(o => "· " + esc(o)).join("<br>")}</div>
+          <div style="font-size:12px;color:#6d28d9;">${esc(s.rationale || "")}</div>
+          <div class="exp"><b>🧪 실험(가설)</b><br>
+            가설: ${esc(e.hypothesis || "")}<br>지표: ${esc(e.metric || "")}<br>
+            실패 조건: ${esc(e.failureMode || "")}<br>기간: ${esc(e.duration || "")}<br>
+            성공 기준: ${esc(e.successCriteria || "")}<br>다음 행동: ${esc(e.nextAction || "")}</div>
+        </div>`;
+      }).join("");
+
+      // 로컬라이제이션 KR/JP
+      const loc = r.localizations || {};
+      document.getElementById("p_loc").innerHTML = Object.keys(loc).map(m => {
+        const L = loc[m], seo = L.seo || {};
+        const scriptTxt = (L.script || []).map(s => `[${s.stage}] ${s.text || ""}`).join("\n");
+        return `<div class="axis">
+          <div class="axis-t">🌐 ${esc(m)} <span style="font-weight:400;color:#a99fc0;font-size:11px;">${esc(L.notes || "")}</span></div>
+          <div class="kv"><b>추천 제목</b> ${esc(seo.titleRecommended || "(SEO 미생성)")}</div>
+          ${seo.description ? "<div style='font-size:12px;color:#8a80a5;margin-top:8px;'>설명글</div>" + block(seo.description) : ""}
+          ${(seo.tags && seo.tags.length) ? "<div style='font-size:12px;color:#8a80a5;margin-top:8px;'>태그</div>" + block(asText(seo.tags, ", ")) : ""}
+          ${(seo.hashtags && (seo.hashtags.length || (""+seo.hashtags).trim())) ? "<div style='font-size:12px;color:#8a80a5;margin-top:8px;'>해시태그</div>" + block(asText(seo.hashtags, " ")) : ""}
+          <div style="font-size:12px;color:#8a80a5;margin-top:10px;">대본 골격(구조 단계별)</div>${block(scriptTxt)}
+        </div>`;
+      }).join("") || '<div style="color:#a99fc0;">시장 결과 없음</div>';
+
+      // 크리틱
+      const cr = r.critic || {};
+      document.getElementById("p_critic").innerHTML =
+        `<div style="margin-bottom:10px;">유사성·안전 위험도: <span class="risk ${esc(cr.similarityRisk || "LOW")}">${esc(cr.similarityRisk || "LOW")}</span></div>` +
+        `<div class="axis-t" style="margin-top:6px;">📝 검수 노트</div><div class="axis-b">${(cr.notes || []).map(n => "· " + esc(n)).join("<br>") || "—"}</div>` +
+        `<div class="axis-t" style="margin-top:12px;">🔎 검증 필요</div><div class="axis-b">${(cr.verificationRequired || []).map(n => "· " + esc(n)).join("<br>") || "없음"}</div>` +
+        `<div style="font-size:11px;color:#c4bcd6;margin-top:12px;">※ 특정 크리에이터의 고유 표현을 그대로 복제하지 않습니다 — 일반화된 구조·각도만 사용합니다.</div>`;
+
+      // JSON
+      document.getElementById("p_json").innerHTML =
+        "<div style='font-size:12px;color:#8a80a5;margin-bottom:6px;'>전체 리포트 JSON — 복사하거나 저장해 재사용하세요</div>" +
+        block(JSON.stringify(r, null, 2));
+    }
+  </script>
+</body>
+</html>

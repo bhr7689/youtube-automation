@@ -873,6 +873,67 @@ def keys_status():
     return _keys_status_payload()
 
 
+# ── 🧬 SRE-OS (역설계 → A/B/C/D 전략 → KR/JP 로컬라이제이션) ─────
+# 런타임 모듈은 저장소 루트에 있으므로 루트를 import 경로에 추가.
+# (backend/store.py 등 기존 import 를 해치지 않도록 '뒤에' append)
+_SRE_ROOT = os.path.abspath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+)
+if _SRE_ROOT not in sys.path:
+    sys.path.append(_SRE_ROOT)
+try:
+    import sre_runtime as _sre
+    import sre_store as _sre_db
+    _SRE_OK, _SRE_ERR = True, ""
+except Exception as _e:            # 로드 실패해도 나머지 API 는 계속 동작
+    _SRE_OK, _SRE_ERR = False, str(_e)
+
+
+class SREReq(BaseModel):
+    text: str = ""
+    kind: str = "script"           # script/transcript/keyword/idea
+    url: str = ""
+    markets: list[str] = Field(default_factory=lambda: ["KR"])
+    project_name: str = "SRE 프로젝트"
+    force: bool = False
+
+
+@app.get("/api/sre/health")
+def sre_health():
+    return {"ok": _SRE_OK, "error": _SRE_ERR,
+            "mock": not (tr.has_gemini() or bool(os.environ.get("OPENAI_API_KEY"))),
+            "markets": ["KR", "JP", "US"]}
+
+
+@app.post("/api/sre/analyze")
+def sre_analyze(req: SREReq):
+    if not _SRE_OK:
+        raise HTTPException(500, f"SRE 런타임 로드 실패: {_SRE_ERR}")
+    text = (req.text or "").strip()
+    if not text:
+        raise HTTPException(400, "분석할 대본/자막/키워드/아이디어를 입력해주세요.")
+    markets = req.markets or ["KR"]
+    try:
+        report = _sre.run_analysis(
+            text=text, kind=req.kind, url=req.url, markets=markets,
+            project_name=req.project_name, force=req.force)
+    except Exception as e:
+        raise HTTPException(500, f"분석 중 오류: {e}")
+    return report
+
+
+@app.get("/api/sre/run/{run_id}")
+def sre_run(run_id: str):
+    if not _SRE_OK:
+        raise HTTPException(500, "SRE 런타임 미로드")
+    if any(c in run_id for c in ("/", "\\", "..")):
+        raise HTTPException(400, "잘못된 run_id")
+    rep = _sre_db.latest_result(run_id)
+    if not rep:
+        raise HTTPException(404, "결과를 찾을 수 없어요")
+    return rep
+
+
 # ── 정적 UI (japan_shorts_app) — 같은 포트에서 서빙 ─────
 _UI_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "japan_shorts_app"
