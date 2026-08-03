@@ -327,3 +327,23 @@ function selectedValue(rootEl) {
   const c = rootEl.querySelector(".selected");
   return c ? c.dataset.v : undefined;
 }
+
+/* 🧬 SRE 역설계 메뉴 자동 주입 — 모든 페이지 사이드바에 한 번만 (개별 파일 수정 불필요) */
+(function injectSRENav() {
+  function build() {
+    const nav = document.querySelector(".sidebar .nav-section");
+    if (!nav) return;
+    if (nav.querySelector('a[href="sre.html"]')) return;   // 이미 있으면(sre.html 자신) 건너뜀
+    const a = document.createElement("a");
+    a.href = "sre.html";
+    a.className = "nav-item";
+    a.textContent = "🧬 SRE 역설계";
+    // '대본 작성' 앞에 넣어 분석→생성 흐름이 자연스럽게, 없으면 맨 끝
+    const before = nav.querySelector('a[href="scriptwriter.html"]');
+    if (before) nav.insertBefore(a, before);
+    else nav.appendChild(a);
+  }
+  if (document.readyState === "loading")
+    document.addEventListener("DOMContentLoaded", build);
+  else build();
+})();

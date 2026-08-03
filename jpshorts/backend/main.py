@@ -873,6 +873,205 @@ def keys_status():
     return _keys_status_payload()
 
 
+# ── 🧬 SRE-OS (역설계 → A/B/C/D 전략 → KR/JP 로컬라이제이션) ─────
+# 런타임 모듈은 저장소 루트에 있으므로 루트를 import 경로에 추가.
+# (backend/store.py 등 기존 import 를 해치지 않도록 '뒤에' append)
+_SRE_ROOT = os.path.abspath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+)
+if _SRE_ROOT not in sys.path:
+    sys.path.append(_SRE_ROOT)
+try:
+    import sre_runtime as _sre
+    import sre_store as _sre_db
+    import sre_provider as _sre_prov
+    import sre_sources as _sre_src
+    _SRE_OK, _SRE_ERR = True, ""
+except Exception as _e:            # 로드 실패해도 나머지 API 는 계속 동작
+    _SRE_OK, _SRE_ERR = False, str(_e)
+    _sre_prov = None
+    _sre_src = None
+
+
+class SREReq(BaseModel):
+    text: str = ""
+    kind: str = "script"           # script/transcript/keyword/idea
+    url: str = ""
+    markets: list[str] = Field(default_factory=lambda: ["KR"])
+    project_name: str = "SRE 프로젝트"
+    provider: str = "auto"         # auto/off/openai/gemini/anthropic
+    winning_formula: dict | None = None   # 다중 소스 공통 승리공식(선택 주입)
+    force: bool = False
+
+
+@app.get("/api/sre/health")
+def sre_health():
+    prov = _sre_prov.status() if _sre_prov else {"active": "mock", "available": [], "live": False}
+    return {"ok": _SRE_OK, "error": _SRE_ERR,
+            "mock": not prov.get("live"),
+            "provider": prov,
+            "markets": ["KR", "JP", "US"]}
+
+
+@app.post("/api/sre/analyze")
+def sre_analyze(req: SREReq):
+    if not _SRE_OK:
+        raise HTTPException(500, f"SRE 런타임 로드 실패: {_SRE_ERR}")
+    text = (req.text or "").strip()
+    if not text:
+        raise HTTPException(400, "분석할 대본/자막/키워드/아이디어를 입력해주세요.")
+    markets = req.markets or ["KR"]
+    try:
+        report = _sre.run_analysis(
+            text=text, kind=req.kind, url=req.url, markets=markets,
+            project_name=req.project_name, provider=req.provider,
+            winning_formula=req.winning_formula, force=req.force)
+    except Exception as e:
+        raise HTTPException(500, f"분석 중 오류: {e}")
+    return report
+
+
+@app.get("/api/sre/run/{run_id}")
+def sre_run(run_id: str):
+    if not _SRE_OK:
+        raise HTTPException(500, "SRE 런타임 미로드")
+    if any(c in run_id for c in ("/", "\\", "..")):
+        raise HTTPException(400, "잘못된 run_id")
+    rep = _sre_db.latest_result(run_id)
+    if not rep:
+        raise HTTPException(404, "결과를 찾을 수 없어요")
+    return rep
+
+
+# ── Phase 3: URL 자동수집 · 다중 소스 비교 · A/B/C/D 승자판정 ─────
+class SRECollectReq(BaseModel):
+    url: str
+    allow_whisper: bool = False
+
+
+@app.post("/api/sre/collect-url")
+def sre_collect_url(req: SRECollectReq):
+    if not (_SRE_OK and _sre_src):
+        raise HTTPException(500, "SRE 소스 모듈 미로드")
+    url = (req.url or "").strip()
+    if not url:
+        raise HTTPException(400, "URL 을 입력해주세요.")
+    key = os.environ.get("OPENAI_API_KEY", "").strip() or None
+    return _sre_src.collect_source(url, allow_whisper=req.allow_whisper, openai_key=key)
+
+
+class SREBatchReq(BaseModel):
+    urls: list[str] = Field(default_factory=list)
+    markets: list[str] = Field(default_factory=lambda: ["KR"])
+    allow_whisper: bool = False
+
+
+@app.post("/api/sre/collect-batch")
+def sre_collect_batch(req: SREBatchReq):
+    """여러 URL 한 번에 수집 → 자막 있는 것끼리 자동 비교 + 공통 승리공식 추출."""
+    if not (_SRE_OK and _sre_src):
+        raise HTTPException(500, "SRE 소스 모듈 미로드")
+    urls = [u for u in (req.urls or []) if (u or "").strip()]
+    if not urls:
+        raise HTTPException(400, "URL 을 한 줄에 하나씩 넣어주세요.")
+    key = os.environ.get("OPENAI_API_KEY", "").strip() or None
+    collected = _sre_src.collect_batch(urls, allow_whisper=req.allow_whisper, openai_key=key)
+    # 자막(본문) 확보된 소스만 비교 대상
+    usable = [c for c in collected if (c.get("text") or "").strip()]
+    comparison, formula = None, {}
+    if len(usable) >= 2:
+        reports, labels = [], []
+        for c in usable:
+            rep = _sre.run_analysis(text=c["text"], kind=c.get("kind", "transcript"),
+                                    markets=req.markets, provider="off", persist=False)
+            reports.append(rep)
+            labels.append(c.get("label", "소스"))
+        comparison = _sre_src.compare_sources(reports, labels)
+        formula = _sre_src.winning_formula(comparison)
+    return {"collected": collected, "usableCount": len(usable),
+            "comparison": comparison, "winningFormula": formula}
+
+
+class SRESourceItem(BaseModel):
+    label: str = ""
+    text: str = ""
+    kind: str = "script"
+
+
+class SRECompareReq(BaseModel):
+    sources: list[SRESourceItem] = Field(default_factory=list)
+    markets: list[str] = Field(default_factory=lambda: ["KR"])
+    provider: str = "off"          # 비교는 규칙기반 기본(빠름·결정론)
+
+
+@app.post("/api/sre/compare")
+def sre_compare(req: SRECompareReq):
+    if not (_SRE_OK and _sre_src):
+        raise HTTPException(500, "SRE 소스 모듈 미로드")
+    items = [s for s in req.sources if (s.text or "").strip()]
+    if len(items) < 2:
+        raise HTTPException(400, "비교하려면 본문 있는 소스가 2개 이상 필요해요.")
+    reports, labels = [], []
+    for i, s in enumerate(items):
+        rep = _sre.run_analysis(text=s.text.strip(), kind=s.kind,
+                                markets=req.markets, provider=req.provider,
+                                persist=False)
+        reports.append(rep)
+        labels.append(s.label.strip() or f"소스{i+1}")
+    comparison = _sre_src.compare_sources(reports, labels)
+    formula = _sre_src.winning_formula(comparison)
+    return {"reports": reports, "comparison": comparison,
+            "winningFormula": formula, "labels": labels}
+
+
+class SREJudgeEntry(BaseModel):
+    strategy: str
+    metricName: str = ""
+    value: float | None = None
+    title: str = ""
+
+
+class SREJudgeReq(BaseModel):
+    entries: list[SREJudgeEntry] = Field(default_factory=list)
+    higher_is_better: bool = True
+    country: str | None = None
+    niche: str | None = None
+    record: bool = False
+    run_id: str = ""               # 어느 분석 결과에 대한 실험인지(옵션)
+    persist: bool = True           # 성과를 store 에 영속 저장
+
+
+@app.post("/api/sre/judge")
+def sre_judge(req: SREJudgeReq):
+    if not (_SRE_OK and _sre_src):
+        raise HTTPException(500, "SRE 소스 모듈 미로드")
+    entries = [e.model_dump() for e in req.entries]
+    res = _sre_src.judge_experiment(
+        entries, higher_is_better=req.higher_is_better,
+        country=req.country, niche=req.niche, record=req.record)
+    if not res.get("ok"):
+        raise HTTPException(400, res.get("error", "판정 실패"))
+    # 실험 성과 영속 저장(승자 표식 포함) — 학습 리더보드로 축적
+    if req.persist:
+        scored = [e for e in entries if isinstance(e.get("value"), (int, float))]
+        try:
+            batch = _sre_db.save_experiment(
+                scored, winner=res["winner"]["strategy"], run_id=req.run_id)
+            res["batchId"] = batch
+            res["leaderboard"] = _sre_db.strategy_leaderboard()
+        except Exception as e:
+            res["persistError"] = str(e)
+    return res
+
+
+@app.get("/api/sre/experiments")
+def sre_experiments(run_id: str = ""):
+    if not (_SRE_OK and _sre_db):
+        raise HTTPException(500, "SRE 저장소 미로드")
+    return {"experiments": _sre_db.list_experiments(run_id=run_id or None, limit=100),
+            "leaderboard": _sre_db.strategy_leaderboard()}
+
+
 # ── 정적 UI (japan_shorts_app) — 같은 포트에서 서빙 ─────
 _UI_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "japan_shorts_app"

@@ -554,4 +554,88 @@ python pipeline.py --init                              # 파이프라인 폴더 
     제목 갤러리 + 승리공식). 1만+ 구간만 분석·생성 표본으로 불러오기(그 아래는 1만 필터에
     걸려 분류·비교용). 검증: 경계 테스트(9900→8천~1만·10000→1만~3만) + AppTest 8탭 예외0.
   - **다음**: eqO5N 머지(→ 사장님 화면 반영) → 실키 end-to-end → 수집 키워드 시드 튜닝.
+- [x] 🧬 **SRE-OS Phase 0~1 — 역설계 운영체제(기존 자산 위에 얹기)**(2026-08-02,
+  elements-tools-planning-list-yqqo2t): 사장님이 준 "SRE-OS MASTER SPEC v1.0"을 기존
+  일본쇼츠(FastAPI/Python/SQLite) 위에 큐레이션해 얹음. **원본 Next.js/Postgres 모노레포는
+  채택 안 함** — 기존 `metadata_team`(편집장+전문가) 패턴을 역설계 런타임으로 확장.
+  큐레이션 스펙: `ideas/sre_os_spec.md`(19에이전트↔기존자산 매핑: 있음8/일부8/신규3).
+  - **Phase 0(코어, 키 없이 end-to-end)**:
+    · `sre_schemas.py` — 출력 계약 v1.0(역설계6축/A~D전략+실험/바이럴점수/크리틱/메타)
+      + validate_report/assert_valid. 빈 골격 생성기.
+    · `sre_store.py` — SQLite(`sre_os.db`, gitignore=*.db) Project/Source/Run/AgentRun/
+      ResultVersion + **Idempotency**(같은 입력 재실행 시 완료 Run 재사용, force=강제) + 버전관리.
+    · `sre_runtime.py` — **12에이전트 파이프라인**(공유 SREContext 를 흘림, 스테이지 격리):
+      A01 정규화·A02 근거·**A03 콘텐츠구조(쇼츠7단, 신규)**·A04 바이럴DNA·A05 시청심리·
+      **A06 감정DNA(감정곡선, 신규)**·A07 언어DNA·**A08 보이스DNA(속도·쉼, 신규)**·
+      A12 A/B/C/D전략(경험/스토리/사실/호기심, 각자 실험가설)·A16 로컬라이제이션(KR/JP SEO는
+      `metadata_team.produce_package` 재사용)·바이럴점수(0~100+근거)·A18 크리틱(유사성 LOW~BLOCKED
+      +검증필요). 규칙기반=Mock(키 없이 100% 채움), `llm_call` 주입구 남김(Phase 2 심화용).
+  - **Phase 1(UI, 사장님이 바로 씀)**:
+    · `jpshorts/backend/main.py` — `/api/sre/{health,analyze,run}` 추가. 저장소 루트를 import
+      경로에 append 해 루트 모듈 재사용(로드 실패해도 기존 API 무영향). 이미 있는 `일본쇼츠실행.bat`
+      (포트 8787) 서버가 그대로 서빙 — **새 런처 불필요**.
+    · `japan_shorts_app/sre.html` — 모바일 세로 워크스페이스. 입력(대본/자막/키워드/아이디어 세그)
+      +시장칩(KR/JP/US) → 12에이전트 진행표시 → 결과 6탭(🔬역설계6축·🔥점수·🎯A/B/C/D·
+      🌐KR/JP 대본+SEO 복붙블록·🛡️크리틱·📦JSON). 복붙블록은 인라인script 없이 `<pre>` textContent 복사.
+    · `assets/api.js` — 🧬 SRE 역설계 메뉴를 전 페이지 사이드바에 **자동 주입**(개별 파일 수정 없이).
+  - 검증: 3모듈 self-test(스키마 위반감지/Idempotency/end-to-end Mock) + 백엔드 라이브
+    (health mock=true, analyze score=86, KR/JP SEO 생성) + Playwright E2E(6축·12에이전트·4전략·
+    8복붙블록·크리틱·JSON·nav주입, 실제 JS예외 0). ⚠️ 남은 콘솔경고는 컨테이너 프록시가 PWA
+    외부아이콘 차단한 것(코드무관, 사장님 PC 정상).
+  - **Phase 2 — Provider Adapter + LLM 심화**(2026-08-02, 같은 브랜치):
+    · `sre_provider.py` 신규 — LLM 프로바이더 어댑터(Anthropic/OpenAI/Gemini + Mock).
+      우선순위 SRE_PROVIDER>anthropic>openai>gemini. `llm_json()`=구조화 JSON(코드펜스·잡텍스트
+      방어 파싱), 키없음/라이브러리없음/실패/파싱실패 전부 격리 → None(규칙기반 폴백 신호).
+      `status/available/active_provider/is_live`. 백엔드 concept_maker._llm 과 같은 개념이나
+      루트에서 독립(백엔드 경로 의존 없음).
+    · `sre_runtime.py`: **Deepener(A19d)** 스테이지 추가 — 규칙기반은 항상 backbone(스키마
+      100% 보장), 키 있으면 LLM 이 6축 해석+전략 텍스트만 덮어씀(감정곡선·점수·구조단계 등
+      **측정값은 보존**). `run_analysis(provider="auto"/off/openai/gemini/anthropic)`. 응답없음·
+      실패 시 규칙기반 유지(격리). metadata.insight/provider 기록.
+    · `main.py`: /api/sre/health 에 provider status, analyze 에 provider 옵션.
+    · `sre.html`: 엔진 배지(🟢 {provider} LLM 심화 / ⚪ 규칙기반) + 💡 핵심 인사이트 배너.
+    · 검증: provider self-test + runtime self-test(13스테이지+LLM병합+skipped) + **더미키
+      live배선**(available→openai 선택, 실패→규칙기반 폴백, 스키마 유효) + Playwright(6축·
+      13에이전트·인사이트배너, JS예외 0). ⚠️ 실제 LLM 심화는 사장님 PC(OpenAI 키 연결됨)에서.
+  - **Phase 3 — URL 자막 자동수집 + 다중 소스 비교 + A/B/C/D 승자판정**(2026-08-02, 같은 브랜치):
+    · `sre_sources.py` 신규(순수로직 + 자기검증):
+      - `collect_source(url)` — `transcript_probe.get_lyrics`(자막, youtube-transcript-api→Whisper)
+        + 키없는 **oEmbed**(제목/채널, API쿼터 0) 재사용. 자막 실패해도 제목만 degraded 반환 +
+        명확한 한계 메시지. video_id 추출 watch/youtu.be/shorts/embed 지원.
+      - `compare_sources(reports)` — 원본 Multi-Source Pattern: **공통(전부 등장)·개별(그 소스만)·
+        검증필요(일부만)** 분리 + 공통 구조단계 + 바이럴 점수 순위. 무키.
+      - `judge_experiment(entries)` — 전략별 실측 성과로 승자 판정 + 격차%·접전(5%미만) 경고
+        + `asset_ledger` 승자 기록(옵트인).
+    · `main.py`: `/api/sre/{collect-url, compare, judge}` 추가. 비교는 규칙기반 기본(빠름·결정론).
+    · `sre.html`: ①입력창 🔗 링크 자막수집(수집→본문 자동채움+종류 맞춤) ②🏆 A/B/C/D 승자판정
+      (결과 전략에 성과값 입력→승자·순위·이유 카드) ③⚖️ 다중 소스 비교(2~4개→공통/개별/검증필요/
+      점수순위 렌더).
+    · 검증: self-test(URL 5종·비교·승자판정) + 백엔드 라이브(compare 공통신호3종·judge D승·
+      collect-url graceful) + Playwright E2E(judge 4칸·승리·compare 4축·공통, JS예외 0).
+      ⚠️ 실제 자막수집은 사장님 PC(유튜브 접근)에서 완전 동작 — 웹 컨테이너는 프록시가 유튜브 차단.
+  - **Phase 4 — 실험 성과 영속 저장 + 공통 승리공식 자동 주입**(2026-08-02, 같은 브랜치):
+    · ① 실험 성과 store 영속: `sre_store.py` 에 `sre_experiment` 테이블 + `save_experiment`
+      (배치·승자표식·run_id) + `list_experiments` + `strategy_leaderboard`(전략별 승리횟수·
+      topStrategy). `/api/sre/judge` 가 저장(batchId·leaderboard 반환) + `/api/sre/experiments`
+      (이력+리더보드) 신설. sre.html 승자판정에 💾 저장됨 + 📈 누적 승률.
+    · ② 공통 승리공식 주입: `sre_sources.winning_formula(comparison)` — 공통 신호·트리거·구조
+      압축. `sre_runtime` SREContext.winning_formula → StrategyGenerator 가 공통 트리거를 최우선
+      각도로 + rationale "공통 승리공식 계승" 표기, Deepener 프롬프트 주입, metadata 기록,
+      idempotency 키에 포함(캐시 분리). compare 가 winningFormula 반환, analyze 가 수용.
+      sre.html: 비교 결과 🏆 공통공식 + "✨ 생성에 주입" 버튼 → 입력창 초록 배너(주입 토글) →
+      다음 역설계에 자동 계승.
+    · 검증: store/sources/runtime self-test + 백엔드 라이브(judge 영속·리더보드 D2승·compare→WF·
+      analyze+WF) + Playwright E2E(주입버튼·배너·계승·저장·누적승률, JS예외 0).
+  - **Phase 5 — 실험 리더보드↔metadata_team 각도 반영 + URL 배치 수집**(2026-08-02, 같은 브랜치):
+    · ① 이긴 각도 반영: `metadata_team.winning_angle()` — sre_store 소프트 연결로 실험 리더보드에서
+      가장 자주 이긴 A/B/C/D 각도를 읽어 제목 전략 힌트 반환(데이터 없으면 무영향). ChiefEditor 가
+      팀 리포트에 🧪 실험 학습 노트 + final.winning_angle. sre_runtime Localizer SEO 에 winningAngle
+      실음. sre.html KR/JP 탭에 🧪 실험 학습 배너("이 계정에서 D 호기심 각도 N승/M회").
+    · ② URL 배치 수집: `sre_sources.collect_batch(urls)`(빈줄 무시·중복 video_id 제거·실패도 포함)
+      + `/api/sre/collect-batch`(수집→자막 확보분끼리 자동 비교+공통공식). sre.html 비교 패널에
+      🔗 링크 배치 수집(한 줄에 하나)→비교 칸 자동 채움+렌더.
+    · 검증: self-test + 통합(실험 D2승→metadata_team winning_angle→SEO 반영) + 백엔드 라이브 +
+      Playwright(배치 렌더경로·wf주입·실험학습 배너, JS예외 0). ⚠️ 실배치 수집은 사장님 PC(유튜브).
+  - **다음**: ⚠️ **eqO5N(default) 머지해야 사장님 화면 반영(Phase 0~5 전부)** → 실키 end-to-end
+    (사장님 PC OpenAI 키로 LLM 심화·자막수집) → 수집 소스 축적하며 리더보드·asset_ledger 성장.
 - (작업하며 갱신할 것)
