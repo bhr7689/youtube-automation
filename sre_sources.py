@@ -112,6 +112,31 @@ def collect_source(url: str, *, allow_whisper: bool = False,
     }
 
 
+def collect_batch(urls: list[str], *, allow_whisper: bool = False,
+                  openai_key: str | None = None, limit: int = 8) -> list[dict]:
+    """여러 URL 을 한 번에 수집. 각 항목은 collect_source 결과 + label(제목/순번).
+
+    실패해도 리스트에서 빠지지 않고 ok=False 로 포함(투명성). 최대 limit 개.
+    """
+    out = []
+    seen = set()
+    for i, u in enumerate(urls):
+        u = (u or "").strip()
+        if not u:
+            continue
+        vid = extract_video_id(u)
+        if vid and vid in seen:      # 같은 영상 중복 제거
+            continue
+        if vid:
+            seen.add(vid)
+        if len(out) >= limit:
+            break
+        res = collect_source(u, allow_whisper=allow_whisper, openai_key=openai_key)
+        res["label"] = (res.get("title") or f"소스{i+1}")[:40]
+        out.append(res)
+    return out
+
+
 # ── 다중 소스 비교(공통 패턴 vs 개별 특성) ──────────────────────
 def _axis_items(report: dict, axis: str, key: str) -> list[str]:
     v = (report.get("reverseEngineering", {}).get(axis, {}) or {}).get(key, [])
@@ -274,6 +299,13 @@ if __name__ == "__main__":
     bad = collect_source("아무거나")
     assert not bad["ok"] and "video_id" in bad["error"]
     print("✅ 잘못된 URL 안전 실패")
+
+    # 2b) collect_batch — 잘못된 URL 여러 개도 리스트에 안전 포함 + 빈 줄 무시 + 중복제거
+    batch = collect_batch(["아무거나1", "", "https://youtu.be/dQw4w9WgXcQ",
+                           "https://www.youtube.com/watch?v=dQw4w9WgXcQ"])
+    assert len(batch) == 2, f"빈줄 무시 + 중복 video_id 제거 → 2개, got {len(batch)}"
+    assert all("ok" in r and "label" in r for r in batch)
+    print(f"✅ collect_batch — {len(batch)}개(빈줄 무시·중복제거)")
 
     # 3) 다중 소스 비교 — 합성 리포트 2개
     def mk(signals, triggers, stages, score):

@@ -172,6 +172,12 @@
       <div class="sre-panel">
         <div class="sre-h">⚖️ 다중 소스 비교 <span style="font-weight:400;color:#8a80a5;font-size:12px;">— 여러 터진 영상의 공통 패턴 찾기</span></div>
         <div class="sre-sub">2~4개 소재(대본/자막)를 넣으면 <b>공통 패턴</b>(전부 등장) vs <b>개별 특성</b>(그 소스만) vs <b>검증필요</b>를 갈라줍니다. 공통 = 그 계열의 승리 공식.</div>
+        <div style="background:#faf8ff;border:1px solid #ece7f5;border-radius:10px;padding:10px 12px;margin-bottom:12px;">
+          <div style="font-size:12.5px;font-weight:700;color:#6b21a8;margin-bottom:6px;">🔗 링크 배치 수집 <span style="font-weight:400;color:#a99fc0;">— 유튜브 링크를 한 줄에 하나씩(최대 8개)</span></div>
+          <textarea class="sre-in" id="batchUrls" style="min-height:70px;font-size:12.5px;" placeholder="https://youtu.be/...\nhttps://www.youtube.com/shorts/...\nhttps://www.youtube.com/watch?v=..."></textarea>
+          <button class="sre-chip" style="border:none;background:#7c3aed;color:#fff;margin-top:8px;" onclick="collectBatch(this)">📥 링크들 한번에 수집·비교</button>
+          <div id="batchStatus" style="font-size:12px;color:#8a80a5;margin-top:8px;"></div>
+        </div>
         <div id="cmpSources"></div>
         <div class="sre-controls">
           <button class="sre-chip" onclick="addCmpSource()">+ 소스 추가</button>
@@ -340,8 +346,10 @@
       document.getElementById("p_loc").innerHTML = Object.keys(loc).map(m => {
         const L = loc[m], seo = L.seo || {};
         const scriptTxt = (L.script || []).map(s => `[${s.stage}] ${s.text || ""}`).join("\n");
+        const wa = seo.winningAngle;
         return `<div class="axis">
           <div class="axis-t">🌐 ${esc(m)} <span style="font-weight:400;color:#a99fc0;font-size:11px;">${esc(L.notes || "")}</span></div>
+          ${wa ? `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:7px 11px;font-size:12px;color:#166534;margin-bottom:8px;">🧪 <b>실험 학습</b> — 이 계정에서 <b>${esc(wa.label)}</b> 각도가 ${wa.wins}승/${wa.totalBatches}회. ${esc(wa.hint)}</div>` : ""}
           <div class="kv"><b>추천 제목</b> ${esc(seo.titleRecommended || "(SEO 미생성)")}</div>
           ${seo.description ? "<div style='font-size:12px;color:#8a80a5;margin-top:8px;'>설명글</div>" + block(seo.description) : ""}
           ${(seo.tags && seo.tags.length) ? "<div style='font-size:12px;color:#8a80a5;margin-top:8px;'>태그</div>" + block(asText(seo.tags, ", ")) : ""}
@@ -509,6 +517,34 @@
           <div class="axis-b">${esc(wf.summary)}</div>
           <button class="btn-run" style="margin-top:8px;padding:8px 16px;font-size:13px;background:#16a34a;" onclick="setWF(window.__lastWF)">✨ 이 공식을 새 소재 생성에 주입</button>
         </div>` : "");
+    }
+
+    // ── 🔗 링크 배치 수집 → 자동 비교 ────────────────
+    async function collectBatch(btn) {
+      const urls = document.getElementById("batchUrls").value.split("\n").map(s => s.trim()).filter(Boolean);
+      if (urls.length < 1) return toast("유튜브 링크를 넣어주세요(한 줄에 하나)");
+      btn.classList.add("busy"); const o = btn.textContent; btn.textContent = "수집 중…";
+      document.getElementById("batchStatus").textContent = `${urls.length}개 수집 중…`;
+      try {
+        const res = await api("/api/sre/collect-batch", { method: "POST", body: JSON.stringify({ urls }) });
+        const col = res.collected || [];
+        // 수집 결과를 비교 소스 칸에 채움(자막 확보된 것만)
+        document.getElementById("cmpSources").innerHTML = ""; CMP_N = 0;
+        let filled = 0;
+        col.forEach(c => { if ((c.text || "").trim()) { addCmpSource(c.label, c.text); filled++; } });
+        while (CMP_N < 2) addCmpSource();   // 최소 2칸 유지
+        const statusRows = col.map(c =>
+          `${(c.text || "").trim() ? "✅" : "⚠️"} ${esc(c.label || c.video_id || "?")}${c.degraded ? " (자막 없음)" : ""}`).join("<br>");
+        document.getElementById("batchStatus").innerHTML =
+          `수집 ${col.length}개 · 본문 확보 ${res.usableCount}개<br>${statusRows}`;
+        if (res.comparison && res.comparison.ok) {
+          renderCompare(res.comparison, res.winningFormula);
+          toast(`✓ ${res.usableCount}개 비교 완료`);
+        } else if (filled < 2) {
+          toast("⚠️ 자막 확보 소스가 2개 미만 — PC에서 실행하거나 대본을 직접 붙여넣기");
+        }
+      } catch (e) { toast("오류: " + (e.message || e)); }
+      btn.classList.remove("busy"); btn.textContent = o;
     }
 
     // 비교 패널 기본 2칸

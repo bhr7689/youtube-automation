@@ -960,6 +960,38 @@ def sre_collect_url(req: SRECollectReq):
     return _sre_src.collect_source(url, allow_whisper=req.allow_whisper, openai_key=key)
 
 
+class SREBatchReq(BaseModel):
+    urls: list[str] = Field(default_factory=list)
+    markets: list[str] = Field(default_factory=lambda: ["KR"])
+    allow_whisper: bool = False
+
+
+@app.post("/api/sre/collect-batch")
+def sre_collect_batch(req: SREBatchReq):
+    """여러 URL 한 번에 수집 → 자막 있는 것끼리 자동 비교 + 공통 승리공식 추출."""
+    if not (_SRE_OK and _sre_src):
+        raise HTTPException(500, "SRE 소스 모듈 미로드")
+    urls = [u for u in (req.urls or []) if (u or "").strip()]
+    if not urls:
+        raise HTTPException(400, "URL 을 한 줄에 하나씩 넣어주세요.")
+    key = os.environ.get("OPENAI_API_KEY", "").strip() or None
+    collected = _sre_src.collect_batch(urls, allow_whisper=req.allow_whisper, openai_key=key)
+    # 자막(본문) 확보된 소스만 비교 대상
+    usable = [c for c in collected if (c.get("text") or "").strip()]
+    comparison, formula = None, {}
+    if len(usable) >= 2:
+        reports, labels = [], []
+        for c in usable:
+            rep = _sre.run_analysis(text=c["text"], kind=c.get("kind", "transcript"),
+                                    markets=req.markets, provider="off", persist=False)
+            reports.append(rep)
+            labels.append(c.get("label", "소스"))
+        comparison = _sre_src.compare_sources(reports, labels)
+        formula = _sre_src.winning_formula(comparison)
+    return {"collected": collected, "usableCount": len(usable),
+            "comparison": comparison, "winningFormula": formula}
+
+
 class SRESourceItem(BaseModel):
     label: str = ""
     text: str = ""

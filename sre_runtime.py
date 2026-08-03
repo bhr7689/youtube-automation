@@ -386,6 +386,7 @@ class Localizer(Agent):
                         "tags": pkg.get("tags", []),
                         "hashtags": pkg.get("hashtags", []),
                         "thumbnail": pkg.get("thumbnail", {}),
+                        "winningAngle": pkg.get("winning_angle"),  # 🧪 실험서 이긴 각도
                     }
                 except Exception as e:
                     loc["seo"] = {"error": f"metadata_team 실패: {e}"}

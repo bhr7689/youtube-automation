@@ -30,6 +30,41 @@ try:
     import asset_ledger
 except Exception:
     asset_ledger = None
+try:
+    import sre_store as _sre_store   # SRE 실험 리더보드(이긴 각도) 소프트 연결
+except Exception:
+    _sre_store = None
+
+# A/B/C/D 각도 라벨(SRE 전략 ↔ 제목 각도 매핑)
+_ANGLE_LABEL = {"A": "경험(체험 인증)", "B": "스토리(서사·반전)",
+                "C": "사실(정보·권위)", "D": "호기심(정보 격차)"}
+_ANGLE_HINT = {
+    "A": "제목·훅을 1인칭 체험/인증 각도로",
+    "B": "제목·훅을 이야기/반전 구조로",
+    "C": "제목·훅을 정보/권위 각도로",
+    "D": "제목·훅을 호기심 격차/미완결 각도로",
+}
+
+
+def winning_angle() -> dict | None:
+    """SRE 실험 리더보드에서 '가장 자주 이긴 각도'를 읽어 제목 전략 힌트로 반환.
+    실험 데이터가 없으면 None(무영향)."""
+    if not _sre_store:
+        return None
+    try:
+        lb = _sre_store.strategy_leaderboard()
+    except Exception:
+        return None
+    top = lb.get("topStrategy")
+    if not top or lb.get("totalBatches", 0) < 1:
+        return None
+    return {
+        "strategy": top,
+        "label": _ANGLE_LABEL.get(top, top),
+        "hint": _ANGLE_HINT.get(top, ""),
+        "wins": lb.get("wins", {}).get(top, 0),
+        "totalBatches": lb.get("totalBatches", 0),
+    }
 
 
 def _niche(country: str, concept: str) -> str:
@@ -273,6 +308,13 @@ class ChiefEditor:
                                 adopted=(serp["verdict"] == "adopt"))
         playbook = asset_ledger.genre_playbook(country, niche) if asset_ledger else {}
 
+        # 🧪 SRE 실험 학습 — 이 계정에서 가장 자주 이긴 각도를 제목 전략에 반영
+        angle = winning_angle()
+        if angle:
+            b.log("🧪 실험 학습(각도)",
+                  f"이긴 각도: {angle['label']} — {angle['wins']}승/{angle['totalBatches']}회",
+                  {"hint": angle["hint"]})
+
         # 최종 복붙 패키지 종합
         final = {
             "country": country,
@@ -290,6 +332,7 @@ class ChiefEditor:
             "niche": niche,
             "genre_playbook": playbook,                       # 📖 이 장르 승리 패턴(축적)
             "asset_count": titles.get("asset_count", 0),
+            "winning_angle": angle,                           # 🧪 실험서 이긴 각도(있으면)
             "team_report": b.report,                          # 전문가 10명 각자 요약
         }
         return final
