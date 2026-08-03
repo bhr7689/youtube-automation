@@ -626,6 +626,16 @@ python pipeline.py --init                              # 파이프라인 폴더 
       다음 역설계에 자동 계승.
     · 검증: store/sources/runtime self-test + 백엔드 라이브(judge 영속·리더보드 D2승·compare→WF·
       analyze+WF) + Playwright E2E(주입버튼·배너·계승·저장·누적승률, JS예외 0).
-  - **다음(Phase 5~)**: ⚠️ **eqO5N(default) 머지해야 사장님 화면 반영** → asset_ledger 와 실험
-    리더보드 통합(승자 각도를 metadata_team 추천에 반영) → 실키 end-to-end(사장님 PC) → 소스 URL 배치 수집.
+  - **Phase 5 — 실험 리더보드↔metadata_team 각도 반영 + URL 배치 수집**(2026-08-02, 같은 브랜치):
+    · ① 이긴 각도 반영: `metadata_team.winning_angle()` — sre_store 소프트 연결로 실험 리더보드에서
+      가장 자주 이긴 A/B/C/D 각도를 읽어 제목 전략 힌트 반환(데이터 없으면 무영향). ChiefEditor 가
+      팀 리포트에 🧪 실험 학습 노트 + final.winning_angle. sre_runtime Localizer SEO 에 winningAngle
+      실음. sre.html KR/JP 탭에 🧪 실험 학습 배너("이 계정에서 D 호기심 각도 N승/M회").
+    · ② URL 배치 수집: `sre_sources.collect_batch(urls)`(빈줄 무시·중복 video_id 제거·실패도 포함)
+      + `/api/sre/collect-batch`(수집→자막 확보분끼리 자동 비교+공통공식). sre.html 비교 패널에
+      🔗 링크 배치 수집(한 줄에 하나)→비교 칸 자동 채움+렌더.
+    · 검증: self-test + 통합(실험 D2승→metadata_team winning_angle→SEO 반영) + 백엔드 라이브 +
+      Playwright(배치 렌더경로·wf주입·실험학습 배너, JS예외 0). ⚠️ 실배치 수집은 사장님 PC(유튜브).
+  - **다음**: ⚠️ **eqO5N(default) 머지해야 사장님 화면 반영(Phase 0~5 전부)** → 실키 end-to-end
+    (사장님 PC OpenAI 키로 LLM 심화·자막수집) → 수집 소스 축적하며 리더보드·asset_ledger 성장.
 - (작업하며 갱신할 것)
