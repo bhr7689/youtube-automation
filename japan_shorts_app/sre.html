@@ -57,6 +57,15 @@
     .risk.HIGH{background:#fee2e2;color:#991b1b;} .risk.BLOCKED{background:#1f2937;color:#fff;}
     .stage-tag{font-size:10px;font-weight:700;color:#7c3aed;background:#f3e8ff;border-radius:5px;padding:1px 6px;margin-right:6px;}
     .hidden{display:none;}
+    /* 🔑 키 연결 */
+    .key-row{display:flex;align-items:center;gap:10px;padding:8px 4px;flex-wrap:wrap;}
+    .key-label{font-weight:700;min-width:140px;font-size:13.5px;}
+    .key-input{flex:1;min-width:200px;border:1px solid #e5d9f5;border-radius:10px;padding:10px 13px;font-size:14px;outline:none;font-family:monospace;}
+    .key-input:focus{border-color:#7c3aed;box-shadow:0 0 0 3px rgba(124,58,237,.12);}
+    .key-cur{font-size:12px;font-weight:700;padding:3px 11px;border-radius:999px;white-space:nowrap;}
+    .key-cur.set{background:#dcfce7;color:#166534;}
+    .key-cur.off{background:#fef3c7;color:#92400e;}
+    .note code,.sre-sub code{background:#f3f0fa;border-radius:5px;padding:1px 6px;font-size:12px;}
   </style>
 </head>
 <body>
@@ -95,7 +104,28 @@
     <main class="main">
       <span class="badge-dot">SRE-OS</span>
       <h1 class="page-title"><span class="gradient-text">역설계</span> 스튜디오</h1>
-      <p class="page-sub">대본·자막·키워드·아이디어를 넣으면 → 역설계 6축 분석 → 바이럴 점수 → A/B/C/D 전략 → KR/JP 대본·SEO 를 한 번에. <b id="mockNote">엔진 확인 중…</b></p>
+      <p class="page-sub">대본·자막·키워드·아이디어를 넣으면 → 역설계 6축 분석 → 바이럴 점수 → A/B/C/D 전략 → KR/JP 대본·SEO 를 한 번에. <b id="mockNote">엔진 확인 중…</b>
+        <a href="javascript:void(0)" id="keyToggle" onclick="toggleKeyPanel()" style="color:#7c3aed;font-weight:700;text-decoration:underline;margin-left:6px;">🔑 LLM 키 연결</a></p>
+
+      <!-- 🔑 LLM 키 연결 (인라인) -->
+      <div class="sre-panel hidden" id="keyPanel">
+        <div class="sre-h">🔑 LLM 키 연결 <span style="font-weight:400;color:#8a80a5;font-size:12px;">— 하나만 넣어도 LLM 심화가 켜집니다</span></div>
+        <div class="sre-sub">키는 <b>이 컴퓨터에만</b> 저장돼요(<code>.env</code>) — 인터넷·깃허브에 절대 안 올라갑니다. 저장하면 <b>바로 적용</b>(재시작 불필요). 빈칸은 기존 키 유지. <b>OpenAI / Gemini / Anthropic 중 아무거나</b> 하나면 됩니다.</div>
+        <div class="key-row"><span class="key-label">🧠 OpenAI (GPT)</span>
+          <input class="key-input" id="k_openai" type="password" autocomplete="off" placeholder="sk-... 붙여넣기">
+          <span class="key-cur off" id="cur_openai">확인 중…</span></div>
+        <div class="key-row"><span class="key-label">🤖 Gemini <span style="font-weight:400;color:#a99fc0;font-size:11px;">(무료)</span></span>
+          <input class="key-input" id="k_gemini" type="password" autocomplete="off" placeholder="발급 키 붙여넣기">
+          <span class="key-cur off" id="cur_gemini">확인 중…</span></div>
+        <div class="key-row"><span class="key-label">🟣 Anthropic (Claude)</span>
+          <input class="key-input" id="k_anthropic" type="password" autocomplete="off" placeholder="sk-ant-... 붙여넣기">
+          <span class="key-cur off" id="cur_anthropic">확인 중…</span></div>
+        <div style="display:flex;gap:14px;align-items:center;margin-top:12px;flex-wrap:wrap;">
+          <button class="btn-run" style="padding:9px 18px;font-size:13px;" onclick="saveKeys(this)">💾 저장하고 연결</button>
+          <label style="font-size:12px;color:#8a80a5;cursor:pointer;display:flex;align-items:center;gap:5px;"><input type="checkbox" id="showKeys" onchange="toggleShowKeys()"> 입력한 키 보기</label>
+        </div>
+        <div class="note" style="background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;border-radius:10px;padding:10px 14px;font-size:12.5px;line-height:1.7;margin-top:10px;">📍 발급처 — OpenAI: <code>platform.openai.com</code> · Gemini(무료): <code>aistudio.google.com</code> · Anthropic: <code>console.anthropic.com</code></div>
+      </div>
 
       <!-- 입력 -->
       <div class="sre-panel">
@@ -198,12 +228,51 @@
         const p = h.provider || {};
         const el = document.getElementById("mockNote");
         if (p.live) el.innerHTML = `🟢 <b>${esc(p.active)}</b> LLM 심화 켜짐 — 규칙기반 위에 해석을 더합니다`;
-        else el.innerHTML = "⚪ 규칙기반(Mock) 모드 — 키 없이 동작 (설정에서 키 저장 시 LLM 심화 자동 켜짐)";
+        else el.innerHTML = "⚪ 규칙기반(Mock) 모드 — 키 없이 동작 (아래 🔑 키 연결 시 LLM 심화 자동 켜짐)";
       } catch (e) {
         document.getElementById("mockNote").textContent = "키 없이도 규칙기반으로 동작합니다";
       }
     }
     loadHealth();
+
+    // ── 🔑 LLM 키 연결 (인라인) ──────────────────────
+    function toggleKeyPanel() {
+      const p = document.getElementById("keyPanel");
+      p.classList.toggle("hidden");
+      if (!p.classList.contains("hidden")) loadKeys();
+    }
+    async function loadKeys() {
+      try {
+        const k = await api("/api/keys/status");
+        const set = (id, o) => {
+          const el = document.getElementById("cur_" + id);
+          if (!el) return;
+          if (o && o.set) { el.className = "key-cur set"; el.textContent = "연결됨 " + (o.mask || ""); }
+          else { el.className = "key-cur off"; el.textContent = "미연결"; }
+        };
+        set("openai", k.openai); set("gemini", k.gemini); set("anthropic", k.anthropic);
+      } catch (e) {}
+    }
+    function toggleShowKeys() {
+      const t = document.getElementById("showKeys").checked ? "text" : "password";
+      ["k_openai", "k_gemini", "k_anthropic"].forEach(id => { const el = document.getElementById(id); if (el) el.type = t; });
+    }
+    async function saveKeys(btn) {
+      const body = {
+        openai: document.getElementById("k_openai").value.trim(),
+        gemini: document.getElementById("k_gemini").value.trim(),
+        anthropic: document.getElementById("k_anthropic").value.trim(),
+      };
+      if (!body.openai && !body.gemini && !body.anthropic) return toast("연결할 키를 최소 한 개 입력하세요");
+      btn.classList.add("busy"); const o = btn.textContent; btn.textContent = "연결 중…";
+      try {
+        await api("/api/keys/save", { method: "POST", body: JSON.stringify(body) });
+        ["k_openai", "k_gemini", "k_anthropic"].forEach(id => { document.getElementById(id).value = ""; });
+        toast("✓ 연결 완료 — LLM 심화가 켜졌어요 (재시작 불필요)");
+        loadKeys(); loadHealth();   // 엔진 배지 🟢 로 갱신
+      } catch (e) { toast("오류: " + (e.message || e)); }
+      btn.classList.remove("busy"); btn.textContent = o;
+    }
 
     // 입력 종류 세그먼트
     document.querySelectorAll("#kindSeg button").forEach(b => b.onclick = () => {

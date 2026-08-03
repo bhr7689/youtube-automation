@@ -840,6 +840,8 @@ def _keys_status_payload() -> dict:
                    "mask": _mask(os.environ.get("GEMINI_API_KEY", ""))},
         "openai": {"set": bool(os.environ.get("OPENAI_API_KEY", "").strip()),
                    "mask": _mask(os.environ.get("OPENAI_API_KEY", ""))},
+        "anthropic": {"set": bool(os.environ.get("ANTHROPIC_API_KEY", "").strip()),
+                      "mask": _mask(os.environ.get("ANTHROPIC_API_KEY", ""))},
         "env_exists": os.path.isfile(ENV_PATH),
     }
 
@@ -848,6 +850,7 @@ class KeysReq(BaseModel):
     youtube: str | None = None
     gemini: str | None = None
     openai: str | None = None
+    anthropic: str | None = None
 
 
 @app.post("/api/keys/save")
@@ -856,6 +859,7 @@ def keys_save(req: KeysReq):
         "YOUTUBE_API_KEY": req.youtube,
         "GEMINI_API_KEY": req.gemini,
         "OPENAI_API_KEY": req.openai,
+        "ANTHROPIC_API_KEY": req.anthropic,
     }
     # 빈칸은 "변경 안 함" — 기존 키를 실수로 지우지 않도록
     updates = {k: v.strip() for k, v in mapping.items() if v is not None and v.strip()}
