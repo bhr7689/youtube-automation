@@ -342,6 +342,14 @@ function selectedValue(rootEl) {
     const before = nav.querySelector('a[href="scriptwriter.html"]');
     if (before) nav.insertBefore(a, before);
     else nav.appendChild(a);
+
+    // 🎬 쇼츠 후킹 대본 — SRE 바로 뒤에 주입
+    if (!nav.querySelector('a[href="shorts_hook.html"]')) {
+      const h = document.createElement("a");
+      h.href = "shorts_hook.html"; h.className = "nav-item";
+      h.textContent = "🎬 쇼츠 후킹 대본";
+      nav.insertBefore(h, a.nextSibling);
+    }
   }
   if (document.readyState === "loading")
     document.addEventListener("DOMContentLoaded", build);
