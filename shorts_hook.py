@@ -261,6 +261,40 @@ def _finalize(result: dict, pace: float) -> dict:
     return result
 
 
+# ── 🔊 TTS (한국어 음성) — OpenAI tts-1 ────────────────────────
+# OpenAI TTS 는 한국어 지원. VOICEVOX(일본어)와 달리 쇼츠 한국어 낭독에 적합.
+TTS_VOICES = [
+    {"id": "nova", "name": "Nova (밝고 또렷, 여성)"},
+    {"id": "shimmer", "name": "Shimmer (부드러운 여성)"},
+    {"id": "alloy", "name": "Alloy (중성·차분)"},
+    {"id": "onyx", "name": "Onyx (저음 남성)"},
+    {"id": "echo", "name": "Echo (남성)"},
+    {"id": "fable", "name": "Fable (내레이션형)"},
+]
+
+
+def synthesize(text: str, voice: str = "nova", api_key: str | None = None,
+               fmt: str = "mp3", speed: float = 1.0) -> bytes | None:
+    """대본 텍스트 → 한국어 음성 bytes. 키 없거나 실패하면 None(폴백 신호).
+
+    쇼츠 낭독은 연속 오디오로 나오고, 자막 타이밍(1.5초)은 SRT 가 담당한다.
+    """
+    key = (api_key or "").strip()
+    text = (text or "").strip()
+    if not key or not text:
+        return None
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=key)
+        resp = client.audio.speech.create(
+            model="tts-1", voice=voice if voice in {v["id"] for v in TTS_VOICES} else "nova",
+            input=text[:4000], response_format=fmt,
+            speed=min(4.0, max(0.25, speed)))
+        return resp.content                      # bytes
+    except Exception:
+        return None
+
+
 # ── 자기검증 ──────────────────────────────────────────────────
 if __name__ == "__main__":
     desc = ("오래된 흑백 사진을 AI로 복원하니 갑자기 컬러 인물이 살아 움직이는 것처럼 보임. "
@@ -312,4 +346,10 @@ if __name__ == "__main__":
     assert srt.count("-->") == 3, "빈 줄 제외 3개 자막"
     print("\nSRT 미리보기:\n" + srt)
 
-    print("✅ shorts_hook self-test 통과 — 규칙기반/LLM/폴백/공식주입/SRT")
+    # TTS — 키 없으면 None(폴백), 빈 텍스트도 None
+    assert synthesize("안녕", api_key="") is None
+    assert synthesize("", api_key="sk-x") is None
+    assert len(TTS_VOICES) >= 4
+    print("✅ TTS 폴백(무키/빈텍스트) 확인")
+
+    print("✅ shorts_hook self-test 통과 — 규칙기반/LLM/폴백/공식주입/SRT/TTS")
