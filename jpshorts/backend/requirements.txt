@@ -7,3 +7,6 @@ pydantic>=2.0.0
 google-generativeai>=0.7.0   # 번역봇(선택) — GEMINI_API_KEY 있을 때만 사용
 qrcode>=7.4  # 📱 폰 연결 QR (SVG, PIL 불필요)
 openai>=1.76.0  # 🎨 플리 컨셉(GPT-4o) + 이미지 생성(gpt-image-1 레퍼런스 무드 반영)
+anthropic>=0.39.0  # 🧬 SRE 역설계 LLM 심화(Claude) — ANTHROPIC_API_KEY 있을 때만 사용
+youtube-transcript-api>=0.6.2  # 🧬 SRE URL 자막 자동수집(링크 → 자막)
+yt-dlp>=2024.3.10  # 🧬 SRE 자막 Whisper 폴백(선택) — 자막 없는 영상용
