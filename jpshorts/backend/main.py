@@ -1076,6 +1076,27 @@ def sre_experiments(run_id: str = ""):
             "leaderboard": _sre_db.strategy_leaderboard()}
 
 
+# ── 📺 레퍼런스 채널 100선 시드 (카테고리별) ──────────────
+@app.on_event("startup")
+def _seed_ref_channels():
+    """서버 시작 시 벤치마킹 레퍼런스 채널 시드를 RefTracker 에 자동 로드(1회·버전 가드)."""
+    try:
+        r = store.seed_ref_channels()
+        if r.get("seeded"):
+            print(f"[seed] 레퍼런스 채널 {r['seeded']}개 로드 (v{r.get('version')})")
+    except Exception as e:
+        print(f"[seed] 레퍼런스 채널 시드 실패(무시): {e}")
+
+
+@app.post("/api/channels/seed")
+def channels_seed(force: bool = False):
+    """레퍼런스 채널 시드 수동 재로드(force=true 면 누락분 재주입)."""
+    try:
+        return store.seed_ref_channels(force=force)
+    except Exception as e:
+        raise HTTPException(500, f"시드 실패: {e}")
+
+
 # ── 정적 UI (japan_shorts_app) — 같은 포트에서 서빙 ─────
 _UI_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "japan_shorts_app"
