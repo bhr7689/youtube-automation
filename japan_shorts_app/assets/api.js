@@ -81,7 +81,15 @@ async function api(path, opts = {}) {
     headers: { "Content-Type": "application/json" },
     ...opts,
   });
-  if (!res.ok) throw new Error(`API ${res.status}: ${path}`);
+  if (!res.ok) {
+    // FastAPI 의 친절한 detail 메시지를 그대로 노출(없으면 상태코드)
+    let msg = `API ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body && body.detail) msg = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
+    } catch (e) {}
+    throw new Error(msg);
+  }
   return res.json();
 }
 

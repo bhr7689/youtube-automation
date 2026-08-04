@@ -1194,6 +1194,57 @@ def hook_srt(req: SrtReq):
             "totalSec": round(len(lines) * pace + max(0.0, req.gap) * (len(lines) - 1), 1)}
 
 
+_HOOK_TTS_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "data", "hook_tts")
+
+
+@app.get("/api/shorts-hook/voices")
+def hook_voices():
+    return {"voices": _hook.TTS_VOICES if _hook else [],
+            "hasKey": bool(os.environ.get("OPENAI_API_KEY", "").strip())}
+
+
+class TtsReq(BaseModel):
+    lines: list[str] = Field(default_factory=list)
+    text: str = ""
+    voice: str = "nova"
+    speed: float = 1.0
+
+
+@app.post("/api/shorts-hook/tts")
+def hook_tts(req: TtsReq):
+    """대본 → 한국어 TTS 음성(MP3). 캡컷에 SRT 와 함께 얹으면 됨."""
+    if not _hook:
+        raise HTTPException(500, "쇼츠 후킹 모듈 미로드")
+    key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not key:
+        raise HTTPException(400, "OpenAI 키가 필요해요 — 설정 또는 🔑 키 연결에서 OpenAI 키를 넣어주세요.")
+    text = (req.text or "").strip() or "\n".join(
+        ln for ln in (req.lines or []) if (ln or "").strip())
+    if not text.strip():
+        raise HTTPException(400, "음성으로 만들 대본이 없어요.")
+    audio = _hook.synthesize(text, voice=req.voice, api_key=key, speed=req.speed)
+    if not audio:
+        raise HTTPException(500, "TTS 생성 실패 — 키·네트워크를 확인해주세요.")
+    os.makedirs(_HOOK_TTS_DIR, exist_ok=True)
+    import uuid as _uuid
+    name = "hooktts_" + _uuid.uuid4().hex[:12] + ".mp3"
+    with open(os.path.join(_HOOK_TTS_DIR, name), "wb") as f:
+        f.write(audio)
+    return {"url": f"/api/shorts-hook/tts/file/{name}", "filename": name,
+            "bytes": len(audio), "voice": req.voice}
+
+
+@app.get("/api/shorts-hook/tts/file/{name}")
+def hook_tts_file(name: str):
+    if any(c in name for c in ("/", "\\", "..")):
+        raise HTTPException(400, "잘못된 파일명")
+    path = os.path.join(_HOOK_TTS_DIR, name)
+    if not os.path.isfile(path):
+        raise HTTPException(404, "음성 파일 없음")
+    return FileResponse(path, media_type="audio/mpeg", filename=name)
+
+
 # ── 📺 레퍼런스 채널 100선 시드 (카테고리별) ──────────────
 @app.on_event("startup")
 def _seed_ref_channels():

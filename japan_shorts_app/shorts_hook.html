@@ -141,11 +141,18 @@
           <div class="hk-h">🎬 쇼츠 대본 <span style="font-weight:400;color:#8a80a5;font-size:12px;">— 한 줄당 1.5초 · <span id="totalSec">${r.totalSec||0}</span>초</span></div>
           <div class="hk-sub">✅ 각 줄을 <b>체크·수정</b>하세요(빈 줄은 자동 제외). 다 되면 아래 <b>SRT 다운로드</b> → 캡컷에 그대로 임포트.</div>
           <div id="scriptEditor" style="margin:8px 0;"></div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;align-items:center;">
             <button class="tonechip" onclick="addScriptLine()">➕ 줄 추가</button>
             <button class="btn-run" style="padding:8px 16px;font-size:13px;" onclick="downloadSrt()">📥 SRT 자막 다운로드 (캡컷용)</button>
             <button class="tonechip" onclick="copySrt()">📋 SRT 복사</button>
           </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center;border-top:1px dashed #f0ecf7;padding-top:10px;">
+            <span style="font-size:12px;color:#8a80a5;">🔊 음성:</span>
+            <select id="ttsVoice" style="border:1px solid #e5d9f5;border-radius:8px;padding:6px 10px;font-size:12.5px;outline:none;"></select>
+            <button class="btn-run" style="padding:8px 16px;font-size:13px;background:#0ea5e9;" onclick="genTts(this)">🔊 TTS 음성 만들기</button>
+            <span style="font-size:11px;color:#a99fc0;">한국어 낭독(OpenAI) · 자막 타이밍은 SRT 담당</span>
+          </div>
+          <div id="ttsBox" style="margin-top:10px;"></div>
           <div class="sec-t" style="margin-top:12px;">TTS 붙여넣기용 (줄바꿈)</div>${block(scriptPlain)}
         </div>
         <div class="hk-panel">
@@ -157,6 +164,7 @@
         </div>`;
       PACE = r.pace || 1.5;
       renderScriptEditor(r.script || []);
+      loadVoices();
     }
 
     // ── 대본 편집기 + SRT (한 줄당 1.5초) ──────────────
@@ -210,6 +218,30 @@
       try{ const r=await fetchSrt(); if(!r) return;
         navigator.clipboard.writeText(r.srt).then(()=>toast("✓ SRT 복사됨")).catch(()=>toast("복사 실패"));
       }catch(e){ toast("오류: "+(e.message||e)); }
+    }
+
+    // ── 🔊 TTS 음성 (한국어, OpenAI) ──────────────────
+    async function loadVoices(){
+      try{ const r=await api("/api/shorts-hook/voices");
+        const sel=document.getElementById("ttsVoice");
+        sel.innerHTML=(r.voices||[]).map(v=>`<option value="${esc(v.id)}">${esc(v.name)}</option>`).join("");
+        if(!r.hasKey){ document.getElementById("ttsBox").innerHTML='<div style="font-size:11px;color:#a99fc0;">※ OpenAI 키를 연결하면 TTS가 켜져요 (설정/🔑 키 연결).</div>'; }
+      }catch(e){}
+    }
+    async function genTts(btn){
+      const lines=collectLines();
+      if(!lines.length) return toast("먼저 대본을 확인하세요");
+      btn.classList.add("busy"); const o=btn.textContent; btn.textContent="음성 생성 중…";
+      document.getElementById("ttsBox").innerHTML='<div style="color:#a99fc0;font-size:13px;">🔊 한국어 음성 생성 중…</div>';
+      try{
+        const r=await api("/api/shorts-hook/tts",{method:"POST",body:JSON.stringify({lines,voice:document.getElementById("ttsVoice").value})});
+        document.getElementById("ttsBox").innerHTML=`
+          <audio controls src="${esc(r.url)}" style="width:100%;margin-top:4px;"></audio>
+          <div style="margin-top:6px;"><a href="${esc(r.url)}" download="${esc(r.filename)}" class="tonechip" style="text-decoration:none;">⬇️ MP3 다운로드</a>
+          <span style="font-size:11px;color:#a99fc0;margin-left:6px;">캡컷에 MP3 + SRT 얹으면 끝</span></div>`;
+        toast("✓ TTS 음성 완성");
+      }catch(e){ document.getElementById("ttsBox").innerHTML=`<div style="background:#fef3c7;border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:9px 12px;font-size:12.5px;">⚠️ ${esc(e.message||e)}</div>`; }
+      btn.classList.remove("busy"); btn.textContent=o;
     }
   </script>
 </body>
