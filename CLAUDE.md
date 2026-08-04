@@ -636,6 +636,29 @@ python pipeline.py --init                              # 파이프라인 폴더 
       🔗 링크 배치 수집(한 줄에 하나)→비교 칸 자동 채움+렌더.
     · 검증: self-test + 통합(실험 D2승→metadata_team winning_angle→SEO 반영) + 백엔드 라이브 +
       Playwright(배치 렌더경로·wf주입·실험학습 배너, JS예외 0). ⚠️ 실배치 수집은 사장님 PC(유튜브).
-  - **다음**: ⚠️ **eqO5N(default) 머지해야 사장님 화면 반영(Phase 0~5 전부)** → 실키 end-to-end
-    (사장님 PC OpenAI 키로 LLM 심화·자막수집) → 수집 소스 축적하며 리더보드·asset_ledger 성장.
+  - **Phase 0~5 전부 default(eqO5N) 머지 완료**(2026-08-04) — 사장님 화면 반영됨.
+  - **🔑 LLM 키 인라인 연결 + Anthropic**(2026-08-04, 머지완료): SRE 화면 상단 "🔑 LLM 키 연결"
+    → OpenAI/Gemini/Anthropic 중 하나 붙여넣기 → 엔진 배지 ⚪규칙기반→🟢 LLM 심화 즉시 전환.
+    main.py /api/keys/{save,status} 에 ANTHROPIC 추가(SRE Provider 가 지원했으나 저장경로 없던 것 해소).
+    settings.html 에도 🟣 Anthropic 행. 키는 .env(이 PC·gitignore). jpshorts/backend/requirements.txt 에
+    anthropic·youtube-transcript-api·yt-dlp 추가(일본쇼츠실행.bat 이 설치 → 연결·자막수집 실동작).
+  - **📺 벤치마킹 레퍼런스 채널 99선 카테고리별 저장**(2026-08-04, 머지완료): 사장님 제공 목록을
+    `jpshorts/backend/ref_channels_seed.json`(git추적) → 서버 startup 자동 시드(버전가드·1회·기존보호).
+    원본 카테고리 98종 보존 + 대분류 11개 자동(🏆스포츠24·🔬지식23·🎬엔터15·🔥바이럴9·🚗자동차6·
+    🐾동물6·❤️휴먼6·🍳요리4·💼비즈3·🎙️기타2·🪖군사1). store.py meta 테이블+seed_ref_channels,
+    main.py POST /api/channels/seed. channels.html 대분류 필터 pill + 카테고리 칩 + @handle 링크 수정.
+  - **🏷️ 카테고리별 승리공식**(2026-08-04, 머지완료): `sre_category.py` — aggregate_category(과반/임계
+    이상 등장 = 지배 신호·트리거·구조, winning_formula 호환+빈도%) + category_formula(채널 표본 수집/
+    분석 주입·표본<2 graceful). main.py /api/sre/category-{groups,formula}(RSS=channel_watcher 재사용,
+    쿼터0). sre.html 🏷️ 패널(대분류 드롭다운→빈도% 카드→✨ 생성 주입). 카테고리마다 공식 다름.
+    ⚠️ 실수집은 사장님 PC(유튜브).
+  - **🎬 쇼츠 후킹 대본 생성기 + 1.5초 SRT**(2026-08-04, 머지완료): 사장님 프롬프트("한국 쇼츠 바이럴
+    후킹 작가") 엔진화. `shorts_hook.py` — SYSTEM/build_prompt 레지스트리 + 개선(구조화 JSON·공정사용
+    가드·Mock First·카테고리 공식 주입). generate()→댓글분석/후킹제목10/추천3+이유/대본/5줄TTS/댓글유도5
+    (키 있으면 LLM, 없으면 규칙기반 폴백). **대본 한 줄당 1.5초 타임코드**(with_timecodes) + **to_srt()**
+    (캡컷용 SRT). main.py /api/shorts-hook/{health,generate,srt}. `shorts_hook.html` 전용화면 — 6블록 복붙
+    + **대본 줄별 편집기**(타임코드 자동갱신·줄 추가/삭제)→📥 SRT 다운로드/복사(캡컷 임포트). api.js 메뉴 주입.
+    검증: self-test + 백엔드 라이브 + Playwright(생성→줄편집→SRT 다운로드 수정반영, JS예외0).
+  - **다음**: 실키 end-to-end(사장님 PC OpenAI 키) → 카테고리별 공식 실수집 → shorts_hook 결과에
+    카테고리 공식/시그니처 자동 주입 연동 → 리더보드·asset_ledger 성장.
 - (작업하며 갱신할 것)
