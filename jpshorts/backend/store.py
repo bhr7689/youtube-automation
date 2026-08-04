@@ -64,6 +64,10 @@ CREATE TABLE IF NOT EXISTS script_corpus (
   features    TEXT NOT NULL DEFAULT '{}',
   collected_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS meta (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL DEFAULT ''
+);
 """
 
 
@@ -139,6 +143,61 @@ def channel_ids() -> set[str]:
     with _conn() as c:
         rows = c.execute("SELECT channel_id FROM ref_channels").fetchall()
     return {r["channel_id"] for r in rows}
+
+
+# ── meta (키·값) + 레퍼런스 채널 시드 ────────────────────
+def meta_get(key: str) -> str | None:
+    with _conn() as c:
+        r = c.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+    return r["value"] if r else None
+
+
+def meta_set(key: str, value: str) -> None:
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO meta(key, value) VALUES(?,?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
+
+
+SEED_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "ref_channels_seed.json")
+
+
+def seed_ref_channels(force: bool = False) -> dict:
+    """git 추적 시드(ref_channels_seed.json)를 RefTracker 레퍼런스 채널로 로드.
+
+    - 카테고리·대분류를 payload 에 담아 저장(채널 화면에서 카테고리별 확인).
+    - 버전 가드: 같은 version 을 이미 시드했으면 재실행 안 함 → 사용자가 지운 채널을
+      매번 되살리지 않음. force=True 면 무시하고 누락분 재주입.
+    - 기존에 있는 channel_id 는 건너뜀(사용자 수동 등록 payload 보호).
+    """
+    if not os.path.isfile(SEED_PATH):
+        return {"seeded": 0, "note": "시드 파일 없음"}
+    try:
+        data = json.loads(open(SEED_PATH, encoding="utf-8").read())
+    except Exception as e:
+        return {"seeded": 0, "error": str(e)}
+    ver = str(data.get("version", 1))
+    if not force and meta_get("ref_seed_version") == ver:
+        return {"seeded": 0, "already": ver}
+    existing = channel_ids()
+    added = 0
+    for ch in data.get("channels", []):
+        key = ch.get("key") or ch.get("channel_id") or ch.get("handle")
+        if not key or key in existing:
+            continue
+        add_channel(key, ch.get("name", ""), {
+            "url": ch.get("url", ""),
+            "category": ch.get("category", ""),
+            "group": ch.get("group", ""),
+            "handle": ch.get("handle", ""),
+            "channel_id_resolved": ch.get("channel_id", ""),
+            "rank": ch.get("rank"),
+            "source": "seed100",
+        })
+        added += 1
+    meta_set("ref_seed_version", ver)
+    return {"seeded": added, "version": ver, "total": len(data.get("channels", []))}
 
 
 # ── 최근 검색 ──────────────────────────────────────────
