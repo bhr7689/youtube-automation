@@ -891,12 +891,14 @@ try:
     import sre_provider as _sre_prov
     import sre_sources as _sre_src
     import sre_category as _sre_cat
+    import shorts_hook as _hook
     _SRE_OK, _SRE_ERR = True, ""
 except Exception as _e:            # 로드 실패해도 나머지 API 는 계속 동작
     _SRE_OK, _SRE_ERR = False, str(_e)
     _sre_prov = None
     _sre_src = None
     _sre_cat = None
+    _hook = None
 try:
     import channel_watcher as _cw   # RSS 수집(쿼터 0) 재사용
 except Exception:
@@ -1137,6 +1139,59 @@ def sre_category_formula(req: SRECategoryReq):
     out["group"] = req.group
     out["channelCount"] = len(chans)
     return out
+
+
+# ── 🎬 쇼츠 후킹 대본 생성기 (사장님 프롬프트 엔진) ──────────
+class HookReq(BaseModel):
+    video_desc: str = ""
+    comments: str = ""
+    direction: str = ""
+    tone: list[str] | None = None
+    extra_notes: str = ""       # 카테고리 공식 등 훅 계승용
+    use_llm: bool = True        # 키 있으면 LLM 심화
+
+
+@app.get("/api/shorts-hook/health")
+def hook_health():
+    prov = _sre_prov.status() if _sre_prov else {"active": "mock", "live": False}
+    return {"ok": bool(_hook), "provider": prov, "live": prov.get("live", False)}
+
+
+@app.post("/api/shorts-hook/generate")
+def hook_generate(req: HookReq):
+    if not _hook:
+        raise HTTPException(500, "쇼츠 후킹 모듈 미로드")
+    if not (req.video_desc or "").strip():
+        raise HTTPException(400, "영상 설명을 입력해주세요.")
+    llm = None
+    if req.use_llm and _sre_prov and _sre_prov.is_live():
+        llm = lambda s, u: _sre_prov.llm_json(s, u)   # noqa: E731
+    out = _hook.generate(req.video_desc, req.comments, req.direction,
+                         tone=req.tone, extra_notes=req.extra_notes, llm_json=llm)
+    return out
+
+
+class SrtReq(BaseModel):
+    lines: list[str] = Field(default_factory=list)
+    pace: float = 1.5
+    gap: float = 0.0
+    filename: str = "shorts_subtitle"
+
+
+@app.post("/api/shorts-hook/srt")
+def hook_srt(req: SrtReq):
+    """체크·수정한 대본 줄 → SRT 자막(캡컷 임포트용). {srt, filename} 반환."""
+    if not _hook:
+        raise HTTPException(500, "쇼츠 후킹 모듈 미로드")
+    lines = [ln for ln in (req.lines or []) if (ln or "").strip()]
+    if not lines:
+        raise HTTPException(400, "자막으로 만들 대본 줄이 없어요.")
+    pace = req.pace if 0.3 <= req.pace <= 10 else 1.5
+    srt = _hook.to_srt(lines, pace=pace, gap=max(0.0, req.gap))
+    safe = "".join(ch for ch in (req.filename or "shorts_subtitle")
+                   if ch.isalnum() or ch in ("-", "_")) or "shorts_subtitle"
+    return {"srt": srt, "filename": safe + ".srt", "lineCount": len(lines),
+            "totalSec": round(len(lines) * pace + max(0.0, req.gap) * (len(lines) - 1), 1)}
 
 
 # ── 📺 레퍼런스 채널 100선 시드 (카테고리별) ──────────────
