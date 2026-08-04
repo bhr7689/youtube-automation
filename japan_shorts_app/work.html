@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>📋 작업 기록(공유) · RefTracker</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/api.js"></script>
+  <style>
+    .wk-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+    .btn-run{background:#7c3aed;color:#fff;border:none;border-radius:10px;padding:9px 18px;font-size:13px;font-weight:800;cursor:pointer;}
+    .btn-run:hover{background:#6d28d9;} .btn-run.busy{opacity:.5;pointer-events:none;}
+    .me-chip{font-size:12px;font-weight:700;background:#f3e8ff;color:#6b21a8;padding:5px 12px;border-radius:999px;}
+    .sync-state{font-size:12px;color:#8a80a5;}
+    .wk-card{background:#fff;border:1px solid #f0ecf7;border-radius:14px;padding:13px 16px;margin-bottom:10px;box-shadow:0 2px 8px rgba(120,60,180,.04);}
+    .wk-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+    .wk-kind{font-size:11px;font-weight:800;padding:3px 9px;border-radius:8px;}
+    .wk-kind.shorts_hook{background:#e0f2fe;color:#0369a1;}
+    .wk-kind.sre_analyze{background:#ede9fe;color:#6d28d9;}
+    .wk-kind.other{background:#f4f0fb;color:#6b21a8;}
+    .wk-title{font-weight:700;font-size:14px;flex:1;min-width:140px;}
+    .wk-meta{font-size:11px;color:#a99fc0;}
+    .wk-machine{font-size:11px;font-weight:700;color:#7c3aed;}
+    .wk-sum{font-size:12.5px;color:#6b7280;margin-top:5px;}
+    .wk-actions{display:flex;gap:6px;}
+    .wk-actions span{cursor:pointer;font-size:14px;padding:2px 4px;}
+    pre.copyblock{background:#0f172a;color:#e2e8f0;border-radius:10px;padding:12px 14px;font-size:12px;line-height:1.6;overflow-x:auto;white-space:pre-wrap;word-break:break-word;margin:8px 0 0;}
+    .detail{display:none;margin-top:8px;border-top:1px dashed #f0ecf7;padding-top:8px;}
+    .detail.open{display:block;}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo"><div class="sidebar-brand">RefTracker</div><div class="sidebar-brand-sub">레퍼런스 채널 추적</div></div>
+      <nav class="nav-section">
+        <a href="sre.html" class="nav-item">🧬 SRE 역설계</a>
+        <a href="shorts_hook.html" class="nav-item">🎬 쇼츠 후킹 대본</a>
+        <a href="work.html" class="nav-item active">📋 작업 기록(공유)</a>
+        <a href="channels.html" class="nav-item">📺 레퍼런스 채널</a>
+        <a href="settings.html" class="nav-item">⚙️ 설정</a>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <span class="badge-dot">작업 공유</span>
+      <h1 class="page-title"><span class="gradient-text">작업 기록</span> (여러 PC 공유)</h1>
+      <p class="page-sub">어느 컴퓨터에서 무슨 작업을 했는지 <b>자동으로 공유</b>돼요. 생성할 때마다 자동 저장·동기화되고, 다른 PC는 이 화면을 열면 최신으로 받아옵니다.</p>
+
+      <div class="wk-top">
+        <button class="btn-run" onclick="doSync(this)">🔄 지금 동기화</button>
+        <span class="me-chip" id="meChip">이 PC: …</span>
+        <span class="sync-state" id="syncState"></span>
+      </div>
+
+      <div id="wkList"><div class="loading-row">불러오는 중…</div></div>
+    </main>
+  </div>
+
+  <script>
+    const KIND_LABEL = { shorts_hook: "🎬 쇼츠 후킹", sre_analyze: "🧬 SRE 역설계" };
+
+    function copyText(txt, btn){ navigator.clipboard.writeText(txt).then(()=>{const o=btn.textContent;btn.textContent="✓";setTimeout(()=>btn.textContent=o,1000);}).catch(()=>toast("복사 실패")); }
+
+    async function load(){
+      try{
+        const r = await api("/api/work");
+        document.getElementById("meChip").textContent = "이 PC: " + (r.machine || "?");
+        renderList(r.items || []);
+      }catch(e){ document.getElementById("wkList").innerHTML = `<div class="loading-row">⚠️ ${esc(e.message)}</div>`; }
+    }
+
+    function renderList(items){
+      if(!items.length){ document.getElementById("wkList").innerHTML = '<div class="loading-row">아직 작업이 없어요 — 🎬 쇼츠 후킹 대본이나 🧬 SRE 역설계에서 생성하면 여기 자동으로 쌓여요.</div>'; return; }
+      document.getElementById("wkList").innerHTML = items.map(it => {
+        const kind = KIND_LABEL[it.kind] ? it.kind : "other";
+        const label = KIND_LABEL[it.kind] || "📋 작업";
+        return `<div class="wk-card">
+          <div class="wk-head">
+            <span class="wk-kind ${kind}">${esc(label)}</span>
+            <span class="wk-title">${esc(it.title||"(제목 없음)")}</span>
+            <span class="wk-actions">
+              <span title="상세 보기" onclick="toggleDetail('${esc(it.id)}',this)">👁</span>
+              <span title="삭제" onclick="delWork('${esc(it.id)}')">🗑</span>
+            </span>
+          </div>
+          <div class="wk-sum">${esc(it.summary||"")}</div>
+          <div class="wk-meta">🖥 <span class="wk-machine">${esc(it.machine||"?")}</span> · ${esc((it.ts||"").replace("T"," "))}</div>
+          <div class="detail" id="d_${esc(it.id)}"></div>
+        </div>`;
+      }).join("");
+    }
+
+    async function toggleDetail(id, el){
+      const box = document.getElementById("d_"+id);
+      if(box.classList.contains("open")){ box.classList.remove("open"); return; }
+      box.innerHTML = '<div style="font-size:12px;color:#a99fc0;">불러오는 중…</div>';
+      box.classList.add("open");
+      try{
+        const rec = await api("/api/work/"+id);
+        const p = rec.payload || {};
+        let html = "";
+        if(rec.kind==="shorts_hook"){
+          if(p.titles) html += "<div style='font-size:12px;font-weight:700;color:#4c1d95;'>후킹 제목</div>" + blockText((p.titles||[]).map((t,i)=>`${i+1}. ${t}`).join("\n"));
+          if(p.script) html += "<div style='font-size:12px;font-weight:700;color:#4c1d95;margin-top:6px;'>대본</div>" + blockText((p.script||[]).join("\n"));
+        } else {
+          html += blockText(JSON.stringify(p, null, 2));
+        }
+        box.innerHTML = html || '<div style="font-size:12px;color:#a99fc0;">상세 없음</div>';
+      }catch(e){ box.innerHTML = `<div style="font-size:12px;color:#ef4444;">${esc(e.message)}</div>`; }
+    }
+    function blockText(txt){ return `<button class="btn-run" style="padding:4px 10px;font-size:11px;float:right;" onclick="copyText(this.nextElementSibling.textContent,this)">📋</button><pre class="copyblock">${esc(txt)}</pre>`; }
+
+    async function delWork(id){
+      if(!confirm("이 작업 기록을 삭제할까요? (동기화되면 다른 PC 에서도 사라져요)")) return;
+      try{ await api("/api/work/"+id,{method:"DELETE"}); toast("삭제됨"); load(); }
+      catch(e){ toast("오류: "+e.message); }
+    }
+
+    async function doSync(btn){
+      btn.classList.add("busy"); const o=btn.textContent; btn.textContent="동기화 중…";
+      document.getElementById("syncState").textContent = "";
+      try{
+        const r = await api("/api/work/sync",{method:"POST"});
+        const msg = r.disabled ? "⏸ 동기화 꺼짐 (WORK_SYNC=off) — 로컬에만 저장"
+                 : r.ok ? `✓ 동기화 완료 (받기 ${r.pulled?"✓":"–"} · 보내기 ${r.pushed?"✓":"–"} · 총 ${r.count}건)`
+                        : "⚠️ 일부 실패 — 오프라인이거나 권한 확인 (로컬 작업은 안전)";
+        document.getElementById("syncState").textContent = msg;
+        load();
+      }catch(e){ document.getElementById("syncState").textContent = "⚠️ "+e.message; }
+      btn.classList.remove("busy"); btn.textContent=o;
+    }
+
+    // 열 때 자동으로 다른 PC 작업 받기 + 목록
+    (async ()=>{ try{ await api("/api/work/sync",{method:"POST"}); }catch(e){} load(); })();
+  </script>
+</body>
+</html>

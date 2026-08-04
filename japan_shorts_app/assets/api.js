@@ -358,6 +358,14 @@ function selectedValue(rootEl) {
       h.textContent = "🎬 쇼츠 후킹 대본";
       nav.insertBefore(h, a.nextSibling);
     }
+    // 📋 작업 기록(공유) — 쇼츠 후킹 뒤에 주입
+    if (!nav.querySelector('a[href="work.html"]')) {
+      const hk = nav.querySelector('a[href="shorts_hook.html"]');
+      const w = document.createElement("a");
+      w.href = "work.html"; w.className = "nav-item";
+      w.textContent = "📋 작업 기록(공유)";
+      nav.insertBefore(w, hk ? hk.nextSibling : a.nextSibling);
+    }
   }
   if (document.readyState === "loading")
     document.addEventListener("DOMContentLoaded", build);

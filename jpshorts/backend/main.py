@@ -892,6 +892,7 @@ try:
     import sre_sources as _sre_src
     import sre_category as _sre_cat
     import shorts_hook as _hook
+    import work_store as _work
     _SRE_OK, _SRE_ERR = True, ""
 except Exception as _e:            # 로드 실패해도 나머지 API 는 계속 동작
     _SRE_OK, _SRE_ERR = False, str(_e)
@@ -899,6 +900,30 @@ except Exception as _e:            # 로드 실패해도 나머지 API 는 계�
     _sre_src = None
     _sre_cat = None
     _hook = None
+    _work = None
+
+import threading as _threading
+_WORK_LOCK = _threading.Lock()
+
+
+def _record_work(kind: str, title: str, payload: dict, summary: str = ""):
+    """작업을 개별 파일로 저장 + 백그라운드로 git 동기화(응답 지연 없음)."""
+    if not _work:
+        return
+    try:
+        _work.save_work(kind, title, payload, summary=summary)
+    except Exception:
+        return
+
+    def _bg():
+        if _WORK_LOCK.acquire(blocking=False):   # 동시 sync 충돌 방지
+            try:
+                _work.sync()
+            except Exception:
+                pass
+            finally:
+                _WORK_LOCK.release()
+    _threading.Thread(target=_bg, daemon=True).start()
 try:
     import channel_watcher as _cw   # RSS 수집(쿼터 0) 재사용
 except Exception:
@@ -940,6 +965,13 @@ def sre_analyze(req: SREReq):
             winning_formula=req.winning_formula, force=req.force)
     except Exception as e:
         raise HTTPException(500, f"분석 중 오류: {e}")
+    try:
+        _vp = report.get("scores", {}).get("viralPotential", {}).get("score", 0)
+        _rec = report.get("strategies", {}).get("D", {}).get("title", "") or "SRE 역설계"
+        _record_work("sre_analyze", _rec[:60], {"runId": report.get("metadata", {}).get("runId", "")},
+                     summary=f"바이럴 {_vp}/100 · 시장 {','.join(markets)}")
+    except Exception:
+        pass
     return report
 
 
@@ -1168,6 +1200,11 @@ def hook_generate(req: HookReq):
         llm = lambda s, u: _sre_prov.llm_json(s, u)   # noqa: E731
     out = _hook.generate(req.video_desc, req.comments, req.direction,
                          tone=req.tone, extra_notes=req.extra_notes, llm_json=llm)
+    # 작업 공유 기록(다른 PC 와 자동 동기화)
+    _title = (req.direction or "").strip() or (
+        (out.get("top3") or [{}])[0].get("title", "") or "쇼츠 후킹 대본")
+    _record_work("shorts_hook", _title, out,
+                 summary=f"제목 {len(out.get('titles', []))} · 대본 {len(out.get('script', []))}줄 · {out.get('_engine')}")
     return out
 
 
@@ -1243,6 +1280,52 @@ def hook_tts_file(name: str):
     if not os.path.isfile(path):
         raise HTTPException(404, "음성 파일 없음")
     return FileResponse(path, media_type="audio/mpeg", filename=name)
+
+
+# ── 🔄 작업 공유(여러 PC 자동 동기화) ─────────────────────
+@app.get("/api/work")
+def work_list(kind: str = "", limit: int = 200):
+    if not _work:
+        return {"items": [], "machine": "", "note": "작업 저장소 미로드"}
+    return {"items": _work.list_work(limit=limit, kind=kind or None),
+            "machine": _work.machine_name()}
+
+
+@app.get("/api/work/{wid}")
+def work_get(wid: str):
+    if not _work:
+        raise HTTPException(500, "작업 저장소 미로드")
+    rec = _work.get_work(wid)
+    if not rec:
+        raise HTTPException(404, "작업을 찾을 수 없어요")
+    return rec
+
+
+@app.delete("/api/work/{wid}")
+def work_delete(wid: str):
+    if not _work:
+        raise HTTPException(500, "작업 저장소 미로드")
+    ok = _work.delete_work(wid)
+
+    def _bg():
+        if _WORK_LOCK.acquire(blocking=False):
+            try:
+                _work.sync()
+            except Exception:
+                pass
+            finally:
+                _WORK_LOCK.release()
+    _threading.Thread(target=_bg, daemon=True).start()
+    return {"ok": ok}
+
+
+@app.post("/api/work/sync")
+def work_sync(push: bool = True):
+    """다른 PC 작업 받기(pull) + 내 작업 공유(push). 수동 🔄 버튼용."""
+    if not _work:
+        raise HTTPException(500, "작업 저장소 미로드")
+    with _WORK_LOCK:
+        return _work.sync(push=push)
 
 
 # ── 📺 레퍼런스 채널 100선 시드 (카테고리별) ──────────────
