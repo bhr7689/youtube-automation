@@ -198,6 +198,17 @@
         </div>
       </div>
 
+      <!-- 카테고리별 공식 -->
+      <div class="sre-panel">
+        <div class="sre-h">🏷️ 카테고리별 승리공식 <span style="font-weight:400;color:#8a80a5;font-size:12px;">— 레퍼런스 채널 100선을 계열별로</span></div>
+        <div class="sre-sub">저장한 벤치마킹 채널을 <b>대분류별</b>로 표본 수집(RSS·쿼터0) → 그 계열에서 <b>과반 이상 반복되는</b> 신호·트리거·구조를 뽑습니다. 카테고리마다 공식이 다르게 나와요(스포츠=순간·과장 / 지식=호기심 격차 / 감동=사연·반전 …).</div>
+        <div class="sre-controls">
+          <select id="catGroup" style="border:1px solid #e5d9f5;border-radius:10px;padding:9px 13px;font-size:13px;min-width:200px;outline:none;"><option>불러오는 중…</option></select>
+          <button class="btn-run" style="padding:9px 18px;font-size:13px;" onclick="runCategoryFormula(this)">🏷️ 이 계열 공식 뽑기</button>
+        </div>
+        <div id="catResult" style="margin-top:14px;"></div>
+      </div>
+
       <!-- 다중 소스 비교 -->
       <div class="sre-panel">
         <div class="sre-h">⚖️ 다중 소스 비교 <span style="font-weight:400;color:#8a80a5;font-size:12px;">— 여러 터진 영상의 공통 패턴 찾기</span></div>
@@ -614,6 +625,55 @@
         }
       } catch (e) { toast("오류: " + (e.message || e)); }
       btn.classList.remove("busy"); btn.textContent = o;
+    }
+
+    // ── 🏷️ 카테고리별 공식 ───────────────────────────
+    async function loadCategoryGroups() {
+      try {
+        const r = await api("/api/sre/category-groups");
+        const sel = document.getElementById("catGroup");
+        if (!r.groups || !r.groups.length) {
+          sel.innerHTML = '<option value="">레퍼런스 채널 없음 — 📺 레퍼런스 채널에서 확인</option>';
+          return;
+        }
+        sel.innerHTML = r.groups.map(g => `<option value="${esc(g.group)}">${esc(g.group)} (${g.channels})</option>`).join("");
+      } catch (e) {
+        document.getElementById("catGroup").innerHTML = '<option value="">불러오기 실패</option>';
+      }
+    }
+    loadCategoryGroups();
+
+    async function runCategoryFormula(btn) {
+      const group = document.getElementById("catGroup").value;
+      if (!group) return toast("카테고리를 선택하세요");
+      btn.classList.add("busy"); const o = btn.textContent; btn.textContent = "수집·분석 중…";
+      document.getElementById("catResult").innerHTML = '<div style="color:#a99fc0;font-size:13px;">채널 표본 수집 중… (RSS)</div>';
+      try {
+        const r = await api("/api/sre/category-formula", { method: "POST", body: JSON.stringify({ group }) });
+        renderCategoryFormula(r);
+      } catch (e) { toast("오류: " + (e.message || e)); document.getElementById("catResult").innerHTML = ""; }
+      btn.classList.remove("busy"); btn.textContent = o;
+    }
+
+    function renderCategoryFormula(r) {
+      const box = document.getElementById("catResult");
+      if (!r.ok) {
+        box.innerHTML = `<div style="background:#fef3c7;border:1px solid #fde68a;color:#92400e;border-radius:10px;padding:11px 14px;font-size:12.5px;line-height:1.6;">⚠️ ${esc(r.note || "표본을 못 모았어요")}<br><span style="color:#a9884e;">시도 채널 ${r.channelsTried || 0} · 표본 ${r.sampled || 0}</span></div>`;
+        return;
+      }
+      const wf = r.winningFormula || {};
+      window.__lastWF = wf;
+      const detail = (arr, color) => (arr || []).map(x =>
+        `<span class="badge" style="background:${color};color:#fff;">${esc(x.name)} <b>${Math.round(x.ratio * 100)}%</b></span>`).join("") || '<span style="color:#c4bcd6;">—</span>';
+      box.innerHTML = `
+        <div style="background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border:1px solid #bbf7d0;border-radius:12px;padding:14px 16px;">
+          <div style="font-size:13.5px;font-weight:800;color:#166534;margin-bottom:6px;">🏷️ ${esc(r.group)} — 이 계열의 공식</div>
+          <div style="font-size:12px;color:#4b5563;margin-bottom:10px;">표본 ${r.sampled}개 (채널 ${r.contributorCount}/${r.channelCount}) · 평균 바이럴 ${wf.avgScore || 0}/100 · 임계 ${Math.round((wf.minRatio || .4) * 100)}%↑</div>
+          <div style="font-size:12px;color:#166534;font-weight:700;margin-bottom:3px;">🔥 지배 신호</div><div style="margin-bottom:8px;">${detail(wf.signalDetail, "#7c3aed")}</div>
+          <div style="font-size:12px;color:#166534;font-weight:700;margin-bottom:3px;">🧠 지배 트리거</div><div style="margin-bottom:8px;">${detail(wf.triggerDetail, "#db2777")}</div>
+          <div style="font-size:12px;color:#166534;font-weight:700;margin-bottom:3px;">🧩 핵심 구조</div><div style="margin-bottom:10px;">${detail(wf.stageDetail, "#0ea5e9")}</div>
+          <button class="btn-run" style="padding:8px 16px;font-size:13px;background:#16a34a;" onclick="setWF(window.__lastWF)">✨ 이 공식을 생성에 주입</button>
+        </div>`;
     }
 
     // 비교 패널 기본 2칸
