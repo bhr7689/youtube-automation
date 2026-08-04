@@ -890,11 +890,17 @@ try:
     import sre_store as _sre_db
     import sre_provider as _sre_prov
     import sre_sources as _sre_src
+    import sre_category as _sre_cat
     _SRE_OK, _SRE_ERR = True, ""
 except Exception as _e:            # 로드 실패해도 나머지 API 는 계속 동작
     _SRE_OK, _SRE_ERR = False, str(_e)
     _sre_prov = None
     _sre_src = None
+    _sre_cat = None
+try:
+    import channel_watcher as _cw   # RSS 수집(쿼터 0) 재사용
+except Exception:
+    _cw = None
 
 
 class SREReq(BaseModel):
@@ -1074,6 +1080,63 @@ def sre_experiments(run_id: str = ""):
         raise HTTPException(500, "SRE 저장소 미로드")
     return {"experiments": _sre_db.list_experiments(run_id=run_id or None, limit=100),
             "leaderboard": _sre_db.strategy_leaderboard()}
+
+
+# ── 🏷️ 카테고리별 승리공식 (레퍼런스 채널 표본 → 빈도 집계) ─────
+@app.get("/api/sre/category-groups")
+def sre_category_groups():
+    """레퍼런스 채널의 대분류(그룹)별 채널 수 — 카테고리 선택용."""
+    from collections import Counter
+    chans = store.list_channels()
+    c = Counter((ch.get("group") or "기타") for ch in chans)
+    groups = [{"group": g, "channels": n} for g, n in c.most_common()]
+    return {"groups": groups, "total": len(chans)}
+
+
+class SRECategoryReq(BaseModel):
+    group: str = ""
+    per_channel: int = 3
+    max_channels: int = 10
+    min_ratio: float = 0.4
+
+
+@app.post("/api/sre/category-formula")
+def sre_category_formula(req: SRECategoryReq):
+    if not (_SRE_OK and _sre_cat):
+        raise HTTPException(500, "SRE 카테고리 모듈 미로드")
+    chans = [c for c in store.list_channels() if (c.get("group") or "") == req.group]
+    if not chans:
+        raise HTTPException(400, "그 카테고리의 채널이 없어요.")
+
+    _cache: dict[str, str] = {}
+
+    def sample_fn(ch: dict) -> list[str]:
+        if _cw is None:
+            return []
+        url = ch.get("url", "")
+        cid = ch.get("channel_id_resolved", "") or (ch.get("channel_id", "")
+              if str(ch.get("channel_id", "")).startswith("UC") else "")
+        if not cid and url:
+            cid = _cache.get(url) or _cw.resolve_channel_id(url)
+            if cid:
+                _cache[url] = cid
+        if not cid:
+            return []
+        feed = _cw.parse_feed(_cw._fetch(_cw.rss_url(cid)))
+        return [e.get("title", "") for e in feed if e.get("title")]
+
+    def analyze_fn(text: str) -> dict:
+        return _sre.run_analysis(text=text, kind="script", markets=[],
+                                 provider="off", persist=False)
+
+    out = _sre_cat.category_formula(
+        chans, sample_fn, analyze_fn,
+        per_channel=max(1, min(req.per_channel, 5)),
+        max_channels=max(2, min(req.max_channels, 15)),
+        min_ratio=req.min_ratio)
+    out["group"] = req.group
+    out["channelCount"] = len(chans)
+    return out
 
 
 # ── 📺 레퍼런스 채널 100선 시드 (카테고리별) ──────────────
