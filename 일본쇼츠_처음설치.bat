@@ -31,22 +31,31 @@ exit /b 1
 :have_git
 echo [1/5] Git OK
 
-:: ── [2/5] Python ───────────────────────────
-where python >nul 2>nul
-if not errorlevel 1 goto have_py
-echo [2/5] Python 이 없어요. 자동 설치를 시도합니다(winget)...
-winget install -e --id Python.Python.3.12 --accept-source-agreements --accept-package-agreements >nul 2>nul
-where python >nul 2>nul
-if not errorlevel 1 goto have_py
+:: ── [2/5] Python (python -> py -> 자동설치) ──
+set "PYEXE="
+python --version >nul 2>&1 && set "PYEXE=python"
+if not defined PYEXE ( py -3 --version >nul 2>&1 && set "PYEXE=py -3" )
+if not defined PYEXE (
+    where py >nul 2>&1 && (
+        echo [2/5] Python 자동 설치 중... 몇 분 걸릴 수 있어요.
+        py install 3.13
+        py -3 --version >nul 2>&1 && set "PYEXE=py -3"
+    )
+)
+if defined PYEXE goto have_py
+echo [2/5] Python 이 없어요. winget 으로 자동 설치를 시도합니다...
+winget install -e --id Python.Python.3.13 --accept-source-agreements --accept-package-agreements >nul 2>nul
+python --version >nul 2>&1 && set "PYEXE=python"
+if defined PYEXE goto have_py
 echo.
 echo    ▶ Python 자동설치를 시도했어요. 방금 설치됐다면 이 창을 닫고
-echo      다시 더블클릭하면 인식됩니다.
-echo      직접 설치할 때는 "Add Python to PATH" 체크박스를 꼭 켜주세요.
+echo      "일본쇼츠_처음설치.bat" 를 다시 더블클릭하면 인식됩니다.
+echo      직접 설치할 때는 첫 화면 맨 아래 "Add python.exe to PATH" 를 꼭 체크!
 start https://www.python.org/downloads/
 pause
 exit /b 1
 :have_py
-echo [2/5] Python OK
+echo [2/5] Python OK (%PYEXE%)
 
 :: ── [3/5] 코드 받기 ────────────────────────
 if exist "%INSTALL_DIR%\.git" goto pull
@@ -72,8 +81,8 @@ exit /b 1
 :deps
 echo [4/5] 필요한 부품 설치 중... (처음엔 몇 분 걸려요)
 cd /d "%INSTALL_DIR%"
-python -m pip install --upgrade pip -q
-pip install -r jpshorts\backend\requirements.txt
+%PYEXE% -m pip install --upgrade pip -q
+%PYEXE% -m pip install -r jpshorts\backend\requirements.txt
 
 :: ── [5/5] 바탕화면 아이콘 ──────────────────
 echo [5/5] 바탕화면에 [쇼츠자동화] 아이콘 만드는 중...
