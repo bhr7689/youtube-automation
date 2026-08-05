@@ -77,7 +77,7 @@ pip install -r jpshorts\backend\requirements.txt
 
 :: ── [5/5] 바탕화면 아이콘 ──────────────────
 echo [5/5] 바탕화면에 [쇼츠자동화] 아이콘 만드는 중...
-powershell -NoProfile -Command "$w=New-Object -ComObject WScript.Shell; $lnk=$w.CreateShortcut([Environment]::GetFolderPath('Desktop')+'\쇼츠자동화.lnk'); $lnk.TargetPath='%INSTALL_DIR%\일본쇼츠실행.bat'; $lnk.WorkingDirectory='%INSTALL_DIR%'; $lnk.IconLocation='%INSTALL_DIR%\assets\thumb_lab.ico'; $lnk.Save()" >nul 2>nul
+powershell -NoProfile -Command "$w=New-Object -ComObject WScript.Shell; $lnk=$w.CreateShortcut([Environment]::GetFolderPath('Desktop')+'\쇼츠자동화.lnk'); $lnk.TargetPath='%INSTALL_DIR%\일본쇼츠실행.bat'; $lnk.WorkingDirectory='%INSTALL_DIR%'; $lnk.IconLocation='%INSTALL_DIR%\assets\jp_shorts.ico'; $lnk.Save()" >nul 2>nul
 
 echo.
 echo ============================================
