@@ -29,12 +29,40 @@ SEED: dict[str, dict] = {
         "examples": "",
     },
     "ja": {
-        "title": "【】(隅付き括弧)로 강조 자주. 全角 문자. 용도 키워드(作業用BGM/勉強用/睡眠用/カフェ) + "
-                 "感情형용사(切ない/泣ける/癒される/エモい) + 시간(1時間) + 곡수. 이모지는 절제.",
-        "desc": "정중한 인사(ご視聴ありがとうございます) → 곡/使用 안내 → タイムスタンプ → 著作権/使用素材 "
-                "표기 → SNSリンク → ハッシュタグ. 매우 정중·상세.",
-        "tags": "日本語 검색어 + ローマ字 병기 자주(例: 作業用BGM, lofi, chill). 12~18개.",
-        "examples": "",
+        "title": "짧고 감성적. 「playlist |」 접두어 자주. 季節·感情 + ジャンル 조합(예: 夏、桃ジャズ / "
+                 "落ち着いた夏に聴きたい). 全角 문자·읽기 쉬운 여백. 이모지 절제. 用途(作業用/勉強用) "
+                 "키워드는 태그·설명에 몰아넣음.",
+        "desc": "① 감성 詩적 도입 2~4줄(장면·기분을 부드럽게, 존댓말 아닌 서정체 OK) → ② [Tracklist] "
+                "타임스탬프 + 곡명(日本語(英訳) 병기) → ③ // MUSIC // VISUALS // SUPPORT // "
+                "COLLABORATION 섹션(제작 툴·오리지널 표기·구독 부탁·이메일) → ④ 해시태그 대량(日本語+英語). "
+                "정중하지만 브랜드 세계관이 강함.",
+        "tags": "해시태그를 아주 많이(20~35개). 日本語(#夏ジャズ #作業用BGM #集中用BGM #勉強用BGM "
+                "#カフェ音楽 #癒やし音楽 #歌詞なし音楽) + 英語(#summerjazz #lofi #cafemusic #studymusic "
+                "#backgroundmusic) 를 섞어 검색 커버리지를 넓힌다.",
+        "examples": """[예시1 · ChillCozy【美メロ Playlist】]
+제목: 落ち着いた夏に聴きたい / For a Relaxing Summer
+설명: (감성 도입) → 0:00 永遠のFULL MOON / 4:22 MUSIC BOOK … (타임스탬프+곡명) →
+곡명은 日本語와 英訳(Eternal Full Moon 등)을 함께 제시.
+
+[예시2 · centralgrocery 중앙식품점]
+제목: playlist | 夏、桃ジャズ
+설명:
+桃の中には、なぜだか / 愛された陽ざしが入っているような気がする
+ひとくち頬ばると / なんだか自分まで / 愛されているような気持ちになる。
+…こんなにも愛おしい、夏。
+
+[Tracklist]
+00:00 Bite Into Summer（ひとくちかじった夏）
+02:35 The Sweetest Afternoon（いちばん甘い午後） … (英題（日本語）병기)
+
+// MUSIC  この動画で使用されているすべての音楽は … Suno と Ableton Live で制作。
+// VISUALS  イラストと映像はすべてオリジナル。Clip Studio で制作。
+// SUPPORT  気に入っていただけたら、チャンネル登録と高評価を。
+// COLLABORATION INQUIRIES  hello...@gmail.com
+
+#ジャズ #桃ジャズ #夏ジャズ #カフェジャズ #ボサノヴァ #モーニングジャズ #作業用BGM
+#集中用BGM #勉強用BGM #読書用BGM #夏プレイリスト #歌詞なし音楽 #落ち着く音楽 #癒やし音楽
+#summerjazz #morningjazz #peachjazz #jazzplaylist #relaxingjazz #cafemusic #studymusic""",
     },
     "en": {
         "title": "Title Case. 'Playlist', '1 Hour', 'Chill/Lofi/Vibes', 'to study/relax/sleep to'. "
@@ -110,9 +138,10 @@ if __name__ == "__main__":
     STYLE_PATH = os.path.join(os.path.dirname(STYLE_PATH), "_lang_style_selftest.json")
     if os.path.exists(STYLE_PATH):
         os.remove(STYLE_PATH)
-    assert "作業用BGM" in get("ja")["title"]
-    save("ja", {"examples": "【作業用BGM】カフェで流れる おしゃれ Jazz 🎷 | 勉強・仕事用"})
-    assert "作業用BGM" in get("ja")["examples"]
+    assert "作業用" in get("ja")["title"]
+    assert "桃ジャズ" in get("ja")["examples"]        # 사장님 실제 예시 시드 탑재
+    save("ja", {"examples": get("ja")["examples"] + "\n【作業用BGM】テスト"})
+    assert "テスト" in get("ja")["examples"]
     p = as_prompt(["ko", "ja", "en"])
     assert "일본어" in p and "사장님이 준 실제 예시" in p
     os.remove(STYLE_PATH)

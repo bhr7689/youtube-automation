@@ -840,6 +840,8 @@ def _keys_status_payload() -> dict:
                    "mask": _mask(os.environ.get("GEMINI_API_KEY", ""))},
         "openai": {"set": bool(os.environ.get("OPENAI_API_KEY", "").strip()),
                    "mask": _mask(os.environ.get("OPENAI_API_KEY", ""))},
+        "anthropic": {"set": bool(os.environ.get("ANTHROPIC_API_KEY", "").strip()),
+                      "mask": _mask(os.environ.get("ANTHROPIC_API_KEY", ""))},
         "env_exists": os.path.isfile(ENV_PATH),
     }
 
@@ -848,6 +850,7 @@ class KeysReq(BaseModel):
     youtube: str | None = None
     gemini: str | None = None
     openai: str | None = None
+    anthropic: str | None = None
 
 
 @app.post("/api/keys/save")
@@ -856,6 +859,7 @@ def keys_save(req: KeysReq):
         "YOUTUBE_API_KEY": req.youtube,
         "GEMINI_API_KEY": req.gemini,
         "OPENAI_API_KEY": req.openai,
+        "ANTHROPIC_API_KEY": req.anthropic,
     }
     # 빈칸은 "변경 안 함" — 기존 키를 실수로 지우지 않도록
     updates = {k: v.strip() for k, v in mapping.items() if v is not None and v.strip()}
@@ -871,6 +875,478 @@ def keys_save(req: KeysReq):
 @app.get("/api/keys/status")
 def keys_status():
     return _keys_status_payload()
+
+
+# ── 🧬 SRE-OS (역설계 → A/B/C/D 전략 → KR/JP 로컬라이제이션) ─────
+# 런타임 모듈은 저장소 루트에 있으므로 루트를 import 경로에 추가.
+# (backend/store.py 등 기존 import 를 해치지 않도록 '뒤에' append)
+_SRE_ROOT = os.path.abspath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+)
+if _SRE_ROOT not in sys.path:
+    sys.path.append(_SRE_ROOT)
+try:
+    import sre_runtime as _sre
+    import sre_store as _sre_db
+    import sre_provider as _sre_prov
+    import sre_sources as _sre_src
+    import sre_category as _sre_cat
+    import shorts_hook as _hook
+    import work_store as _work
+    _SRE_OK, _SRE_ERR = True, ""
+except Exception as _e:            # 로드 실패해도 나머지 API 는 계속 동작
+    _SRE_OK, _SRE_ERR = False, str(_e)
+    _sre_prov = None
+    _sre_src = None
+    _sre_cat = None
+    _hook = None
+    _work = None
+
+import threading as _threading
+_WORK_LOCK = _threading.Lock()
+
+
+def _record_work(kind: str, title: str, payload: dict, summary: str = ""):
+    """작업을 개별 파일로 저장 + 백그라운드로 git 동기화(응답 지연 없음)."""
+    if not _work:
+        return
+    try:
+        _work.save_work(kind, title, payload, summary=summary)
+    except Exception:
+        return
+
+    def _bg():
+        if _WORK_LOCK.acquire(blocking=False):   # 동시 sync 충돌 방지
+            try:
+                _work.sync()
+            except Exception:
+                pass
+            finally:
+                _WORK_LOCK.release()
+    _threading.Thread(target=_bg, daemon=True).start()
+try:
+    import channel_watcher as _cw   # RSS 수집(쿼터 0) 재사용
+except Exception:
+    _cw = None
+
+
+class SREReq(BaseModel):
+    text: str = ""
+    kind: str = "script"           # script/transcript/keyword/idea
+    url: str = ""
+    markets: list[str] = Field(default_factory=lambda: ["KR"])
+    project_name: str = "SRE 프로젝트"
+    provider: str = "auto"         # auto/off/openai/gemini/anthropic
+    winning_formula: dict | None = None   # 다중 소스 공통 승리공식(선택 주입)
+    force: bool = False
+
+
+@app.get("/api/sre/health")
+def sre_health():
+    prov = _sre_prov.status() if _sre_prov else {"active": "mock", "available": [], "live": False}
+    return {"ok": _SRE_OK, "error": _SRE_ERR,
+            "mock": not prov.get("live"),
+            "provider": prov,
+            "markets": ["KR", "JP", "US"]}
+
+
+@app.post("/api/sre/analyze")
+def sre_analyze(req: SREReq):
+    if not _SRE_OK:
+        raise HTTPException(500, f"SRE 런타임 로드 실패: {_SRE_ERR}")
+    text = (req.text or "").strip()
+    if not text:
+        raise HTTPException(400, "분석할 대본/자막/키워드/아이디어를 입력해주세요.")
+    markets = req.markets or ["KR"]
+    try:
+        report = _sre.run_analysis(
+            text=text, kind=req.kind, url=req.url, markets=markets,
+            project_name=req.project_name, provider=req.provider,
+            winning_formula=req.winning_formula, force=req.force)
+    except Exception as e:
+        raise HTTPException(500, f"분석 중 오류: {e}")
+    try:
+        _vp = report.get("scores", {}).get("viralPotential", {}).get("score", 0)
+        _rec = report.get("strategies", {}).get("D", {}).get("title", "") or "SRE 역설계"
+        _record_work("sre_analyze", _rec[:60], {"runId": report.get("metadata", {}).get("runId", "")},
+                     summary=f"바이럴 {_vp}/100 · 시장 {','.join(markets)}")
+    except Exception:
+        pass
+    return report
+
+
+@app.get("/api/sre/run/{run_id}")
+def sre_run(run_id: str):
+    if not _SRE_OK:
+        raise HTTPException(500, "SRE 런타임 미로드")
+    if any(c in run_id for c in ("/", "\\", "..")):
+        raise HTTPException(400, "잘못된 run_id")
+    rep = _sre_db.latest_result(run_id)
+    if not rep:
+        raise HTTPException(404, "결과를 찾을 수 없어요")
+    return rep
+
+
+# ── Phase 3: URL 자동수집 · 다중 소스 비교 · A/B/C/D 승자판정 ─────
+class SRECollectReq(BaseModel):
+    url: str
+    allow_whisper: bool = False
+
+
+@app.post("/api/sre/collect-url")
+def sre_collect_url(req: SRECollectReq):
+    if not (_SRE_OK and _sre_src):
+        raise HTTPException(500, "SRE 소스 모듈 미로드")
+    url = (req.url or "").strip()
+    if not url:
+        raise HTTPException(400, "URL 을 입력해주세요.")
+    key = os.environ.get("OPENAI_API_KEY", "").strip() or None
+    return _sre_src.collect_source(url, allow_whisper=req.allow_whisper, openai_key=key)
+
+
+class SREBatchReq(BaseModel):
+    urls: list[str] = Field(default_factory=list)
+    markets: list[str] = Field(default_factory=lambda: ["KR"])
+    allow_whisper: bool = False
+
+
+@app.post("/api/sre/collect-batch")
+def sre_collect_batch(req: SREBatchReq):
+    """여러 URL 한 번에 수집 → 자막 있는 것끼리 자동 비교 + 공통 승리공식 추출."""
+    if not (_SRE_OK and _sre_src):
+        raise HTTPException(500, "SRE 소스 모듈 미로드")
+    urls = [u for u in (req.urls or []) if (u or "").strip()]
+    if not urls:
+        raise HTTPException(400, "URL 을 한 줄에 하나씩 넣어주세요.")
+    key = os.environ.get("OPENAI_API_KEY", "").strip() or None
+    collected = _sre_src.collect_batch(urls, allow_whisper=req.allow_whisper, openai_key=key)
+    # 자막(본문) 확보된 소스만 비교 대상
+    usable = [c for c in collected if (c.get("text") or "").strip()]
+    comparison, formula = None, {}
+    if len(usable) >= 2:
+        reports, labels = [], []
+        for c in usable:
+            rep = _sre.run_analysis(text=c["text"], kind=c.get("kind", "transcript"),
+                                    markets=req.markets, provider="off", persist=False)
+            reports.append(rep)
+            labels.append(c.get("label", "소스"))
+        comparison = _sre_src.compare_sources(reports, labels)
+        formula = _sre_src.winning_formula(comparison)
+    return {"collected": collected, "usableCount": len(usable),
+            "comparison": comparison, "winningFormula": formula}
+
+
+class SRESourceItem(BaseModel):
+    label: str = ""
+    text: str = ""
+    kind: str = "script"
+
+
+class SRECompareReq(BaseModel):
+    sources: list[SRESourceItem] = Field(default_factory=list)
+    markets: list[str] = Field(default_factory=lambda: ["KR"])
+    provider: str = "off"          # 비교는 규칙기반 기본(빠름·결정론)
+
+
+@app.post("/api/sre/compare")
+def sre_compare(req: SRECompareReq):
+    if not (_SRE_OK and _sre_src):
+        raise HTTPException(500, "SRE 소스 모듈 미로드")
+    items = [s for s in req.sources if (s.text or "").strip()]
+    if len(items) < 2:
+        raise HTTPException(400, "비교하려면 본문 있는 소스가 2개 이상 필요해요.")
+    reports, labels = [], []
+    for i, s in enumerate(items):
+        rep = _sre.run_analysis(text=s.text.strip(), kind=s.kind,
+                                markets=req.markets, provider=req.provider,
+                                persist=False)
+        reports.append(rep)
+        labels.append(s.label.strip() or f"소스{i+1}")
+    comparison = _sre_src.compare_sources(reports, labels)
+    formula = _sre_src.winning_formula(comparison)
+    return {"reports": reports, "comparison": comparison,
+            "winningFormula": formula, "labels": labels}
+
+
+class SREJudgeEntry(BaseModel):
+    strategy: str
+    metricName: str = ""
+    value: float | None = None
+    title: str = ""
+
+
+class SREJudgeReq(BaseModel):
+    entries: list[SREJudgeEntry] = Field(default_factory=list)
+    higher_is_better: bool = True
+    country: str | None = None
+    niche: str | None = None
+    record: bool = False
+    run_id: str = ""               # 어느 분석 결과에 대한 실험인지(옵션)
+    persist: bool = True           # 성과를 store 에 영속 저장
+
+
+@app.post("/api/sre/judge")
+def sre_judge(req: SREJudgeReq):
+    if not (_SRE_OK and _sre_src):
+        raise HTTPException(500, "SRE 소스 모듈 미로드")
+    entries = [e.model_dump() for e in req.entries]
+    res = _sre_src.judge_experiment(
+        entries, higher_is_better=req.higher_is_better,
+        country=req.country, niche=req.niche, record=req.record)
+    if not res.get("ok"):
+        raise HTTPException(400, res.get("error", "판정 실패"))
+    # 실험 성과 영속 저장(승자 표식 포함) — 학습 리더보드로 축적
+    if req.persist:
+        scored = [e for e in entries if isinstance(e.get("value"), (int, float))]
+        try:
+            batch = _sre_db.save_experiment(
+                scored, winner=res["winner"]["strategy"], run_id=req.run_id)
+            res["batchId"] = batch
+            res["leaderboard"] = _sre_db.strategy_leaderboard()
+        except Exception as e:
+            res["persistError"] = str(e)
+    return res
+
+
+@app.get("/api/sre/experiments")
+def sre_experiments(run_id: str = ""):
+    if not (_SRE_OK and _sre_db):
+        raise HTTPException(500, "SRE 저장소 미로드")
+    return {"experiments": _sre_db.list_experiments(run_id=run_id or None, limit=100),
+            "leaderboard": _sre_db.strategy_leaderboard()}
+
+
+# ── 🏷️ 카테고리별 승리공식 (레퍼런스 채널 표본 → 빈도 집계) ─────
+@app.get("/api/sre/category-groups")
+def sre_category_groups():
+    """레퍼런스 채널의 대분류(그룹)별 채널 수 — 카테고리 선택용."""
+    from collections import Counter
+    chans = store.list_channels()
+    c = Counter((ch.get("group") or "기타") for ch in chans)
+    groups = [{"group": g, "channels": n} for g, n in c.most_common()]
+    return {"groups": groups, "total": len(chans)}
+
+
+class SRECategoryReq(BaseModel):
+    group: str = ""
+    per_channel: int = 3
+    max_channels: int = 10
+    min_ratio: float = 0.4
+
+
+@app.post("/api/sre/category-formula")
+def sre_category_formula(req: SRECategoryReq):
+    if not (_SRE_OK and _sre_cat):
+        raise HTTPException(500, "SRE 카테고리 모듈 미로드")
+    chans = [c for c in store.list_channels() if (c.get("group") or "") == req.group]
+    if not chans:
+        raise HTTPException(400, "그 카테고리의 채널이 없어요.")
+
+    _cache: dict[str, str] = {}
+
+    def sample_fn(ch: dict) -> list[str]:
+        if _cw is None:
+            return []
+        url = ch.get("url", "")
+        cid = ch.get("channel_id_resolved", "") or (ch.get("channel_id", "")
+              if str(ch.get("channel_id", "")).startswith("UC") else "")
+        if not cid and url:
+            cid = _cache.get(url) or _cw.resolve_channel_id(url)
+            if cid:
+                _cache[url] = cid
+        if not cid:
+            return []
+        feed = _cw.parse_feed(_cw._fetch(_cw.rss_url(cid)))
+        return [e.get("title", "") for e in feed if e.get("title")]
+
+    def analyze_fn(text: str) -> dict:
+        return _sre.run_analysis(text=text, kind="script", markets=[],
+                                 provider="off", persist=False)
+
+    out = _sre_cat.category_formula(
+        chans, sample_fn, analyze_fn,
+        per_channel=max(1, min(req.per_channel, 5)),
+        max_channels=max(2, min(req.max_channels, 15)),
+        min_ratio=req.min_ratio)
+    out["group"] = req.group
+    out["channelCount"] = len(chans)
+    return out
+
+
+# ── 🎬 쇼츠 후킹 대본 생성기 (사장님 프롬프트 엔진) ──────────
+class HookReq(BaseModel):
+    video_desc: str = ""
+    comments: str = ""
+    direction: str = ""
+    tone: list[str] | None = None
+    extra_notes: str = ""       # 카테고리 공식 등 훅 계승용
+    use_llm: bool = True        # 키 있으면 LLM 심화
+
+
+@app.get("/api/shorts-hook/health")
+def hook_health():
+    prov = _sre_prov.status() if _sre_prov else {"active": "mock", "live": False}
+    return {"ok": bool(_hook), "provider": prov, "live": prov.get("live", False)}
+
+
+@app.post("/api/shorts-hook/generate")
+def hook_generate(req: HookReq):
+    if not _hook:
+        raise HTTPException(500, "쇼츠 후킹 모듈 미로드")
+    if not (req.video_desc or "").strip():
+        raise HTTPException(400, "영상 설명을 입력해주세요.")
+    llm = None
+    if req.use_llm and _sre_prov and _sre_prov.is_live():
+        llm = lambda s, u: _sre_prov.llm_json(s, u)   # noqa: E731
+    out = _hook.generate(req.video_desc, req.comments, req.direction,
+                         tone=req.tone, extra_notes=req.extra_notes, llm_json=llm)
+    # 작업 공유 기록(다른 PC 와 자동 동기화)
+    _title = (req.direction or "").strip() or (
+        (out.get("top3") or [{}])[0].get("title", "") or "쇼츠 후킹 대본")
+    _record_work("shorts_hook", _title, out,
+                 summary=f"제목 {len(out.get('titles', []))} · 대본 {len(out.get('script', []))}줄 · {out.get('_engine')}")
+    return out
+
+
+class SrtReq(BaseModel):
+    lines: list[str] = Field(default_factory=list)
+    pace: float = 1.5
+    gap: float = 0.0
+    filename: str = "shorts_subtitle"
+
+
+@app.post("/api/shorts-hook/srt")
+def hook_srt(req: SrtReq):
+    """체크·수정한 대본 줄 → SRT 자막(캡컷 임포트용). {srt, filename} 반환."""
+    if not _hook:
+        raise HTTPException(500, "쇼츠 후킹 모듈 미로드")
+    lines = [ln for ln in (req.lines or []) if (ln or "").strip()]
+    if not lines:
+        raise HTTPException(400, "자막으로 만들 대본 줄이 없어요.")
+    pace = req.pace if 0.3 <= req.pace <= 10 else 1.5
+    srt = _hook.to_srt(lines, pace=pace, gap=max(0.0, req.gap))
+    safe = "".join(ch for ch in (req.filename or "shorts_subtitle")
+                   if ch.isalnum() or ch in ("-", "_")) or "shorts_subtitle"
+    return {"srt": srt, "filename": safe + ".srt", "lineCount": len(lines),
+            "totalSec": round(len(lines) * pace + max(0.0, req.gap) * (len(lines) - 1), 1)}
+
+
+_HOOK_TTS_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "data", "hook_tts")
+
+
+@app.get("/api/shorts-hook/voices")
+def hook_voices():
+    return {"voices": _hook.TTS_VOICES if _hook else [],
+            "hasKey": bool(os.environ.get("OPENAI_API_KEY", "").strip())}
+
+
+class TtsReq(BaseModel):
+    lines: list[str] = Field(default_factory=list)
+    text: str = ""
+    voice: str = "nova"
+    speed: float = 1.0
+
+
+@app.post("/api/shorts-hook/tts")
+def hook_tts(req: TtsReq):
+    """대본 → 한국어 TTS 음성(MP3). 캡컷에 SRT 와 함께 얹으면 됨."""
+    if not _hook:
+        raise HTTPException(500, "쇼츠 후킹 모듈 미로드")
+    key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not key:
+        raise HTTPException(400, "OpenAI 키가 필요해요 — 설정 또는 🔑 키 연결에서 OpenAI 키를 넣어주세요.")
+    text = (req.text or "").strip() or "\n".join(
+        ln for ln in (req.lines or []) if (ln or "").strip())
+    if not text.strip():
+        raise HTTPException(400, "음성으로 만들 대본이 없어요.")
+    audio = _hook.synthesize(text, voice=req.voice, api_key=key, speed=req.speed)
+    if not audio:
+        raise HTTPException(500, "TTS 생성 실패 — 키·네트워크를 확인해주세요.")
+    os.makedirs(_HOOK_TTS_DIR, exist_ok=True)
+    import uuid as _uuid
+    name = "hooktts_" + _uuid.uuid4().hex[:12] + ".mp3"
+    with open(os.path.join(_HOOK_TTS_DIR, name), "wb") as f:
+        f.write(audio)
+    return {"url": f"/api/shorts-hook/tts/file/{name}", "filename": name,
+            "bytes": len(audio), "voice": req.voice}
+
+
+@app.get("/api/shorts-hook/tts/file/{name}")
+def hook_tts_file(name: str):
+    if any(c in name for c in ("/", "\\", "..")):
+        raise HTTPException(400, "잘못된 파일명")
+    path = os.path.join(_HOOK_TTS_DIR, name)
+    if not os.path.isfile(path):
+        raise HTTPException(404, "음성 파일 없음")
+    return FileResponse(path, media_type="audio/mpeg", filename=name)
+
+
+# ── 🔄 작업 공유(여러 PC 자동 동기화) ─────────────────────
+@app.get("/api/work")
+def work_list(kind: str = "", limit: int = 200):
+    if not _work:
+        return {"items": [], "machine": "", "note": "작업 저장소 미로드"}
+    return {"items": _work.list_work(limit=limit, kind=kind or None),
+            "machine": _work.machine_name()}
+
+
+@app.get("/api/work/{wid}")
+def work_get(wid: str):
+    if not _work:
+        raise HTTPException(500, "작업 저장소 미로드")
+    rec = _work.get_work(wid)
+    if not rec:
+        raise HTTPException(404, "작업을 찾을 수 없어요")
+    return rec
+
+
+@app.delete("/api/work/{wid}")
+def work_delete(wid: str):
+    if not _work:
+        raise HTTPException(500, "작업 저장소 미로드")
+    ok = _work.delete_work(wid)
+
+    def _bg():
+        if _WORK_LOCK.acquire(blocking=False):
+            try:
+                _work.sync()
+            except Exception:
+                pass
+            finally:
+                _WORK_LOCK.release()
+    _threading.Thread(target=_bg, daemon=True).start()
+    return {"ok": ok}
+
+
+@app.post("/api/work/sync")
+def work_sync(push: bool = True):
+    """다른 PC 작업 받기(pull) + 내 작업 공유(push). 수동 🔄 버튼용."""
+    if not _work:
+        raise HTTPException(500, "작업 저장소 미로드")
+    with _WORK_LOCK:
+        return _work.sync(push=push)
+
+
+# ── 📺 레퍼런스 채널 100선 시드 (카테고리별) ──────────────
+@app.on_event("startup")
+def _seed_ref_channels():
+    """서버 시작 시 벤치마킹 레퍼런스 채널 시드를 RefTracker 에 자동 로드(1회·버전 가드)."""
+    try:
+        r = store.seed_ref_channels()
+        if r.get("seeded"):
+            print(f"[seed] 레퍼런스 채널 {r['seeded']}개 로드 (v{r.get('version')})")
+    except Exception as e:
+        print(f"[seed] 레퍼런스 채널 시드 실패(무시): {e}")
+
+
+@app.post("/api/channels/seed")
+def channels_seed(force: bool = False):
+    """레퍼런스 채널 시드 수동 재로드(force=true 면 누락분 재주입)."""
+    try:
+        return store.seed_ref_channels(force=force)
+    except Exception as e:
+        raise HTTPException(500, f"시드 실패: {e}")
 
 
 # ── 정적 UI (japan_shorts_app) — 같은 포트에서 서빙 ─────

@@ -109,6 +109,45 @@ def resolve_channel_info(url: str) -> tuple[str, str]:
         return cid, ""
 
 
+def resolve_channel_full(url: str) -> tuple[str, str, str]:
+    """URL(영상/채널/핸들) → (channel_id, channel_name, thumb_url).
+
+    thumb_url = 채널 대표 이미지(어떤 채널인지 눈으로 구별용). 확보 우선순위:
+      1) RSS(쿼터 0·키 불필요): /channel/UC.. 링크는 **키가 없어도** 채널명 +
+         최근 영상 썸네일을 얻는다. → 사장님이 키를 안 넣어도 썸네일이 보임.
+      2) API 키가 있으면 채널 로고(아바타)로 보강(RSS 로 못 얻었을 때만).
+    핸들(@)·영상 링크는 channel_id 해석에 키가 필요할 수 있다(RSS 는 id 필요).
+    """
+    cid = resolve_channel_id(url)
+    name, thumb = "", ""
+    # 1) RSS 우선 — 키 없이도 /channel/ 은 채널명 + 대표 썸네일 확보
+    if cid:
+        try:
+            feed = parse_feed(_fetch(rss_url(cid)))
+            if feed:
+                name = feed[0].get("channel", "") or name
+                thumb = feed[0].get("thumb", "") or thumb
+        except Exception:               # noqa: BLE001
+            pass
+    # 2) 키 있으면 정식 채널명 + 로고로 보강(RSS 로 못 얻은 값만 채움)
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "jpshorts", "backend"))
+        import youtube_client as yc
+        if cid and yc.has_key():
+            r = yc._yt().channels().list(part="snippet", id=cid).execute()
+            items = r.get("items", [])
+            if items:
+                sn = items[0]["snippet"]
+                name = sn.get("title", "") or name
+                if not thumb:           # RSS 썸네일 없을 때만 로고로
+                    th = sn.get("thumbnails", {}) or {}
+                    thumb = ((th.get("medium") or th.get("high")
+                              or th.get("default") or {}).get("url", ""))
+    except Exception:                   # noqa: BLE001
+        pass
+    return cid, name, thumb
+
+
 def _video_views(video_ids: list[str]) -> dict[str, int]:
     """영상 ID들 → 현재 조회수 (72시간 결과용)."""
     out: dict[str, int] = {}

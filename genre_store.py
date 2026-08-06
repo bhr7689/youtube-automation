@@ -65,11 +65,12 @@ SEED_PROJECTS: dict[str, dict] = {
 
 def _blank_benchmark(url: str) -> dict:
     return {"url": url.strip(), "bookmark": False, "alarm": False,
-            "channel_id": "", "channel": "", "note": ""}
+            "channel_id": "", "channel": "", "thumb": "", "note": ""}
 
 
-def set_benchmark_channel(name: str, url: str, channel_id: str, channel: str) -> dict:
-    """벤치마크 링크에 채널 정보(id·이름) 저장 — 영상 링크→채널 파악."""
+def set_benchmark_channel(name: str, url: str, channel_id: str, channel: str,
+                          thumb: str = "") -> dict:
+    """벤치마크 링크에 채널 정보(id·이름·로고썸네일) 저장 — 영상 링크→채널 파악."""
     st = load_state()
     p = st["projects"].get(name)
     if p:
@@ -77,6 +78,8 @@ def set_benchmark_channel(name: str, url: str, channel_id: str, channel: str) ->
             if b["url"] == url:
                 b["channel_id"] = channel_id
                 b["channel"] = channel
+                if thumb:                # 로고는 있을 때만 갱신(기존 로고 지우지 않음)
+                    b["thumb"] = thumb
                 break
         save_state(st)
     return st
@@ -110,6 +113,9 @@ def load_state() -> dict:
     for p in projects.values():         # 스키마 보정
         p.setdefault("note", ""); p.setdefault("benchmarks", [])
         p.setdefault("basket", []); p.setdefault("identity", {})
+        for b in p["benchmarks"]:       # 기존 벤치마크에 신규 필드 보충
+            b.setdefault("thumb", "")
+            b.setdefault("channel_id", ""); b.setdefault("channel", "")
     current = data.get("current") or next(iter(projects), "")
     if current not in projects:
         current = next(iter(projects), "")

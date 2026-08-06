@@ -81,7 +81,15 @@ async function api(path, opts = {}) {
     headers: { "Content-Type": "application/json" },
     ...opts,
   });
-  if (!res.ok) throw new Error(`API ${res.status}: ${path}`);
+  if (!res.ok) {
+    // FastAPI 의 친절한 detail 메시지를 그대로 노출(없으면 상태코드)
+    let msg = `API ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body && body.detail) msg = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
+    } catch (e) {}
+    throw new Error(msg);
+  }
   return res.json();
 }
 
@@ -327,3 +335,39 @@ function selectedValue(rootEl) {
   const c = rootEl.querySelector(".selected");
   return c ? c.dataset.v : undefined;
 }
+
+/* 🧬 SRE 역설계 메뉴 자동 주입 — 모든 페이지 사이드바에 한 번만 (개별 파일 수정 불필요) */
+(function injectSRENav() {
+  function build() {
+    const nav = document.querySelector(".sidebar .nav-section");
+    if (!nav) return;
+    if (nav.querySelector('a[href="sre.html"]')) return;   // 이미 있으면(sre.html 자신) 건너뜀
+    const a = document.createElement("a");
+    a.href = "sre.html";
+    a.className = "nav-item";
+    a.textContent = "🧬 SRE 역설계";
+    // '대본 작성' 앞에 넣어 분석→생성 흐름이 자연스럽게, 없으면 맨 끝
+    const before = nav.querySelector('a[href="scriptwriter.html"]');
+    if (before) nav.insertBefore(a, before);
+    else nav.appendChild(a);
+
+    // 🎬 쇼츠 후킹 대본 — SRE 바로 뒤에 주입
+    if (!nav.querySelector('a[href="shorts_hook.html"]')) {
+      const h = document.createElement("a");
+      h.href = "shorts_hook.html"; h.className = "nav-item";
+      h.textContent = "🎬 쇼츠 후킹 대본";
+      nav.insertBefore(h, a.nextSibling);
+    }
+    // 📋 작업 기록(공유) — 쇼츠 후킹 뒤에 주입
+    if (!nav.querySelector('a[href="work.html"]')) {
+      const hk = nav.querySelector('a[href="shorts_hook.html"]');
+      const w = document.createElement("a");
+      w.href = "work.html"; w.className = "nav-item";
+      w.textContent = "📋 작업 기록(공유)";
+      nav.insertBefore(w, hk ? hk.nextSibling : a.nextSibling);
+    }
+  }
+  if (document.readyState === "loading")
+    document.addEventListener("DOMContentLoaded", build);
+  else build();
+})();

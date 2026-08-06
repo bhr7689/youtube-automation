@@ -93,6 +93,11 @@
             <input class="key-input" id="k_openai" type="password" autocomplete="off" placeholder="선택 — 없어도 돼요">
             <span class="key-cur off" id="cur_openai">확인 중…</span>
           </div>
+          <div class="key-row">
+            <span class="key-label">🟣 Anthropic <span style="font-weight:400;color:#a99fc0;font-size:11px;">(선택·SRE 역설계)</span></span>
+            <input class="key-input" id="k_anthropic" type="password" autocomplete="off" placeholder="선택 — sk-ant-...">
+            <span class="key-cur off" id="cur_anthropic">확인 중…</span>
+          </div>
         </div>
         <div style="display:flex;gap:14px;align-items:center;margin-top:12px;flex-wrap:wrap;">
           <button class="btn-sm" onclick="saveKeys(this)">💾 저장하기</button>
@@ -208,13 +213,13 @@
           if (o && o.set) { el.className = "key-cur set"; el.textContent = "저장됨 " + (o.mask || ""); }
           else { el.className = "key-cur off"; el.textContent = "미설정"; }
         };
-        set("youtube", k.youtube); set("gemini", k.gemini); set("openai", k.openai);
+        set("youtube", k.youtube); set("gemini", k.gemini); set("openai", k.openai); set("anthropic", k.anthropic);
       } catch (e) {}
     }
 
     function toggleShow() {
       const t = document.getElementById("showKeys").checked ? "text" : "password";
-      ["k_youtube", "k_gemini", "k_openai"].forEach(id => { document.getElementById(id).type = t; });
+      ["k_youtube", "k_gemini", "k_openai", "k_anthropic"].forEach(id => { document.getElementById(id).type = t; });
     }
 
     async function saveKeys(btn) {
@@ -222,12 +227,13 @@
         youtube: document.getElementById("k_youtube").value.trim(),
         gemini: document.getElementById("k_gemini").value.trim(),
         openai: document.getElementById("k_openai").value.trim(),
+        anthropic: document.getElementById("k_anthropic").value.trim(),
       };
-      if (!body.youtube && !body.gemini && !body.openai) return toast("저장할 키를 최소 한 개 입력하세요");
+      if (!body.youtube && !body.gemini && !body.openai && !body.anthropic) return toast("저장할 키를 최소 한 개 입력하세요");
       btn.classList.add("busy"); const orig = btn.textContent; btn.textContent = "저장 중…";
       try {
         await api("/api/keys/save", { method: "POST", body: JSON.stringify(body) });
-        ["k_youtube", "k_gemini", "k_openai"].forEach(id => { document.getElementById(id).value = ""; });
+        ["k_youtube", "k_gemini", "k_openai", "k_anthropic"].forEach(id => { document.getElementById(id).value = ""; });
         toast("✓ 저장 완료 — 바로 적용됐어요 (재시작 불필요)");
         loadKeys(); loadStatus();
       } catch (e) { toast("오류: " + (e.message || e)); }

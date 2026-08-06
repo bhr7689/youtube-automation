@@ -81,6 +81,7 @@ def normalize(card: dict) -> dict:
         "multiplier": card.get("multiplier"),
         "subscribers": card.get("subscribers", 0),
         "keywords": card.get("keywords", []) or [],
+        # 시간당 조회수 — 있으면 그대로, 없으면 게시일로 계산(VPH 제목 대장간·조합 공용)
         "vph": card.get("vph") if card.get("vph") is not None else _vph_of(_views_of(card), pub),
     }
 

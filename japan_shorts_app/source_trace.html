@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🕵️ 원본 추적 · 쇼츠헌터</title>
+<style>
+  :root{
+    --red:#e11d2a; --red-d:#b3121d; --ink:#1f2430; --sub:#8b94a3;
+    --line:#eceef2; --bg:#f6f7f9; --blue:#2563eb; --gold:#f59e0b;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Malgun Gothic","맑은 고딕",sans-serif;
+    background:var(--bg);color:var(--ink);}
+  a{color:inherit;text-decoration:none;}
+  /* ── 상단 바 ── */
+  .topbar{background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20;}
+  .tb-in{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:22px;padding:12px 22px;}
+  .logo{display:flex;align-items:center;gap:8px;font-weight:900;color:var(--red);font-size:19px;letter-spacing:-.02em;}
+  .logo .mark{display:inline-flex;gap:2px;align-items:flex-end;}
+  .logo .mark i{width:4px;border-radius:2px;background:var(--red);display:inline-block;}
+  .logo .mark i:nth-child(1){height:9px;} .logo .mark i:nth-child(2){height:15px;} .logo .mark i:nth-child(3){height:11px;opacity:.6;}
+  .nav{display:flex;gap:4px;flex:1;flex-wrap:wrap;}
+  .nav a{font-size:13.5px;color:#5a6270;padding:7px 11px;border-radius:9px;font-weight:600;display:flex;gap:5px;align-items:center;}
+  .nav a:hover{background:#f4f5f7;}
+  .nav a.active{color:var(--red);}
+  .nav a.active::after{content:"";}
+  .nav a.active{position:relative;}
+  .nav a.active b{border-bottom:2.5px solid var(--red);padding-bottom:9px;font-weight:800;}
+  .tb-right{display:flex;align-items:center;gap:14px;color:#8b94a3;font-size:13px;}
+  .tb-right .acct{display:flex;align-items:center;gap:6px;}
+  .tb-right .av{width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#e11d2a,#f59e0b);}
+  /* ── 본문 ── */
+  .wrap{max-width:1180px;margin:0 auto;padding:22px;}
+  .h1{font-size:22px;font-weight:900;margin:6px 0 2px;}
+  .lead{color:var(--sub);font-size:13.5px;line-height:1.7;margin-bottom:18px;}
+  .demo-chip{display:inline-block;background:#fff7ed;border:1px solid #fdba74;color:#9a3412;
+    font-size:12px;font-weight:700;padding:4px 11px;border-radius:999px;margin-bottom:14px;}
+  /* 입력 바 */
+  .inbar{background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:18px;
+    box-shadow:0 2px 12px rgba(20,25,40,.04);}
+  .inrow{display:flex;gap:10px;flex-wrap:wrap;}
+  .inrow input{flex:1;min-width:220px;border:1.5px solid #e3e6ec;border-radius:11px;padding:12px 14px;font-size:14px;}
+  .btn{border:none;border-radius:11px;padding:12px 20px;font-weight:800;font-size:14px;cursor:pointer;}
+  .btn.red{background:var(--red);color:#fff;} .btn.red:hover{background:var(--red-d);}
+  .btn.ghost{background:#fff;border:1.5px solid #e3e6ec;color:#3b424f;}
+  .toggle{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:#4b5563;margin-top:12px;cursor:pointer;}
+  .sw{width:40px;height:22px;border-radius:999px;background:#d5d9e0;position:relative;transition:.2s;}
+  .sw.on{background:var(--red);}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.2s;}
+  .sw.on::after{left:20px;}
+  /* 섹션 카드 */
+  .sec{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:18px;
+    box-shadow:0 2px 12px rgba(20,25,40,.04);}
+  .sec-h{font-size:15px;font-weight:900;margin-bottom:4px;display:flex;align-items:center;gap:8px;}
+  .sec-sub{font-size:12.5px;color:var(--sub);margin-bottom:14px;line-height:1.6;}
+  /* 소재 지문 */
+  .finger{display:flex;gap:16px;flex-wrap:wrap;align-items:center;}
+  .finger .frame{width:92px;height:120px;border-radius:12px;background:linear-gradient(135deg,#8b5a2b,#c98a4b);
+    display:flex;align-items:center;justify-content:center;font-size:34px;flex:0 0 auto;box-shadow:inset 0 0 0 1px rgba(0,0,0,.06);}
+  .finger .meta{font-size:13px;line-height:1.9;}
+  .finger .meta b{color:var(--ink);}
+  .tag{display:inline-block;background:#f1f3f6;border-radius:7px;padding:2px 9px;font-size:12px;font-weight:700;color:#475063;margin-right:5px;}
+  .tag.handle{background:#fee2e2;color:#b3121d;}
+  /* 타임라인 */
+  .tl{position:relative;padding:8px 4px 4px;overflow-x:auto;}
+  .tl-track{display:flex;align-items:flex-start;gap:0;min-width:640px;}
+  .tl-node{flex:1;text-align:center;position:relative;padding-top:26px;min-width:96px;}
+  .tl-line{position:absolute;top:12px;left:0;right:0;height:3px;background:#e6e9ef;z-index:0;}
+  .tl-dot{width:15px;height:15px;border-radius:50%;position:absolute;top:5px;left:50%;transform:translateX(-50%);
+    z-index:2;border:3px solid #fff;box-shadow:0 0 0 1px #e6e9ef;}
+  .tl-dot.orig{background:#6b7280;} .tl-dot.foreign{background:var(--blue);} .tl-dot.kr{background:var(--red);}
+  .tl-badge{position:absolute;top:-12px;left:50%;transform:translateX(-50%);font-size:14px;}
+  .tl-date{font-size:11.5px;font-weight:800;color:#3b424f;}
+  .tl-cap{font-size:10.5px;color:var(--sub);line-height:1.4;margin-top:2px;}
+  .tl-legend{display:flex;gap:16px;font-size:12px;color:#5a6270;margin-top:12px;flex-wrap:wrap;}
+  .tl-legend span{display:inline-flex;align-items:center;gap:6px;}
+  .dotc{width:10px;height:10px;border-radius:50%;display:inline-block;}
+  /* 결과 카드 그리드 */
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  @media(max-width:720px){.grid2{grid-template-columns:1fr;}}
+  .vcard{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#fff;display:flex;gap:12px;padding:12px;}
+  .vcard .th{width:74px;height:96px;border-radius:10px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:28px;color:#fff;}
+  .vcard .info{flex:1;min-width:0;}
+  .rank{display:inline-block;font-size:12px;font-weight:900;padding:2px 9px;border-radius:999px;margin-bottom:6px;}
+  .rank.g1{background:#fef3c7;color:#92400e;} .rank.g2{background:#e5e7eb;color:#374151;}
+  .vt{font-size:13.5px;font-weight:700;line-height:1.4;margin-bottom:5px;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+  .vmeta{font-size:12px;color:var(--sub);line-height:1.8;}
+  .vmeta .lang{font-weight:800;color:#3b424f;}
+  .ch{display:flex;align-items:center;gap:7px;margin-top:8px;}
+  .ch .av{width:22px;height:22px;border-radius:50%;flex:0 0 auto;}
+  .ch .cn{font-size:12.5px;font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .bmk{border:1.5px solid #e3e6ec;background:#fff;border-radius:9px;padding:5px 10px;font-size:12px;font-weight:800;cursor:pointer;color:#3b424f;flex:0 0 auto;}
+  .bmk.on{background:var(--red);color:#fff;border-color:var(--red);}
+  /* 한국 대장 채널 */
+  .boss{border:1.5px solid #fecaca;background:linear-gradient(180deg,#fff5f5,#ffffff);border-radius:16px;padding:16px;}
+  .boss-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+  .boss-av{width:46px;height:46px;border-radius:50%;background:linear-gradient(135deg,#e11d2a,#f59e0b);flex:0 0 auto;}
+  .boss-name{font-size:16px;font-weight:900;}
+  .crown{font-size:13px;color:#b3121d;font-weight:800;}
+  .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0;}
+  @media(max-width:560px){.metrics{grid-template-columns:repeat(2,1fr);}}
+  .met{background:#fff;border:1px solid var(--line);border-radius:11px;padding:10px;text-align:center;}
+  .met .v{font-size:16px;font-weight:900;color:var(--ink);}
+  .met .k{font-size:11px;color:var(--sub);margin-top:2px;}
+  .formula{background:#fff;border:1px dashed #f3b6bb;border-radius:11px;padding:11px 13px;font-size:12.5px;line-height:1.7;color:#3b424f;}
+  .formula b{color:var(--red);}
+  .boss-act{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}
+  /* 저장한 채널 */
+  .saved{display:flex;gap:10px;flex-wrap:wrap;}
+  .schip{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:13px;}
+  .schip .av{width:20px;height:20px;border-radius:50%;}
+  .schip .x{color:#b3121d;font-weight:900;cursor:pointer;}
+  .flowhint{font-size:12px;color:var(--sub);margin-top:10px;}
+  /* 토스트 */
+  #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1f2430;color:#fff;padding:11px 20px;border-radius:999px;font-size:13px;opacity:0;transition:.25s;pointer-events:none;z-index:99;}
+</style>
+</head>
+<body>
+  <!-- 상단 바 (쇼츠헌터) -->
+  <div class="topbar"><div class="tb-in">
+    <div class="logo"><span class="mark"><i></i><i></i><i></i></span>쇼츠헌터</div>
+    <nav class="nav">
+      <a href="#">📊 대시보드</a>
+      <a href="#">🔥 급등 영상</a>
+      <a href="#">🔎 채널 발굴</a>
+      <a href="#">💾 저장 채널</a>
+      <a href="#" class="active"><b>🕵️ 원본 추적</b></a>
+      <a href="#">🧹 영상 가공</a>
+    </nav>
+    <div class="tb-right">
+      <span>🔔</span>
+      <span class="acct"><span class="av"></span>사장님</span>
+      <span>로그아웃</span>
+    </div>
+  </div></div>
+
+  <div class="wrap">
+    <div class="h1">🕵️ 원본 추적 — 하나의 소재가 어떻게 퍼졌나</div>
+    <p class="lead">쇼츠 링크를 넣거나 <b>새 영상 자동 체크</b>를 켜면, <b>같은 배경·소재</b>를 쓴 영상들을 <b>업로드 날짜순</b>으로 배열합니다.<br>
+      🌍 <b>외국어 원조 1·2번째</b>(누가 먼저 터뜨렸나)와 🇰🇷 <b>한국 대장 채널</b>(내 카테고리 1인자 분석)을 집어 🔖 저장까지 이어집니다.</p>
+    <span class="demo-chip">🎬 데모 미리보기 — 실제 추적은 사장님 PC(yt-dlp·API키)에서 작동</span>
+
+    <!-- 입력 -->
+    <div class="inbar">
+      <div class="inrow">
+        <input placeholder="쇼츠 URL 붙여넣기  예) https://youtube.com/shorts/xxxx" value="https://youtube.com/shorts/eel-kid-viral">
+        <button class="btn red" onclick="toast('🔍 추적 시작 — 소재 지문 추출 중… (데모)')">🔍 추적 시작</button>
+      </div>
+      <label class="toggle" onclick="this.querySelector('.sw').classList.toggle('on');toast('🔔 새 영상 자동 체크 '+(this.querySelector('.sw').classList.contains('on')?'켜짐 — 급등피드·저장채널 새 영상을 자동 추적':'꺼짐'))">
+        <span class="sw on"></span> 🔔 새 영상 자동 체크 — 급등 피드·저장 채널에 새 영상이 뜨면 자동으로 추적
+      </label>
+    </div>
+
+    <!-- 소재 지문 -->
+    <div class="sec">
+      <div class="sec-h">🧬 소재 지문</div>
+      <div class="sec-sub">대표 프레임·워터마크 핸들·원본 롱폼 후보 — 이 신호로 같은 소재를 가진 영상을 모읍니다.</div>
+      <div class="finger">
+        <div class="frame">🎣</div>
+        <div class="meta">
+          <div><b>감지 소재</b> · 시골 아이가 진흙에서 장어를 맨손으로 잡는 클립</div>
+          <div><span class="tag handle">워터마크 @VillageLifeVN</span><span class="tag">🌏 원 촬영 베트남 유력</span></div>
+          <div><b>원본 롱폼 후보</b> · “Cách bắt lươn đồng…” · 2024-02-10 · @VillageLifeVN</div>
+          <div class="sec-sub" style="margin:6px 0 0;">역이미지·다국어 제목검색·핸들 3신호 조합으로 후보 <b>7건</b> 수집됨.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 확산 타임라인 -->
+    <div class="sec">
+      <div class="sec-h">📅 확산 타임라인 <span style="font-weight:600;color:var(--sub);font-size:12px;">— 관측된 최초 기준(전수 크롤 불가 → “관측 최초”)</span></div>
+      <div class="tl"><div class="tl-track">
+        <div class="tl-node"><div class="tl-line"></div><div class="tl-dot orig"></div><div class="tl-date">02-10</div><div class="tl-cap">원본 롱폼<br>🇻🇳 @VillageLifeVN</div></div>
+        <div class="tl-node"><div class="tl-line"></div><div class="tl-dot foreign"></div><div class="tl-badge">🥇</div><div class="tl-date">02-15</div><div class="tl-cap">외국어 1st<br>🇬🇧 영어</div></div>
+        <div class="tl-node"><div class="tl-line"></div><div class="tl-dot foreign"></div><div class="tl-badge">🥈</div><div class="tl-date">02-17</div><div class="tl-cap">외국어 2nd<br>🇮🇩 인니</div></div>
+        <div class="tl-node"><div class="tl-line"></div><div class="tl-dot kr"></div><div class="tl-badge">🥇</div><div class="tl-date">02-22</div><div class="tl-cap">한국 1st<br>👑 대장</div></div>
+        <div class="tl-node"><div class="tl-line"></div><div class="tl-dot kr"></div><div class="tl-badge">🥈</div><div class="tl-date">02-24</div><div class="tl-cap">한국 2nd</div></div>
+      </div></div>
+      <div class="tl-legend">
+        <span><i class="dotc" style="background:#6b7280"></i> 원본 롱폼</span>
+        <span><i class="dotc" style="background:#2563eb"></i> 외국어 쇼츠</span>
+        <span><i class="dotc" style="background:#e11d2a"></i> 한국어 쇼츠</span>
+      </div>
+    </div>
+
+    <!-- 외국어 원조 -->
+    <div class="sec">
+      <div class="sec-h">🌍 외국어 원조 — 이 소재를 처음 터뜨린 2개</div>
+      <div class="sec-sub">가장 먼저 쇼츠로 만든 채널 = 선점·원본 타이밍의 기준. 트렌드 초입을 잡는 데 씁니다.</div>
+      <div class="grid2">
+        <div class="vcard">
+          <div class="th" style="background:linear-gradient(135deg,#1d4ed8,#3b82f6)">🎣</div>
+          <div class="info">
+            <span class="rank g1">🥇 외국어 1번째</span>
+            <div class="vt">She Finally Caught the Slippery Eel! 😳</div>
+            <div class="vmeta"><span class="lang">🇬🇧 영어</span> · 업로드 <b>2024-02-15</b> · 조회 8.7만 · ×212</div>
+            <div class="ch"><span class="av" style="background:#1d4ed8"></span><span class="cn">@ShortsWorldEN</span>
+              <button class="bmk" onclick="bmk(this,'@ShortsWorldEN')">🔖 저장</button></div>
+          </div>
+        </div>
+        <div class="vcard">
+          <div class="th" style="background:linear-gradient(135deg,#0e7490,#06b6d4)">🎣</div>
+          <div class="info">
+            <span class="rank g2">🥈 외국어 2번째</span>
+            <div class="vt">Anak Kecil Tangkap Belut Pakai Tangan! 😱</div>
+            <div class="vmeta"><span class="lang">🇮🇩 인니</span> · 업로드 <b>2024-02-17</b> · 조회 5.1만 · ×140</div>
+            <div class="ch"><span class="av" style="background:#0e7490"></span><span class="cn">@ViralClipsID</span>
+              <button class="bmk" onclick="bmk(this,'@ViralClipsID')">🔖 저장</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 한국 대장 채널 -->
+    <div class="sec">
+      <div class="sec-h">🇰🇷 한국 대장 채널 — 내 카테고리 1인자 분석</div>
+      <div class="sec-sub">한국은 "누가 먼저"보다 <b>"이 카테고리의 대장이 누구냐 + 어떻게 하느냐"</b>가 목적. 대장 채널을 분석해 벤치마킹합니다.</div>
+      <div class="boss">
+        <div class="boss-top">
+          <span class="boss-av"></span>
+          <div><div class="boss-name">시골밥상TV <span class="crown">👑 대장 채널</span></div>
+            <div class="vmeta">카테고리 <b>시골·아이·자연</b> · 배수·구독·업로드주기 종합 1위</div></div>
+        </div>
+        <div class="metrics">
+          <div class="met"><div class="v">84.2만</div><div class="k">구독자</div></div>
+          <div class="met"><div class="v">120만</div><div class="k">평균 조회</div></div>
+          <div class="met"><div class="v">1.2일</div><div class="k">업로드 주기</div></div>
+          <div class="met"><div class="v">×14.3</div><div class="k">평균 배수</div></div>
+        </div>
+        <div class="formula">📝 <b>제목 공식</b> · [충격·반전] + [시골 아이] + [맨손/설마] &nbsp;예) “시골 아이가 맨손으로 장어를?! 😱”<br>
+          🖼️ <b>썸네일 패턴</b> · 클로즈업 얼굴 + 노랑 큰 글씨 + 진흙/자연 배경 + 빨강 화살표</div>
+        <div class="boss-act">
+          <button class="bmk on" onclick="bmk(this,'시골밥상TV')">🔖 저장됨</button>
+          <button class="btn ghost" onclick="toast('🔬 채널 심층분석 — 제목·썸네일·업로드 리듬 분석 (concept_maker·tier_lab·Vision)')">🔬 심층분석</button>
+        </div>
+        <!-- 한국 1·2번째 -->
+        <div class="grid2" style="margin-top:14px;">
+          <div class="vcard">
+            <div class="th" style="background:linear-gradient(135deg,#b3121d,#e11d2a)">🎣</div>
+            <div class="info">
+              <span class="rank g1">🥇 한국 1번째</span>
+              <div class="vt">시골 아이가 맨손으로 장어를?! 😱</div>
+              <div class="vmeta"><span class="lang">🇰🇷 한국어</span> · 업로드 <b>2024-02-22</b> · 조회 132만 · ×18</div>
+              <div class="ch"><span class="av" style="background:#b3121d"></span><span class="cn">시골밥상TV 👑</span>
+                <button class="bmk on" onclick="bmk(this,'시골밥상TV')">🔖 저장됨</button></div>
+            </div>
+          </div>
+          <div class="vcard">
+            <div class="th" style="background:linear-gradient(135deg,#9a3412,#ea580c)">🎣</div>
+            <div class="info">
+              <span class="rank g2">🥈 한국 2번째</span>
+              <div class="vt">진흙 속에서 벌어진 일… 아이 표정 실화? 🤯</div>
+              <div class="vmeta"><span class="lang">🇰🇷 한국어</span> · 업로드 <b>2024-02-24</b> · 조회 47만 · ×9</div>
+              <div class="ch"><span class="av" style="background:#9a3412"></span><span class="cn">촌스러운일상</span>
+                <button class="bmk" onclick="bmk(this,'촌스러운일상')">🔖 저장</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 저장한 채널 -->
+    <div class="sec">
+      <div class="sec-h">🔖 이 추적에서 저장한 채널</div>
+      <div class="sec-sub">저장하면 → <b>저장 채널</b> 탭에 들어가고, 그 채널이 새 영상을 올리면 🔔 알림을 받습니다.</div>
+      <div class="saved" id="savedBox">
+        <div class="schip"><span class="av" style="background:#b3121d"></span>시골밥상TV 👑 <span class="x" title="해제">✕</span></div>
+      </div>
+      <div class="flowhint">➡️ 저장 → <b>저장 채널</b> 등록 → <b>새 영상 자동 체크</b>로 이어지는 한 흐름 (viral_channels · channel_watcher · kakao_notify 재사용)</div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+<script>
+  function toast(m){var t=document.getElementById('toast');t.textContent=m;t.style.opacity='1';clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity='0';},2000);}
+  function bmk(btn,name){
+    var on=btn.classList.toggle('on');
+    btn.textContent=on?'🔖 저장됨':'🔖 저장';
+    toast(on?('✅ '+name+' 저장 — 저장 채널 + 새영상 알림 ON'):('🔖 '+name+' 저장 해제'));
+    var box=document.getElementById('savedBox');
+    var id='sv_'+name.replace(/[^\w가-힣]/g,'');
+    var ex=document.getElementById(id);
+    if(on&&!ex){var d=document.createElement('div');d.className='schip';d.id=id;
+      d.innerHTML='<span class="av" style="background:#e11d2a"></span>'+name+' <span class="x" title="해제">✕</span>';
+      d.querySelector('.x').onclick=function(){d.remove();};box.appendChild(d);}
+    else if(!on&&ex){ex.remove();}
+  }
+  document.querySelectorAll('#savedBox .x').forEach(function(x){x.onclick=function(){x.closest('.schip').remove();};});
+</script>
+</body>
+</html>

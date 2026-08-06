@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🧬 SRE 역설계 · RefTracker</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/api.js"></script>
+  <style>
+    .sre-panel{background:#fff;border:1px solid #f0ecf7;border-radius:16px;padding:18px 20px;margin-bottom:16px;box-shadow:0 2px 10px rgba(120,60,180,.05);}
+    .sre-h{font-size:15px;font-weight:800;margin-bottom:4px;}
+    .sre-sub{font-size:12px;color:#8a80a5;margin-bottom:12px;line-height:1.6;}
+    textarea.sre-in{width:100%;min-height:150px;border:1px solid #e5d9f5;border-radius:12px;padding:12px 14px;font-size:14px;line-height:1.6;outline:none;resize:vertical;font-family:inherit;box-sizing:border-box;}
+    textarea.sre-in:focus{border-color:#7c3aed;box-shadow:0 0 0 3px rgba(124,58,237,.12);}
+    .sre-controls{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:12px;}
+    .sre-chip{font-size:12px;font-weight:700;padding:6px 13px;border-radius:999px;border:1px solid #e5d9f5;background:#faf8ff;color:#6b21a8;cursor:pointer;user-select:none;}
+    .sre-chip.on{background:#7c3aed;color:#fff;border-color:#7c3aed;}
+    .sre-seg{display:inline-flex;border:1px solid #e5d9f5;border-radius:10px;overflow:hidden;}
+    .sre-seg button{border:none;background:#fff;color:#6b21a8;font-size:12px;font-weight:700;padding:7px 12px;cursor:pointer;}
+    .sre-seg button.on{background:#7c3aed;color:#fff;}
+    .btn-run{background:#7c3aed;color:#fff;border:none;border-radius:10px;padding:11px 22px;font-size:14px;font-weight:800;cursor:pointer;}
+    .btn-run:hover{background:#6d28d9;}
+    .btn-run.busy{opacity:.5;pointer-events:none;}
+    .btn-copy{background:#f3e8ff;color:#6b21a8;border:none;border-radius:8px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;float:right;}
+    .btn-copy:hover{background:#e9d5ff;}
+    /* 진행 표시 */
+    .ag-row{display:flex;align-items:center;gap:10px;padding:6px 2px;font-size:13px;border-bottom:1px dashed #f4f0fb;}
+    .ag-row:last-child{border-bottom:none;}
+    .ag-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+    .ag-dot.ok{background:#22c55e;} .ag-dot.failed{background:#ef4444;} .ag-dot.skipped{background:#d1d5db;}
+    .ag-code{font-family:monospace;font-size:11px;color:#a99fc0;min-width:38px;}
+    .ag-ms{font-size:11px;color:#c4bcd6;margin-left:auto;}
+    /* 탭 */
+    .tabbar{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:14px;}
+    .tab{white-space:nowrap;font-size:13px;font-weight:700;padding:8px 14px;border-radius:999px;background:#f4f0fb;color:#6b21a8;border:none;cursor:pointer;}
+    .tab.on{background:#7c3aed;color:#fff;}
+    .tabpanel{display:none;} .tabpanel.on{display:block;}
+    /* 역설계 카드 */
+    .axis{border:1px solid #f0ecf7;border-radius:12px;padding:13px 15px;margin-bottom:10px;}
+    .axis-t{font-size:13px;font-weight:800;color:#4c1d95;margin-bottom:5px;}
+    .axis-b{font-size:13px;color:#4b5563;line-height:1.7;}
+    .badge{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:#ede9fe;color:#6d28d9;margin:2px 4px 2px 0;}
+    /* 점수 */
+    .score-big{font-size:44px;font-weight:900;background:linear-gradient(90deg,#7c3aed,#db2777);-webkit-background-clip:text;background-clip:text;color:transparent;line-height:1;}
+    .bar{height:9px;border-radius:999px;background:#f0ecf7;overflow:hidden;margin:6px 0;}
+    .bar > i{display:block;height:100%;background:linear-gradient(90deg,#7c3aed,#db2777);}
+    /* 전략 */
+    .strat{border:1px solid #f0ecf7;border-radius:14px;padding:15px 17px;margin-bottom:12px;background:linear-gradient(135deg,#fbfaff,#fdf4ff);}
+    .strat-key{font-size:12px;font-weight:900;color:#fff;background:#7c3aed;border-radius:8px;padding:3px 10px;margin-right:8px;}
+    .strat-title{font-size:15px;font-weight:800;margin:8px 0;}
+    .exp{background:#fff;border:1px dashed #e5d9f5;border-radius:10px;padding:10px 13px;margin-top:9px;font-size:12.5px;line-height:1.8;color:#4b5563;}
+    pre.copyblock{background:#0f172a;color:#e2e8f0;border-radius:10px;padding:12px 14px;font-size:12.5px;line-height:1.6;overflow-x:auto;white-space:pre-wrap;word-break:break-word;margin:6px 0;}
+    .kv{font-size:13px;color:#4b5563;line-height:1.9;}
+    .kv b{color:#4c1d95;}
+    .risk{display:inline-block;font-size:12px;font-weight:800;padding:4px 12px;border-radius:999px;}
+    .risk.LOW{background:#dcfce7;color:#166534;} .risk.MEDIUM{background:#fef3c7;color:#92400e;}
+    .risk.HIGH{background:#fee2e2;color:#991b1b;} .risk.BLOCKED{background:#1f2937;color:#fff;}
+    .stage-tag{font-size:10px;font-weight:700;color:#7c3aed;background:#f3e8ff;border-radius:5px;padding:1px 6px;margin-right:6px;}
+    .hidden{display:none;}
+    /* 🔑 키 연결 */
+    .key-row{display:flex;align-items:center;gap:10px;padding:8px 4px;flex-wrap:wrap;}
+    .key-label{font-weight:700;min-width:140px;font-size:13.5px;}
+    .key-input{flex:1;min-width:200px;border:1px solid #e5d9f5;border-radius:10px;padding:10px 13px;font-size:14px;outline:none;font-family:monospace;}
+    .key-input:focus{border-color:#7c3aed;box-shadow:0 0 0 3px rgba(124,58,237,.12);}
+    .key-cur{font-size:12px;font-weight:700;padding:3px 11px;border-radius:999px;white-space:nowrap;}
+    .key-cur.set{background:#dcfce7;color:#166534;}
+    .key-cur.off{background:#fef3c7;color:#92400e;}
+    .note code,.sre-sub code{background:#f3f0fa;border-radius:5px;padding:1px 6px;font-size:12px;}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <div class="sidebar-brand">RefTracker</div>
+        <div class="sidebar-brand-sub">레퍼런스 채널 추적</div>
+      </div>
+      <nav class="nav-section">
+        <a href="trend.html" class="nav-item">🔥 트렌드 피드</a>
+        <a href="global_surge.html" class="nav-item">🌍 글로벌 급등</a>
+        <a href="youtube_discover.html" class="nav-item">🌐 YouTube 발굴</a>
+        <a href="search.html" class="nav-item">🔍 검색</a>
+        <a href="source_finder.html" class="nav-item">🕵️ 원본 소스 찾기</a>
+        <a href="surge_analysis.html" class="nav-item">📊 급등 규칙 분석</a>
+        <a href="keyword_radar.html" class="nav-item">🌡️ 키워드 레이더</a>
+        <a href="sre.html" class="nav-item active">🧬 SRE 역설계</a>
+        <a href="scriptwriter.html" class="nav-item">✍️ 대본 작성</a>
+        <a href="concept_maker.html" class="nav-item">🎨 플리 컨셉 제조기</a>
+        <a href="channels.html" class="nav-item">📺 레퍼런스 채널</a>
+        <a href="collections.html" class="nav-item">📁 컬렉션</a>
+        <a href="bookmarks.html" class="nav-item">⭐ 북마크</a>
+        <a href="notifications.html" class="nav-item">🔔 알림·작업 기록</a>
+        <a href="settings.html" class="nav-item">⚙️ 설정</a>
+      </nav>
+      <div class="nav-divider"></div>
+      <nav class="nav-section">
+        <a href="index.html" class="nav-item-secondary"><span>🏠 포털 메인</span><span>›</span></a>
+        <a href="translator.html" class="nav-item-secondary"><span>🌸 일본어 번역봇</span><span>›</span></a>
+        <a href="editor.html" class="nav-item-secondary"><span>✂️ 자동 컷편집</span><span>›</span></a>
+      </nav>
+      <div class="version">v0.4.0</div>
+    </aside>
+
+    <main class="main">
+      <span class="badge-dot">SRE-OS</span>
+      <h1 class="page-title"><span class="gradient-text">역설계</span> 스튜디오</h1>
+      <p class="page-sub">대본·자막·키워드·아이디어를 넣으면 → 역설계 6축 분석 → 바이럴 점수 → A/B/C/D 전략 → KR/JP 대본·SEO 를 한 번에. <b id="mockNote">엔진 확인 중…</b>
+        <a href="javascript:void(0)" id="keyToggle" onclick="toggleKeyPanel()" style="color:#7c3aed;font-weight:700;text-decoration:underline;margin-left:6px;">🔑 LLM 키 연결</a></p>
+
+      <!-- 🔑 LLM 키 연결 (인라인) -->
+      <div class="sre-panel hidden" id="keyPanel">
+        <div class="sre-h">🔑 LLM 키 연결 <span style="font-weight:400;color:#8a80a5;font-size:12px;">— 하나만 넣어도 LLM 심화가 켜집니다</span></div>
+        <div class="sre-sub">키는 <b>이 컴퓨터에만</b> 저장돼요(<code>.env</code>) — 인터넷·깃허브에 절대 안 올라갑니다. 저장하면 <b>바로 적용</b>(재시작 불필요). 빈칸은 기존 키 유지. <b>OpenAI / Gemini / Anthropic 중 아무거나</b> 하나면 됩니다.</div>
+        <div class="key-row"><span class="key-label">🧠 OpenAI (GPT)</span>
+          <input class="key-input" id="k_openai" type="password" autocomplete="off" placeholder="sk-... 붙여넣기">
+          <span class="key-cur off" id="cur_openai">확인 중…</span></div>
+        <div class="key-row"><span class="key-label">🤖 Gemini <span style="font-weight:400;color:#a99fc0;font-size:11px;">(무료)</span></span>
+          <input class="key-input" id="k_gemini" type="password" autocomplete="off" placeholder="발급 키 붙여넣기">
+          <span class="key-cur off" id="cur_gemini">확인 중…</span></div>
+        <div class="key-row"><span class="key-label">🟣 Anthropic (Claude)</span>
+          <input class="key-input" id="k_anthropic" type="password" autocomplete="off" placeholder="sk-ant-... 붙여넣기">
+          <span class="key-cur off" id="cur_anthropic">확인 중…</span></div>
+        <div style="display:flex;gap:14px;align-items:center;margin-top:12px;flex-wrap:wrap;">
+          <button class="btn-run" style="padding:9px 18px;font-size:13px;" onclick="saveKeys(this)">💾 저장하고 연결</button>
+          <label style="font-size:12px;color:#8a80a5;cursor:pointer;display:flex;align-items:center;gap:5px;"><input type="checkbox" id="showKeys" onchange="toggleShowKeys()"> 입력한 키 보기</label>
+        </div>
+        <div class="note" style="background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;border-radius:10px;padding:10px 14px;font-size:12.5px;line-height:1.7;margin-top:10px;">📍 발급처 — OpenAI: <code>platform.openai.com</code> · Gemini(무료): <code>aistudio.google.com</code> · Anthropic: <code>console.anthropic.com</code></div>
+      </div>
+
+      <!-- 입력 -->
+      <div class="sre-panel">
+        <div class="sre-h">1️⃣ 소재 입력</div>
+        <div class="sre-sub">터진 영상의 대본/자막을 붙여넣거나, <b>유튜브 링크</b>를 넣어 자막을 자동수집하거나, 만들고 싶은 키워드·아이디어를 적어주세요.</div>
+        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+          <input class="add-input" id="inUrl" style="flex:1;min-width:200px;border:1px solid #e5d9f5;border-radius:10px;padding:9px 13px;font-size:13px;outline:none;" placeholder="🔗 유튜브 링크 붙여넣기 (watch·youtu.be·shorts)">
+          <button class="sre-chip" style="border:none;background:#7c3aed;color:#fff;" onclick="collectUrl(this)">📥 링크에서 자막 수집</button>
+        </div>
+        <textarea class="sre-in" id="inText" placeholder="예) 여러분 이거 진짜 몰랐어요. 사실 대부분 잘못 알고 있거든요. 제가 직접 30일 해봤는데…"></textarea>
+        <div class="sre-controls">
+          <div class="sre-seg" id="kindSeg">
+            <button data-k="script" class="on">📜 대본</button>
+            <button data-k="transcript">💬 자막</button>
+            <button data-k="keyword">🔑 키워드</button>
+            <button data-k="idea">💡 아이디어</button>
+          </div>
+          <span style="font-size:12px;color:#8a80a5;">시장:</span>
+          <span class="sre-chip on" data-m="KR">🇰🇷 KR</span>
+          <span class="sre-chip on" data-m="JP">🇯🇵 JP</span>
+          <span class="sre-chip" data-m="US">🇺🇸 US</span>
+        </div>
+        <div id="wfBanner" class="hidden" style="background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border:1px solid #bbf7d0;border-radius:10px;padding:9px 13px;margin-top:10px;font-size:12.5px;color:#166534;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span id="wfBannerText" style="flex:1;">🏆 공통 승리공식 준비됨</span>
+          <label style="cursor:pointer;display:flex;align-items:center;gap:4px;font-weight:700;"><input type="checkbox" id="wfInject" checked> 생성에 주입</label>
+          <button class="btn-copy" style="float:none;" onclick="clearWF()">✕ 해제</button>
+        </div>
+        <div class="sre-controls">
+          <button class="btn-run" id="runBtn" onclick="runAnalyze(this)">🧬 역설계 실행</button>
+          <label style="font-size:12px;color:#8a80a5;cursor:pointer;display:flex;align-items:center;gap:5px;"><input type="checkbox" id="forceRe"> 강제 재분석(캐시 무시)</label>
+        </div>
+      </div>
+
+      <!-- 진행 -->
+      <div class="sre-panel hidden" id="progPanel">
+        <div class="sre-h">2️⃣ 에이전트 실행 <span id="progTag" style="font-weight:400;color:#8a80a5;font-size:12px;"></span></div>
+        <div id="progBox"></div>
+      </div>
+
+      <!-- 결과 -->
+      <div class="hidden" id="resultWrap">
+        <div class="hidden" id="insightBanner" style="background:linear-gradient(135deg,#faf5ff,#fdf2f8);border:1px solid #e9d5ff;border-radius:12px;padding:12px 16px;margin-bottom:14px;font-size:13.5px;color:#6b21a8;line-height:1.6;"></div>
+        <div class="tabbar" id="tabbar">
+          <button class="tab on" data-t="re">🔬 역설계</button>
+          <button class="tab" data-t="score">🔥 점수</button>
+          <button class="tab" data-t="strat">🎯 전략 A/B/C/D</button>
+          <button class="tab" data-t="loc">🌐 KR/JP 대본·SEO</button>
+          <button class="tab" data-t="critic">🛡️ 크리틱</button>
+          <button class="tab" data-t="json">📦 JSON</button>
+        </div>
+        <div class="sre-panel">
+          <div class="tabpanel on" id="p_re"></div>
+          <div class="tabpanel" id="p_score"></div>
+          <div class="tabpanel" id="p_strat"></div>
+          <div class="tabpanel" id="p_loc"></div>
+          <div class="tabpanel" id="p_critic"></div>
+          <div class="tabpanel" id="p_json"></div>
+        </div>
+
+        <!-- A/B/C/D 성과 승자판정 -->
+        <div class="sre-panel">
+          <div class="sre-h">🏆 A/B/C/D 성과 승자판정</div>
+          <div class="sre-sub">실제로 올려본 뒤 각 전략의 성과(예: 3초 유지율·CTR·평균시청)를 숫자로 넣으면 승자를 가려줍니다. 이긴 각도는 시리즈화 후보 + 학습 자산으로 축적돼요.</div>
+          <div id="judgeInputs"></div>
+          <div class="sre-controls">
+            <button class="btn-run" onclick="runJudge(this)" style="padding:9px 18px;font-size:13px;">🏆 승자 판정</button>
+            <span style="font-size:12px;color:#8a80a5;">지표는 높을수록 좋다고 가정</span>
+          </div>
+          <div id="judgeResult" style="margin-top:12px;"></div>
+        </div>
+      </div>
+
+      <!-- 카테고리별 공식 -->
+      <div class="sre-panel">
+        <div class="sre-h">🏷️ 카테고리별 승리공식 <span style="font-weight:400;color:#8a80a5;font-size:12px;">— 레퍼런스 채널 100선을 계열별로</span></div>
+        <div class="sre-sub">저장한 벤치마킹 채널을 <b>대분류별</b>로 표본 수집(RSS·쿼터0) → 그 계열에서 <b>과반 이상 반복되는</b> 신호·트리거·구조를 뽑습니다. 카테고리마다 공식이 다르게 나와요(스포츠=순간·과장 / 지식=호기심 격차 / 감동=사연·반전 …).</div>
+        <div class="sre-controls">
+          <select id="catGroup" style="border:1px solid #e5d9f5;border-radius:10px;padding:9px 13px;font-size:13px;min-width:200px;outline:none;"><option>불러오는 중…</option></select>
+          <button class="btn-run" style="padding:9px 18px;font-size:13px;" onclick="runCategoryFormula(this)">🏷️ 이 계열 공식 뽑기</button>
+        </div>
+        <div id="catResult" style="margin-top:14px;"></div>
+      </div>
+
+      <!-- 다중 소스 비교 -->
+      <div class="sre-panel">
+        <div class="sre-h">⚖️ 다중 소스 비교 <span style="font-weight:400;color:#8a80a5;font-size:12px;">— 여러 터진 영상의 공통 패턴 찾기</span></div>
+        <div class="sre-sub">2~4개 소재(대본/자막)를 넣으면 <b>공통 패턴</b>(전부 등장) vs <b>개별 특성</b>(그 소스만) vs <b>검증필요</b>를 갈라줍니다. 공통 = 그 계열의 승리 공식.</div>
+        <div style="background:#faf8ff;border:1px solid #ece7f5;border-radius:10px;padding:10px 12px;margin-bottom:12px;">
+          <div style="font-size:12.5px;font-weight:700;color:#6b21a8;margin-bottom:6px;">🔗 링크 배치 수집 <span style="font-weight:400;color:#a99fc0;">— 유튜브 링크를 한 줄에 하나씩(최대 8개)</span></div>
+          <textarea class="sre-in" id="batchUrls" style="min-height:70px;font-size:12.5px;" placeholder="https://youtu.be/...\nhttps://www.youtube.com/shorts/...\nhttps://www.youtube.com/watch?v=..."></textarea>
+          <button class="sre-chip" style="border:none;background:#7c3aed;color:#fff;margin-top:8px;" onclick="collectBatch(this)">📥 링크들 한번에 수집·비교</button>
+          <div id="batchStatus" style="font-size:12px;color:#8a80a5;margin-top:8px;"></div>
+        </div>
+        <div id="cmpSources"></div>
+        <div class="sre-controls">
+          <button class="sre-chip" onclick="addCmpSource()">+ 소스 추가</button>
+          <button class="btn-run" onclick="runCompare(this)" style="padding:9px 18px;font-size:13px;">⚖️ 비교 분석</button>
+        </div>
+        <div id="cmpResult" style="margin-top:14px;"></div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const STATE = { kind: "script", markets: new Set(["KR", "JP"]), report: null, winningFormula: null };
+
+    // 엔진(프로바이더) 상태 표시 — 키 있으면 LLM 심화, 없으면 규칙기반
+    async function loadHealth() {
+      try {
+        const h = await api("/api/sre/health");
+        const p = h.provider || {};
+        const el = document.getElementById("mockNote");
+        if (p.live) el.innerHTML = `🟢 <b>${esc(p.active)}</b> LLM 심화 켜짐 — 규칙기반 위에 해석을 더합니다`;
+        else el.innerHTML = "⚪ 규칙기반(Mock) 모드 — 키 없이 동작 (아래 🔑 키 연결 시 LLM 심화 자동 켜짐)";
+      } catch (e) {
+        document.getElementById("mockNote").textContent = "키 없이도 규칙기반으로 동작합니다";
+      }
+    }
+    loadHealth();
+
+    // ── 🔑 LLM 키 연결 (인라인) ──────────────────────
+    function toggleKeyPanel() {
+      const p = document.getElementById("keyPanel");
+      p.classList.toggle("hidden");
+      if (!p.classList.contains("hidden")) loadKeys();
+    }
+    async function loadKeys() {
+      try {
+        const k = await api("/api/keys/status");
+        const set = (id, o) => {
+          const el = document.getElementById("cur_" + id);
+          if (!el) return;
+          if (o && o.set) { el.className = "key-cur set"; el.textContent = "연결됨 " + (o.mask || ""); }
+          else { el.className = "key-cur off"; el.textContent = "미연결"; }
+        };
+        set("openai", k.openai); set("gemini", k.gemini); set("anthropic", k.anthropic);
+      } catch (e) {}
+    }
+    function toggleShowKeys() {
+      const t = document.getElementById("showKeys").checked ? "text" : "password";
+      ["k_openai", "k_gemini", "k_anthropic"].forEach(id => { const el = document.getElementById(id); if (el) el.type = t; });
+    }
+    async function saveKeys(btn) {
+      const body = {
+        openai: document.getElementById("k_openai").value.trim(),
+        gemini: document.getElementById("k_gemini").value.trim(),
+        anthropic: document.getElementById("k_anthropic").value.trim(),
+      };
+      if (!body.openai && !body.gemini && !body.anthropic) return toast("연결할 키를 최소 한 개 입력하세요");
+      btn.classList.add("busy"); const o = btn.textContent; btn.textContent = "연결 중…";
+      try {
+        await api("/api/keys/save", { method: "POST", body: JSON.stringify(body) });
+        ["k_openai", "k_gemini", "k_anthropic"].forEach(id => { document.getElementById(id).value = ""; });
+        toast("✓ 연결 완료 — LLM 심화가 켜졌어요 (재시작 불필요)");
+        loadKeys(); loadHealth();   // 엔진 배지 🟢 로 갱신
+      } catch (e) { toast("오류: " + (e.message || e)); }
+      btn.classList.remove("busy"); btn.textContent = o;
+    }
+
+    // 입력 종류 세그먼트
+    document.querySelectorAll("#kindSeg button").forEach(b => b.onclick = () => {
+      document.querySelectorAll("#kindSeg button").forEach(x => x.classList.remove("on"));
+      b.classList.add("on"); STATE.kind = b.dataset.k;
+    });
+    // 시장 칩
+    document.querySelectorAll(".sre-chip").forEach(c => c.onclick = () => {
+      const m = c.dataset.m;
+      if (STATE.markets.has(m)) { STATE.markets.delete(m); c.classList.remove("on"); }
+      else { STATE.markets.add(m); c.classList.add("on"); }
+    });
+    // 탭
+    document.querySelectorAll("#tabbar .tab").forEach(t => t.onclick = () => {
+      document.querySelectorAll("#tabbar .tab").forEach(x => x.classList.remove("on"));
+      document.querySelectorAll(".tabpanel").forEach(x => x.classList.remove("on"));
+      t.classList.add("on"); document.getElementById("p_" + t.dataset.t).classList.add("on");
+    });
+
+    // metadata_team 은 tags=배열, hashtags=문자열 로 줄 수 있어 둘 다 안전 처리
+    function asText(v, sep) {
+      if (Array.isArray(v)) return v.join(sep);
+      return v == null ? "" : ("" + v);
+    }
+
+    function copyText(txt, btn) {
+      navigator.clipboard.writeText(txt).then(() => {
+        const o = btn.textContent; btn.textContent = "✓ 복사됨";
+        setTimeout(() => btn.textContent = o, 1200);
+      }).catch(() => toast("복사 실패 — 길게 눌러 직접 복사하세요"));
+    }
+    // 복붙 블록 — 인라인 <script> 없이(innerHTML 로 삽입돼도 안전) esc 로 텍스트 고정.
+    // 복사 버튼은 실제 렌더된 <pre> 의 textContent 를 읽어 복사.
+    function block(txt) {
+      return `<div class="cbwrap"><button class="btn-copy" onclick="copyPre(this)">📋 복사</button>`
+        + `<pre class="copyblock">${esc(txt == null ? "" : "" + txt)}</pre></div>`;
+    }
+    function copyPre(btn) {
+      const pre = btn.parentElement.querySelector("pre.copyblock");
+      if (pre) copyText(pre.textContent, btn);
+    }
+
+    async function runAnalyze(btn) {
+      const text = document.getElementById("inText").value.trim();
+      if (!text) return toast("소재를 입력해주세요");
+      if (STATE.markets.size === 0) return toast("시장을 최소 1개 선택하세요");
+      btn.classList.add("busy"); const orig = btn.textContent; btn.textContent = "분석 중…";
+      document.getElementById("progPanel").classList.remove("hidden");
+      document.getElementById("progBox").innerHTML = '<div style="color:#a99fc0;font-size:13px;">에이전트 파이프라인 실행 중…</div>';
+      document.getElementById("resultWrap").classList.add("hidden");
+      const useWF = STATE.winningFormula && document.getElementById("wfInject").checked;
+      try {
+        const r = await api("/api/sre/analyze", {
+          method: "POST",
+          body: JSON.stringify({
+            text, kind: STATE.kind, markets: [...STATE.markets],
+            winning_formula: useWF ? STATE.winningFormula : null,
+            force: document.getElementById("forceRe").checked,
+          }),
+        });
+        STATE.report = r;
+        renderProgress(r);
+        renderResult(r);
+        document.getElementById("resultWrap").classList.remove("hidden");
+        toast("✓ 역설계 완료 — 아래 탭에서 결과를 확인하세요");
+      } catch (e) { toast("오류: " + (e.message || e)); }
+      btn.classList.remove("busy"); btn.textContent = orig;
+    }
+
+    function renderProgress(r) {
+      const md = r.metadata || {};
+      const runs = md.agentRuns || [];
+      document.getElementById("progTag").textContent =
+        `— ${md.provider === "mock" ? "규칙기반(키 없음)" : "LLM"} · run ${md.runId || "?"}` +
+        (md.reusedRunId ? " · ♻️ 캐시 재사용" : "");
+      document.getElementById("progBox").innerHTML = runs.map(a => `
+        <div class="ag-row">
+          <span class="ag-dot ${a.status}"></span>
+          <span class="ag-code">${esc(a.agent)}</span>
+          <span>${esc(a.summary || "")}${a.error ? " · ⚠️ " + esc(a.error) : ""}</span>
+          <span class="ag-ms">${a.ms}ms</span>
+        </div>`).join("") || '<div style="color:#a99fc0;">기록 없음(캐시 재사용)</div>';
+    }
+
+    function renderResult(r) {
+      const re = r.reverseEngineering || {};
+      // 💡 LLM 심화 인사이트 배너(있을 때만)
+      const insight = (r.metadata || {}).insight;
+      const banner = document.getElementById("insightBanner");
+      if (insight) { banner.innerHTML = `💡 <b>핵심 인사이트</b> — ${esc(insight)}`; banner.classList.remove("hidden"); }
+      else banner.classList.add("hidden");
+      // 역설계 6축
+      const axis = (t, body) => `<div class="axis"><div class="axis-t">${t}</div><div class="axis-b">${body}</div></div>`;
+      const chips = arr => (arr || []).map(x => `<span class="badge">${esc(x)}</span>`).join("") || '<span style="color:#c4bcd6;">—</span>';
+      const cs = re.contentStructure || {}, vd = re.viralDNA || {}, vp = re.viewerPsychology || {},
+            em = re.emotionDNA || {}, ld = re.languageDNA || {}, vo = re.voiceDNA || {};
+      const stageRows = (cs.stages || []).map(s =>
+        `<div style="font-size:12px;color:#4b5563;padding:2px 0;"><span class="stage-tag">${esc(s.stage)}</span>${esc(s.text || "")}</div>`).join("");
+      document.getElementById("p_re").innerHTML =
+        axis("🧩 콘텐츠 구조 (쇼츠 7단)", `${esc(cs.summary || "")}<div style="margin-top:7px;">${stageRows}</div>`) +
+        axis("🔥 바이럴 DNA", `공식: <b>${esc(vd.formula || "")}</b> <span class="badge">확신도 ${vd.confidence ?? 0}</span><div style="margin-top:5px;">${chips(vd.signals)}</div>`) +
+        axis("🧠 시청자 심리 트리거", `${esc(vp.summary || "")}<div style="margin-top:5px;">${chips(vp.triggers)}</div>`) +
+        axis("💓 감정 DNA", `${esc(em.summary || "")} <span class="badge">아크: ${esc(em.arc || "")}</span><div style="font-size:11px;color:#a99fc0;margin-top:4px;">곡선(문장별 감정): ${(em.curve || []).join(", ")}</div>`) +
+        axis("🗣️ 언어 DNA", `어투 <b>${esc(ld.register || "")}</b> · 평균 ${ld.sentenceLen ?? 0}자 · 명령형 ${ld.imperativeRatio ?? 0}<div style="margin-top:5px;">${chips(ld.markers)}</div>`) +
+        axis("🎙️ 보이스 DNA", `${esc(vo.summary || "")} <span class="badge">쉼밀도 ${vo.pauseDensity ?? 0}</span><div style="margin-top:5px;">${chips(vo.emphasis)}</div>`);
+
+      // 점수
+      const sc = (r.scores || {}).viralPotential || { score: 0, confidence: 0, factors: [] };
+      document.getElementById("p_score").innerHTML =
+        `<div style="text-align:center;margin-bottom:6px;"><span class="score-big">${sc.score}</span><span style="font-size:18px;color:#a99fc0;font-weight:700;">/100</span></div>` +
+        `<div class="bar"><i style="width:${sc.score}%"></i></div>` +
+        `<div style="text-align:center;font-size:12px;color:#8a80a5;margin-bottom:14px;">확신도 ${Math.round((sc.confidence || 0) * 100)}% ${r.metadata && r.metadata.mock ? "· 규칙기반 추정" : ""}</div>` +
+        (sc.factors || []).map(f => `
+          <div style="margin-bottom:9px;">
+            <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;"><span>${esc(f.name)}</span><span>+${f.points}</span></div>
+            <div class="bar"><i style="width:${Math.min(100, f.points * 3)}%"></i></div>
+            <div style="font-size:11px;color:#a99fc0;">${esc(f.why || "")}</div>
+          </div>`).join("");
+
+      // 전략 A/B/C/D
+      const strat = r.strategies || {};
+      document.getElementById("p_strat").innerHTML = ["A", "B", "C", "D"].map(k => {
+        const s = strat[k]; if (!s) return "";
+        const e = s.experiment || {};
+        return `<div class="strat">
+          <div><span class="strat-key">${k}</span><b>${esc(s.label || "")}</b></div>
+          <div class="strat-title">${esc(s.title || "")}</div>
+          <div class="kv"><b>각도</b> ${esc(s.angle || "")}<br><b>훅</b> ${esc(s.hook || "")}<br><b>썸네일 문구</b> ${esc(s.thumbText || "")}</div>
+          <div style="margin:8px 0;font-size:12.5px;color:#4b5563;">${(s.outline || []).map(o => "· " + esc(o)).join("<br>")}</div>
+          <div style="font-size:12px;color:#6d28d9;">${esc(s.rationale || "")}</div>
+          <div class="exp"><b>🧪 실험(가설)</b><br>
+            가설: ${esc(e.hypothesis || "")}<br>지표: ${esc(e.metric || "")}<br>
+            실패 조건: ${esc(e.failureMode || "")}<br>기간: ${esc(e.duration || "")}<br>
+            성공 기준: ${esc(e.successCriteria || "")}<br>다음 행동: ${esc(e.nextAction || "")}</div>
+        </div>`;
+      }).join("");
+
+      // 로컬라이제이션 KR/JP
+      const loc = r.localizations || {};
+      document.getElementById("p_loc").innerHTML = Object.keys(loc).map(m => {
+        const L = loc[m], seo = L.seo || {};
+        const scriptTxt = (L.script || []).map(s => `[${s.stage}] ${s.text || ""}`).join("\n");
+        const wa = seo.winningAngle;
+        return `<div class="axis">
+          <div class="axis-t">🌐 ${esc(m)} <span style="font-weight:400;color:#a99fc0;font-size:11px;">${esc(L.notes || "")}</span></div>
+          ${wa ? `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:7px 11px;font-size:12px;color:#166534;margin-bottom:8px;">🧪 <b>실험 학습</b> — 이 계정에서 <b>${esc(wa.label)}</b> 각도가 ${wa.wins}승/${wa.totalBatches}회. ${esc(wa.hint)}</div>` : ""}
+          <div class="kv"><b>추천 제목</b> ${esc(seo.titleRecommended || "(SEO 미생성)")}</div>
+          ${seo.description ? "<div style='font-size:12px;color:#8a80a5;margin-top:8px;'>설명글</div>" + block(seo.description) : ""}
+          ${(seo.tags && seo.tags.length) ? "<div style='font-size:12px;color:#8a80a5;margin-top:8px;'>태그</div>" + block(asText(seo.tags, ", ")) : ""}
+          ${(seo.hashtags && (seo.hashtags.length || (""+seo.hashtags).trim())) ? "<div style='font-size:12px;color:#8a80a5;margin-top:8px;'>해시태그</div>" + block(asText(seo.hashtags, " ")) : ""}
+          <div style="font-size:12px;color:#8a80a5;margin-top:10px;">대본 골격(구조 단계별)</div>${block(scriptTxt)}
+        </div>`;
+      }).join("") || '<div style="color:#a99fc0;">시장 결과 없음</div>';
+
+      // 크리틱
+      const cr = r.critic || {};
+      document.getElementById("p_critic").innerHTML =
+        `<div style="margin-bottom:10px;">유사성·안전 위험도: <span class="risk ${esc(cr.similarityRisk || "LOW")}">${esc(cr.similarityRisk || "LOW")}</span></div>` +
+        `<div class="axis-t" style="margin-top:6px;">📝 검수 노트</div><div class="axis-b">${(cr.notes || []).map(n => "· " + esc(n)).join("<br>") || "—"}</div>` +
+        `<div class="axis-t" style="margin-top:12px;">🔎 검증 필요</div><div class="axis-b">${(cr.verificationRequired || []).map(n => "· " + esc(n)).join("<br>") || "없음"}</div>` +
+        `<div style="font-size:11px;color:#c4bcd6;margin-top:12px;">※ 특정 크리에이터의 고유 표현을 그대로 복제하지 않습니다 — 일반화된 구조·각도만 사용합니다.</div>`;
+
+      // JSON
+      document.getElementById("p_json").innerHTML =
+        "<div style='font-size:12px;color:#8a80a5;margin-bottom:6px;'>전체 리포트 JSON — 복사하거나 저장해 재사용하세요</div>" +
+        block(JSON.stringify(r, null, 2));
+
+      renderJudgeInputs(r);   // 이번 결과의 A/B/C/D 로 승자판정 입력칸 준비
+    }
+
+    // ── 🔗 URL 자막 자동수집 ─────────────────────────
+    async function collectUrl(btn) {
+      const url = document.getElementById("inUrl").value.trim();
+      if (!url) return toast("유튜브 링크를 넣어주세요");
+      btn.classList.add("busy"); const o = btn.textContent; btn.textContent = "수집 중…";
+      try {
+        const r = await api("/api/sre/collect-url", { method: "POST", body: JSON.stringify({ url }) });
+        if (r.text) {
+          document.getElementById("inText").value = r.text;
+          // 입력 종류를 수집 결과에 맞춤
+          const seg = document.querySelector(`#kindSeg button[data-k="${r.kind}"]`);
+          if (seg) seg.click();
+          if (r.degraded) toast("⚠️ 자막은 못 받았어요(제목만). " + (r.error || "PC에서 실행하거나 자막을 직접 붙여넣기"));
+          else toast(`✓ 수집 완료 — ${r.title || r.video_id} (${r.source || "자막"})`);
+        } else {
+          toast("수집 실패: " + (r.error || "자막·제목을 못 받았어요"));
+        }
+      } catch (e) { toast("오류: " + (e.message || e)); }
+      btn.classList.remove("busy"); btn.textContent = o;
+    }
+
+    // ── 🏆 공통 승리공식 주입 상태 ───────────────────
+    function setWF(wf) {
+      if (!wf || (!(wf.signals || []).length && !(wf.triggers || []).length)) return;
+      STATE.winningFormula = wf;
+      document.getElementById("wfBannerText").innerHTML = `🏆 <b>공통 승리공식</b> — ${esc(wf.summary || "")}`;
+      document.getElementById("wfInject").checked = true;
+      document.getElementById("wfBanner").classList.remove("hidden");
+      toast("✓ 공통 공식 캡처 — 다음 역설계 실행에 자동 주입됩니다");
+      document.querySelector(".main").scrollTo({ top: 0, behavior: "smooth" });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+    function clearWF() {
+      STATE.winningFormula = null;
+      document.getElementById("wfBanner").classList.add("hidden");
+    }
+
+    // ── 🏆 A/B/C/D 승자판정 ──────────────────────────
+    function renderJudgeInputs(r) {
+      const strat = r.strategies || {};
+      const metric = (k) => (strat[k] && strat[k].experiment && strat[k].experiment.metric) || "";
+      document.getElementById("judgeInputs").innerHTML = ["A", "B", "C", "D"].map(k => {
+        const s = strat[k] || {};
+        return `<div style="display:flex;gap:10px;align-items:center;padding:6px 2px;flex-wrap:wrap;">
+          <span class="strat-key">${k}</span>
+          <span style="font-size:12px;color:#4b5563;flex:1;min-width:140px;">${esc((s.title || "").slice(0, 40))}</span>
+          <span style="font-size:11px;color:#a99fc0;">${esc(metric(k))}</span>
+          <input class="add-input" id="jv_${k}" type="number" step="any" style="width:110px;border:1px solid #e5d9f5;border-radius:8px;padding:6px 10px;font-size:13px;" placeholder="성과값">
+        </div>`;
+      }).join("");
+      document.getElementById("judgeResult").innerHTML = "";
+    }
+
+    async function runJudge(btn) {
+      const r = STATE.report; if (!r) return toast("먼저 역설계를 실행하세요");
+      const strat = r.strategies || {};
+      const entries = ["A", "B", "C", "D"].map(k => {
+        const v = document.getElementById("jv_" + k).value;
+        const s = strat[k] || {};
+        return { strategy: k, value: v === "" ? null : parseFloat(v),
+                 metricName: (s.experiment || {}).metric || "", title: s.title || "" };
+      }).filter(e => e.value !== null && !isNaN(e.value));
+      if (entries.length < 1) return toast("성과값을 최소 1개 입력하세요");
+      const runId = (r.metadata || {}).runId || "";
+      btn.classList.add("busy"); const o = btn.textContent; btn.textContent = "판정 중…";
+      try {
+        const j = await api("/api/sre/judge", { method: "POST", body: JSON.stringify({ entries, run_id: runId }) });
+        const w = j.winner;
+        const lb = j.leaderboard || {};
+        const lbRows = (lb.ranking || []).map(e => `${e.strategy}: ${e.wins}승`).join(" · ");
+        document.getElementById("judgeResult").innerHTML =
+          `<div class="strat" style="background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border-color:#bbf7d0;">
+            <div>🏆 <span class="strat-key" style="background:#16a34a;">${esc(w.strategy)}</span> <b>승리</b> — ${esc(w.metricName || "")} ${w.value}</div>
+            <div class="strat-title" style="margin:6px 0;">${esc(w.title || "")}</div>
+            <div style="font-size:12.5px;color:#166534;line-height:1.8;">${(j.reasons || []).map(x => "· " + esc(x)).join("<br>")}</div>
+            <div style="font-size:12px;color:#4b5563;margin-top:8px;">순위: ${(j.ranking || []).map(e => e.strategy + "(" + e.value + ")").join(" › ")}</div>
+            ${j.batchId ? '<div style="font-size:11px;color:#16a34a;margin-top:6px;">💾 성과 저장됨 — 학습 누적</div>' : ""}
+            ${lbRows ? `<div style="font-size:12px;color:#6b21a8;margin-top:8px;border-top:1px dashed #bbf7d0;padding-top:8px;">📈 <b>누적 승률</b>(${lb.totalBatches || 0}회) — ${esc(lbRows)}</div>` : ""}
+          </div>`;
+        toast("🏆 " + w.strategy + " 전략 승리" + (j.batchId ? " · 저장됨" : ""));
+      } catch (e) { toast("오류: " + (e.message || e)); }
+      btn.classList.remove("busy"); btn.textContent = o;
+    }
+
+    // ── ⚖️ 다중 소스 비교 ────────────────────────────
+    let CMP_N = 0;
+    function addCmpSource(label, text) {
+      if (CMP_N >= 4) return toast("최대 4개까지");
+      CMP_N++;
+      const box = document.getElementById("cmpSources");
+      const div = document.createElement("div");
+      div.style.cssText = "border:1px solid #f0ecf7;border-radius:10px;padding:10px 12px;margin-bottom:8px;";
+      div.innerHTML = `
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+          <input class="add-input cmp-label" style="width:130px;border:1px solid #e5d9f5;border-radius:8px;padding:5px 9px;font-size:12px;" placeholder="이름" value="${esc(label || ("소스" + CMP_N))}">
+          <span style="font-size:11px;color:#a99fc0;">대본/자막 붙여넣기</span>
+        </div>
+        <textarea class="sre-in cmp-text" style="min-height:70px;font-size:13px;">${esc(text || "")}</textarea>`;
+      box.appendChild(div);
+    }
+
+    async function runCompare(btn) {
+      const labels = [...document.querySelectorAll("#cmpSources .cmp-label")].map(i => i.value.trim());
+      const texts = [...document.querySelectorAll("#cmpSources .cmp-text")].map(i => i.value.trim());
+      const sources = texts.map((t, i) => ({ label: labels[i], text: t, kind: "transcript" })).filter(s => s.text);
+      if (sources.length < 2) return toast("본문 있는 소스가 2개 이상 필요해요");
+      btn.classList.add("busy"); const o = btn.textContent; btn.textContent = "비교 중…";
+      try {
+        const res = await api("/api/sre/compare", { method: "POST", body: JSON.stringify({ sources }) });
+        renderCompare(res.comparison, res.winningFormula);
+        toast("✓ 비교 완료");
+      } catch (e) { toast("오류: " + (e.message || e)); }
+      btn.classList.remove("busy"); btn.textContent = o;
+    }
+
+    function renderCompare(c, wf) {
+      if (!c || !c.ok) { document.getElementById("cmpResult").innerHTML = `<div style="color:#a99fc0;">${esc((c && c.error) || "비교 불가")}</div>`; return; }
+      const chips = (arr, cls) => (arr || []).map(x => `<span class="badge" ${cls || ""}>${esc(x)}</span>`).join("") || '<span style="color:#c4bcd6;">—</span>';
+      const axisBlock = (title, ax) => {
+        const indiv = (ax.individual || []).map(it =>
+          `<div style="font-size:12px;margin-top:3px;"><b>${esc(it.label)}</b>만: ${chips(it.unique)}</div>`).join("");
+        return `<div class="axis">
+          <div class="axis-t">${title}</div>
+          <div style="font-size:12px;color:#16a34a;font-weight:700;">✅ 공통(전부 등장): </div><div>${chips(ax.common)}</div>
+          <div style="margin-top:6px;">${indiv}</div>
+          ${(ax.partial && ax.partial.length) ? `<div style="font-size:12px;color:#92400e;margin-top:6px;">🔎 검증필요(일부만): ${chips(ax.partial)}</div>` : ""}
+        </div>`;
+      };
+      const scoreRows = (c.scores || []).map(([lbl, sc], i) =>
+        `<div style="display:flex;justify-content:space-between;font-size:13px;padding:2px 0;"><span>${i === 0 ? "🥇 " : ""}${esc(lbl)}</span><b>${sc}</b></div>`).join("");
+      const hasWF = wf && ((wf.signals || []).length || (wf.triggers || []).length);
+      window.__lastWF = hasWF ? wf : null;
+      document.getElementById("cmpResult").innerHTML =
+        `<div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:10px;padding:10px 14px;font-size:13px;color:#6b21a8;margin-bottom:12px;">📊 ${esc(c.summary)}</div>` +
+        axisBlock("🔥 바이럴 신호", c.viralSignals) +
+        axisBlock("🧠 심리 트리거", c.psychTriggers) +
+        `<div class="axis"><div class="axis-t">🧩 공통 구조 단계</div><div>${chips(c.commonStages)}</div></div>` +
+        `<div class="axis"><div class="axis-t">🔥 바이럴 점수 순위</div>${scoreRows}</div>` +
+        (hasWF ? `<div class="axis" style="border-color:#bbf7d0;background:#f0fdf4;">
+          <div class="axis-t" style="color:#166534;">🏆 이 계열의 공통 승리공식</div>
+          <div class="axis-b">${esc(wf.summary)}</div>
+          <button class="btn-run" style="margin-top:8px;padding:8px 16px;font-size:13px;background:#16a34a;" onclick="setWF(window.__lastWF)">✨ 이 공식을 새 소재 생성에 주입</button>
+        </div>` : "");
+    }
+
+    // ── 🔗 링크 배치 수집 → 자동 비교 ────────────────
+    async function collectBatch(btn) {
+      const urls = document.getElementById("batchUrls").value.split("\n").map(s => s.trim()).filter(Boolean);
+      if (urls.length < 1) return toast("유튜브 링크를 넣어주세요(한 줄에 하나)");
+      btn.classList.add("busy"); const o = btn.textContent; btn.textContent = "수집 중…";
+      document.getElementById("batchStatus").textContent = `${urls.length}개 수집 중…`;
+      try {
+        const res = await api("/api/sre/collect-batch", { method: "POST", body: JSON.stringify({ urls }) });
+        const col = res.collected || [];
+        // 수집 결과를 비교 소스 칸에 채움(자막 확보된 것만)
+        document.getElementById("cmpSources").innerHTML = ""; CMP_N = 0;
+        let filled = 0;
+        col.forEach(c => { if ((c.text || "").trim()) { addCmpSource(c.label, c.text); filled++; } });
+        while (CMP_N < 2) addCmpSource();   // 최소 2칸 유지
+        const statusRows = col.map(c =>
+          `${(c.text || "").trim() ? "✅" : "⚠️"} ${esc(c.label || c.video_id || "?")}${c.degraded ? " (자막 없음)" : ""}`).join("<br>");
+        document.getElementById("batchStatus").innerHTML =
+          `수집 ${col.length}개 · 본문 확보 ${res.usableCount}개<br>${statusRows}`;
+        if (res.comparison && res.comparison.ok) {
+          renderCompare(res.comparison, res.winningFormula);
+          toast(`✓ ${res.usableCount}개 비교 완료`);
+        } else if (filled < 2) {
+          toast("⚠️ 자막 확보 소스가 2개 미만 — PC에서 실행하거나 대본을 직접 붙여넣기");
+        }
+      } catch (e) { toast("오류: " + (e.message || e)); }
+      btn.classList.remove("busy"); btn.textContent = o;
+    }
+
+    // ── 🏷️ 카테고리별 공식 ───────────────────────────
+    async function loadCategoryGroups() {
+      try {
+        const r = await api("/api/sre/category-groups");
+        const sel = document.getElementById("catGroup");
+        if (!r.groups || !r.groups.length) {
+          sel.innerHTML = '<option value="">레퍼런스 채널 없음 — 📺 레퍼런스 채널에서 확인</option>';
+          return;
+        }
+        sel.innerHTML = r.groups.map(g => `<option value="${esc(g.group)}">${esc(g.group)} (${g.channels})</option>`).join("");
+      } catch (e) {
+        document.getElementById("catGroup").innerHTML = '<option value="">불러오기 실패</option>';
+      }
+    }
+    loadCategoryGroups();
+
+    async function runCategoryFormula(btn) {
+      const group = document.getElementById("catGroup").value;
+      if (!group) return toast("카테고리를 선택하세요");
+      btn.classList.add("busy"); const o = btn.textContent; btn.textContent = "수집·분석 중…";
+      document.getElementById("catResult").innerHTML = '<div style="color:#a99fc0;font-size:13px;">채널 표본 수집 중… (RSS)</div>';
+      try {
+        const r = await api("/api/sre/category-formula", { method: "POST", body: JSON.stringify({ group }) });
+        renderCategoryFormula(r);
+      } catch (e) { toast("오류: " + (e.message || e)); document.getElementById("catResult").innerHTML = ""; }
+      btn.classList.remove("busy"); btn.textContent = o;
+    }
+
+    function renderCategoryFormula(r) {
+      const box = document.getElementById("catResult");
+      if (!r.ok) {
+        box.innerHTML = `<div style="background:#fef3c7;border:1px solid #fde68a;color:#92400e;border-radius:10px;padding:11px 14px;font-size:12.5px;line-height:1.6;">⚠️ ${esc(r.note || "표본을 못 모았어요")}<br><span style="color:#a9884e;">시도 채널 ${r.channelsTried || 0} · 표본 ${r.sampled || 0}</span></div>`;
+        return;
+      }
+      const wf = r.winningFormula || {};
+      window.__lastWF = wf;
+      const detail = (arr, color) => (arr || []).map(x =>
+        `<span class="badge" style="background:${color};color:#fff;">${esc(x.name)} <b>${Math.round(x.ratio * 100)}%</b></span>`).join("") || '<span style="color:#c4bcd6;">—</span>';
+      box.innerHTML = `
+        <div style="background:linear-gradient(135deg,#f0fdf4,#ecfdf5);border:1px solid #bbf7d0;border-radius:12px;padding:14px 16px;">
+          <div style="font-size:13.5px;font-weight:800;color:#166534;margin-bottom:6px;">🏷️ ${esc(r.group)} — 이 계열의 공식</div>
+          <div style="font-size:12px;color:#4b5563;margin-bottom:10px;">표본 ${r.sampled}개 (채널 ${r.contributorCount}/${r.channelCount}) · 평균 바이럴 ${wf.avgScore || 0}/100 · 임계 ${Math.round((wf.minRatio || .4) * 100)}%↑</div>
+          <div style="font-size:12px;color:#166534;font-weight:700;margin-bottom:3px;">🔥 지배 신호</div><div style="margin-bottom:8px;">${detail(wf.signalDetail, "#7c3aed")}</div>
+          <div style="font-size:12px;color:#166534;font-weight:700;margin-bottom:3px;">🧠 지배 트리거</div><div style="margin-bottom:8px;">${detail(wf.triggerDetail, "#db2777")}</div>
+          <div style="font-size:12px;color:#166534;font-weight:700;margin-bottom:3px;">🧩 핵심 구조</div><div style="margin-bottom:10px;">${detail(wf.stageDetail, "#0ea5e9")}</div>
+          <button class="btn-run" style="padding:8px 16px;font-size:13px;background:#16a34a;" onclick="setWF(window.__lastWF)">✨ 이 공식을 생성에 주입</button>
+        </div>`;
+    }
+
+    // 비교 패널 기본 2칸
+    addCmpSource(); addCmpSource();
+  </script>
+</body>
+</html>

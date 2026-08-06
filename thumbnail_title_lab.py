@@ -41,6 +41,7 @@ except Exception:                       # noqa: BLE001
 
 import tier_lab as T
 import genre_store as G
+import title_forge as TF
 import thumb_overlay as OV
 import link_classifier as LC
 import pattern_analyzer as PA
@@ -470,18 +471,28 @@ if page == "🔬 구간 분석":
         st.info("위에서 이 장르의 벤치마킹 채널/영상 링크를 넣어주세요.")
     else:
         with st.expander("🔖 북마크 · 🔔 알림 관리 · 🔗 채널정보", expanded=False):
-            if st.button("🔗 채널 정보 채우기 (영상링크 → 채널명 파악)"):
+            st.caption("🔗 채널 정보 채우기를 누르면 채널명 + **대표 썸네일**이 채워져, "
+                       "어떤 채널인지 눈으로 보고 북마크·알림·삭제를 정할 수 있어요. "
+                       "(/channel/ 링크는 **API 키 없이도** RSS 로 썸네일이 보입니다.)")
+            if st.button("🔗 채널 정보 채우기 (영상링크 → 채널명·썸네일 파악)"):
                 filled = 0
-                with st.spinner("채널 정보 파악 중…"):
+                with st.spinner("채널명·썸네일 파악 중…"):
                     for b in proj["benchmarks"]:
-                        if not b.get("channel"):
-                            cid, cname = W.resolve_channel_info(b["url"])
-                            if cid or cname:
-                                G.set_benchmark_channel(cur, b["url"], cid, cname); filled += 1
+                        if not b.get("channel") or not b.get("thumb"):   # 이름 or 로고 없으면
+                            cid, cname, cthumb = W.resolve_channel_full(b["url"])
+                            if cid or cname or cthumb:
+                                G.set_benchmark_channel(cur, b["url"], cid,
+                                                        cname or b.get("channel", ""), cthumb)
+                                filled += 1
                 st.success(f"{filled}개 채널 정보 채움"); st.rerun()
             for b in proj["benchmarks"]:
-                c1, c2, c3, c4 = st.columns([6, 1, 1, 1])
-                c1.write((f"📺 **{b['channel']}** · " if b.get("channel") else "") + b["url"])
+                c0, c1, c2, c3, c4 = st.columns([1, 5, 1, 1, 1])
+                if b.get("thumb"):
+                    c0.image(b["thumb"], use_container_width=True)
+                else:
+                    c0.markdown("<div style='font-size:26px;text-align:center'>📺</div>",
+                                unsafe_allow_html=True)
+                c1.write((f"**{b['channel']}**  \n" if b.get("channel") else "") + b["url"])
                 if c2.checkbox("🔖", value=b.get("bookmark"), key="bk_" + b["url"]) != b.get("bookmark"):
                     G.toggle_flag(cur, b["url"], "bookmark"); st.rerun()
                 if c3.checkbox("🔔", value=b.get("alarm"), key="al_" + b["url"]) != b.get("alarm"):
@@ -607,8 +618,12 @@ if page == "🔬 구간 분석":
                         card.caption(f"📺 {(v.get('source','') or '')[:22]}")
                         card.caption((v.get("title", "") or "")[:38])
 
-# ═══════════════════════════════════════════════════════════════
-# 🌊 트렌드 레이더
+            # 🔥 VPH 제목 대장간 — 이 벤치마킹에서 VPH 높은 2개 조합 → 우리 채널 제목
+            st.divider()
+            st.markdown("### ✨ 이 벤치마킹으로 우리 채널 제목 만들기")
+            _allv = [v for info in rep["tiers"].values() for v in info["videos"]]
+            _sig = (proj.get("identity", {}) or {}).get("signature", "")
+            TF.render_forge(_allv, kp=f"ttl_{cur}", genre=cur, tone_notes=_sig, expanded=True)
 # ═══════════════════════════════════════════════════════════════
 if page == "🌊 트렌드 레이더":
     st.subheader("🌊 트렌드 레이더 — 장르 불문 '지금 터지는 제목'")

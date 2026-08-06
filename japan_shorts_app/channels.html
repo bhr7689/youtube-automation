@@ -45,6 +45,7 @@
         </div>
       </div>
 
+      <div id="grpBar" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;margin-bottom:12px;"></div>
       <div class="card-grid cols-4" id="chGrid"></div>
     </main>
   </div>
@@ -52,36 +53,61 @@
   <script src="assets/api.js"></script>
   <script>
     let CHANNELS = [];
+    let GROUP_FILTER = "전체";
 
     function chAvatar(t) {
       return (t || "?").trim().slice(0, 2);
     }
 
+    function chOpenUrl(ch) {
+      return ch.url || (ch.channel_id && ch.channel_id.startsWith("UC")
+        ? "https://www.youtube.com/channel/" + ch.channel_id
+        : (ch.handle ? "https://www.youtube.com/" + ch.handle : "https://www.youtube.com"));
+    }
+
+    function renderGroupBar() {
+      const counts = {};
+      CHANNELS.forEach(c => { const g = c.group || "기타"; counts[g] = (counts[g] || 0) + 1; });
+      const groups = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+      const pill = (label, n, active) =>
+        `<button onclick="setGroup('${label.replace(/'/g, "\\'")}')" style="white-space:nowrap;font-size:12.5px;font-weight:700;padding:7px 13px;border-radius:999px;border:none;cursor:pointer;${active ? "background:#7c3aed;color:#fff;" : "background:#f4f0fb;color:#6b21a8;"}">${esc(label)} ${n}</button>`;
+      document.getElementById("grpBar").innerHTML =
+        pill("전체", CHANNELS.length, GROUP_FILTER === "전체") +
+        groups.map(([g, n]) => pill(g, n, GROUP_FILTER === g)).join("");
+    }
+
+    function setGroup(g) { GROUP_FILTER = g; renderGroupBar(); renderChannels(); }
+
     function renderChannels() {
       const grid = document.getElementById("chGrid");
-      grid.innerHTML = CHANNELS.length ? CHANNELS.map(ch => `
+      const list = GROUP_FILTER === "전체" ? CHANNELS : CHANNELS.filter(c => (c.group || "기타") === GROUP_FILTER);
+      grid.innerHTML = list.length ? list.map(ch => `
         <div class="channel-card" data-cid="${esc(ch.channel_id)}">
           <div class="channel-card-top">
             <div class="channel-card-avatar" style="background:${avatarColor(ch.title)};color:#fff;font-size:13px;">${esc(chAvatar(ch.title))}</div>
             <div class="channel-card-actions">
-              <span title="채널 열기" onclick="window.open('https://www.youtube.com/channel/${esc(ch.channel_id)}','_blank')">🔗</span>
-              <span title="이 채널 영상 검색" onclick="location.href='search.html?q='+encodeURIComponent(${JSON.stringify("")}+'${esc(ch.title)}')">🔍</span>
+              <span title="채널 열기" onclick="window.open('${esc(chOpenUrl(ch))}','_blank')">🔗</span>
+              <span title="이 채널 영상 검색" onclick="location.href='search.html?q='+encodeURIComponent('${esc(ch.title)}')">🔍</span>
               <span title="등록 해제" onclick="removeChannel('${esc(ch.channel_id)}','${esc(ch.title)}')">×</span>
             </div>
           </div>
-          <div style="font-weight:700;font-size:14px;margin:6px 0;">${esc(ch.title)}</div>
+          <div style="font-weight:700;font-size:14px;margin:6px 0 3px;">${esc(ch.title)}</div>
+          ${ch.category ? `<div style="font-size:11px;color:#7c3aed;background:#f3e8ff;border-radius:6px;padding:2px 8px;display:inline-block;margin-bottom:6px;">${esc(ch.category)}</div>` : ""}
           <div class="channel-card-stats">
             <div class="stat-box"><div class="stat-label">평균 조회</div><div class="stat-value">${ch.avg_views ? fmtViews(ch.avg_views).replace("조회 ", "") : "—"}</div></div>
             <div class="stat-box"><div class="stat-label">개설</div><div class="stat-value">${ch.age_months != null && ch.age_months < 900 ? ch.age_months + "개월" : "—"}</div></div>
           </div>
         </div>`).join("")
-        : '<div class="loading-row" style="grid-column:1/-1;">아직 등록된 채널이 없어요 — 검색·발굴 카드의 [+ 추가]를 눌러보세요</div>';
-      document.getElementById("chCount").innerHTML = `총 <strong>${CHANNELS.length}개</strong> 채널 추적 중 — 이 채널들의 영상엔 ×배수가 표시됩니다`;
+        : '<div class="loading-row" style="grid-column:1/-1;">이 분류엔 채널이 없어요</div>';
+      const shown = list.length, total = CHANNELS.length;
+      document.getElementById("chCount").innerHTML =
+        `총 <strong>${total}개</strong> 채널 추적 중${GROUP_FILTER !== "전체" ? ` · '${esc(GROUP_FILTER)}' ${shown}개 표시` : ""} — 이 채널들의 영상엔 ×배수가 표시됩니다`;
     }
 
     async function loadChannels() {
       try {
         CHANNELS = (await api("/api/channels")).channels;
+        renderGroupBar();
         renderChannels();
       } catch (e) {
         document.getElementById("chGrid").innerHTML = `<div class="loading-row">⚠️ ${esc(e.message)}</div>`;
