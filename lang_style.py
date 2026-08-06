@@ -29,13 +29,14 @@ SEED: dict[str, dict] = {
         "examples": "",
     },
     "ja": {
-        "title": "짧고 감성적. 「playlist |」 접두어 자주. 季節·感情 + ジャンル 조합(예: 夏、桃ジャズ / "
-                 "落ち着いた夏に聴きたい). 全角 문자·읽기 쉬운 여백. 이모지 절제. 用途(作業用/勉強用) "
-                 "키워드는 태그·설명에 몰아넣음.",
-        "desc": "① 감성 詩적 도입 2~4줄(장면·기분을 부드럽게, 존댓말 아닌 서정체 OK) → ② [Tracklist] "
-                "타임스탬프 + 곡명(日本語(英訳) 병기) → ③ // MUSIC // VISUALS // SUPPORT // "
-                "COLLABORATION 섹션(제작 툴·오리지널 표기·구독 부탁·이메일) → ④ 해시태그 대량(日本語+英語). "
-                "정중하지만 브랜드 세계관이 강함.",
+        "title": "두 형태 공존: (A) 짧고 감성적(예: 夏、桃ジャズ / 落ち着いた夏に聴きたい). "
+                 "(B) 프로 채널은 **다단 `|` 구조**: 「Playlist | 감성문구+이모지 | 軽快で心弾むジャズBGM | "
+                 "카페 등 상황 | サマージャズ(검색키워드)」— 한국 채널과 같은 골격. 全角·이모지 1~2개.",
+        "desc": "프로 구조: ① 📢 저작권·オリジナル 제작·문의 이메일 → ② ✔️ 채널등록·高評価 부탁 → "
+                "③ 감성 도입(みずみずしい夏を感じる…) → ④ こんにちは！…です！ 인사 + 이번 테마를 고른 "
+                "스토리텔링 → ⑤ 🎧【おすすめプレイリスト】 다른 영상 2~3개 크로스프로모(제목+링크) → "
+                "⑥ 🎧【Timeline】 타임스탬프(리피트 재생 안내 포함) → ⑦ 해시태그. "
+                "(간소 버전은 감성詩→[Tracklist]→//MUSIC/VISUALS/SUPPORT/COLLAB→해시태그)",
         "tags": "해시태그를 아주 많이(20~35개). 日本語(#夏ジャズ #作業用BGM #集中用BGM #勉強用BGM "
                 "#カフェ音楽 #癒やし音楽 #歌詞なし音楽) + 英語(#summerjazz #lofi #cafemusic #studymusic "
                 "#backgroundmusic) 를 섞어 검색 커버리지를 넓힌다.",
@@ -62,7 +63,27 @@ SEED: dict[str, dict] = {
 
 #ジャズ #桃ジャズ #夏ジャズ #カフェジャズ #ボサノヴァ #モーニングジャズ #作業用BGM
 #集中用BGM #勉強用BGM #読書用BGM #夏プレイリスト #歌詞なし音楽 #落ち着く音楽 #癒やし音楽
-#summerjazz #morningjazz #peachjazz #jazzplaylist #relaxingjazz #cafemusic #studymusic""",
+#summerjazz #morningjazz #peachjazz #jazzplaylist #relaxingjazz #cafemusic #studymusic
+
+[예시3 · JazzNe(37.5万) — 프로 다단 구조]
+제목: Playlist | 爽やかさ弾けるサマージャズ 🍅💕 | 軽快で心弾むジャズBGM | カフェ | サマージャズ
+설명:
+📢 すべての音源は、私たちが直接作曲・編曲・演奏したオリジナル作品です。
+📢 本チャンネル外での無断使用は禁止されています。
+📢 お問い合わせ：official@...
+✔️ 新しい音楽をもっと楽しみたい方は、チャンネル登録と高評価をお願いします！🔔
+
+みずみずしい夏を感じる Summer Jazz Playlist 🍅🌿
+こんにちは！気分Jazzneです！😊💕 (…이번엔 토마토로 여름을 표현한 이유 스토리…)
+
+🎧【おすすめプレイリスト】
+   • Playlist | 화창한 여름엔 상큼한 재즈가… (다른 영상 링크)
+   • Playlist | 상쾌한 아침 재즈와 함께 ☀️💕 …
+
+🎧【Timeline】
+00:00 One Note Samba / 03:03 Greenery / … 56:26 🔄 2回目リピート再生
+
+#SummerJazz #Tomato #JazzPlaylist #CafeJazz #CafeMusic #JazzBGM #SummerMusic #WorkBGM #RelaxingJazz""",
     },
     "en": {
         "title": "Title Case. 'Playlist', '1 Hour', 'Chill/Lofi/Vibes', 'to study/relax/sleep to'. "
