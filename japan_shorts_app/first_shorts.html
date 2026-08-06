@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🥇 누가 먼저 숏폼화 · RefTracker</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/api.js"></script>
+  <style>
+    .fs-panel{background:#fff;border:1px solid #f0ecf7;border-radius:16px;padding:18px 20px;margin-bottom:16px;box-shadow:0 2px 10px rgba(120,60,180,.05);}
+    .fs-label{font-size:12.5px;font-weight:700;color:#4c1d95;margin:10px 0 4px;}
+    input.fs-in{width:100%;border:1px solid #e5d9f5;border-radius:12px;padding:11px 13px;font-size:14px;outline:none;box-sizing:border-box;}
+    input.fs-in:focus{border-color:#7c3aed;box-shadow:0 0 0 3px rgba(124,58,237,.12);}
+    .btn-run{background:#7c3aed;color:#fff;border:none;border-radius:10px;padding:11px 22px;font-size:14px;font-weight:800;cursor:pointer;}
+    .btn-run:hover{background:#6d28d9;} .btn-run.busy{opacity:.5;pointer-events:none;}
+    .demo-badge{font-size:11px;font-weight:700;background:#fef3c7;color:#92400e;padding:4px 10px;border-radius:999px;}
+    .winner{background:linear-gradient(135deg,#fffbeb,#fef9c3);border:2px solid #fde68a;border-radius:16px;padding:16px 18px;margin-bottom:14px;}
+    .winner-t{font-size:13px;font-weight:800;color:#92400e;margin-bottom:6px;}
+    .winner-ch{font-size:19px;font-weight:900;}
+    .conf{display:inline-block;font-size:11px;font-weight:800;padding:3px 10px;border-radius:999px;margin-left:6px;}
+    .conf.MEDIUM{background:#fef3c7;color:#92400e;} .conf.LOW{background:#fee2e2;color:#991b1b;}
+    .tl-row{display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px dashed #f4f0fb;}
+    .tl-rank{font-size:12px;font-weight:800;color:#7c3aed;min-width:24px;}
+    .tl-date{font-family:monospace;font-size:12px;color:#0369a1;min-width:80px;}
+    .tl-ch{flex:1;font-size:13.5px;font-weight:700;}
+    .tl-sim{font-size:11px;color:#a99fc0;}
+    .tl-open{font-size:12px;color:#7c3aed;text-decoration:none;font-weight:700;}
+    .note-box{background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:11px 14px;font-size:12px;color:#6b7280;line-height:1.7;margin-top:12px;}
+    .hidden{display:none;}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo"><div class="sidebar-brand">RefTracker</div><div class="sidebar-brand-sub">레퍼런스 채널 추적</div></div>
+      <nav class="nav-section">
+        <a href="source_finder.html" class="nav-item">🕵️ 원본 소스 찾기</a>
+        <a href="first_shorts.html" class="nav-item active">🥇 누가 먼저 숏폼화</a>
+        <a href="sre.html" class="nav-item">🧬 SRE 역설계</a>
+        <a href="shorts_hook.html" class="nav-item">🎬 쇼츠 후킹 대본</a>
+        <a href="channels.html" class="nav-item">📺 레퍼런스 채널</a>
+        <a href="settings.html" class="nav-item">⚙️ 설정</a>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <span class="badge-dot">최초 추적</span>
+      <h1 class="page-title"><span class="gradient-text">누가 먼저</span> 숏폼화했나</h1>
+      <p class="page-sub">원본 영상을 넣으면, 그걸 <b>가장 먼저 쇼츠로 만든 채널</b>과 링크를 날짜순으로 찾아줘요. <b>원본 업로드 날짜</b>를 같이 넣으면 정확도가 확 올라가요.</p>
+
+      <div class="fs-panel">
+        <div class="fs-label">🎬 원본 영상 링크 <span style="font-weight:400;color:#a99fc0;">(롱폼/원본)</span></div>
+        <input class="fs-in" id="fsUrl" placeholder="https://www.youtube.com/watch?v=...">
+        <div class="fs-label">📝 원본 제목 <span style="font-weight:400;color:#a99fc0;">(링크만 넣으면 자동 채움 / 직접 입력도 가능)</span></div>
+        <input class="fs-in" id="fsTitle" placeholder="예) 고양이가 처음 눈을 본 순간">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:160px;">
+            <div class="fs-label">📅 원본 업로드 날짜 <span style="font-weight:400;color:#a99fc0;">(선택·정확도↑)</span></div>
+            <input class="fs-in" id="fsDate" type="date">
+          </div>
+        </div>
+        <div style="margin-top:14px;">
+          <button class="btn-run" id="fsBtn" onclick="run(this)">🥇 최초 숏폼화 찾기</button>
+        </div>
+      </div>
+
+      <div class="hidden" id="result"></div>
+    </main>
+  </div>
+
+  <script>
+    async function run(btn){
+      const url = document.getElementById("fsUrl").value.trim();
+      const title = document.getElementById("fsTitle").value.trim();
+      const date = document.getElementById("fsDate").value.trim();
+      if(!url && !title) return toast("원본 링크나 제목을 넣어주세요");
+      btn.classList.add("busy"); const o=btn.textContent; btn.textContent="추적 중…";
+      try{
+        const r = await api("/api/first-shorts",{method:"POST",body:JSON.stringify({
+          url, title, published_at: date ? date : "",
+        })});
+        render(r);
+        document.getElementById("result").classList.remove("hidden");
+      }catch(e){ toast("오류: "+(e.message||e)); }
+      btn.classList.remove("busy"); btn.textContent=o;
+    }
+
+    function render(r){
+      const box = document.getElementById("result");
+      const f = r.firstShort;
+      const demo = r.demo ? '<span class="demo-badge">⚠️ 데모 데이터 (YouTube 키 없음 — 사장님 PC에서 실검색)</span>' : "";
+      let html = `<div style="margin-bottom:10px;">${demo}</div>`;
+
+      if(!f){
+        html += `<div class="fs-panel"><div style="font-size:14px;font-weight:700;">😶 유사한 파생 쇼츠를 못 찾았어요</div>
+          <div class="note-box">${(r.notes||[]).map(n=>"· "+esc(n)).join("<br>")}</div></div>`;
+        box.innerHTML = html; return;
+      }
+
+      const conf = r.confidence || "LOW";
+      html += `<div class="winner">
+        <div class="winner-t">🥇 제일 먼저 숏폼화한 채널 <span class="conf ${conf}">신뢰도 ${conf}</span></div>
+        <div class="winner-ch">${esc(f.channel||"(채널)")}</div>
+        <div style="font-size:13px;color:#4b5563;margin:6px 0;">${esc(f.title||"")}</div>
+        <div style="font-size:12.5px;color:#92400e;">📅 ${esc((f.published_at||"").slice(0,10))}${f.gapDays!=null?` · 원본 +${f.gapDays}일`:""} · 제목 일치 ${Math.round((f.similarity||0)*100)}%</div>
+        <div style="margin-top:8px;"><a class="btn-run" style="padding:8px 16px;font-size:13px;text-decoration:none;display:inline-block;" href="${esc(f.url)}" target="_blank">▶ 이 영상 열기</a></div>
+      </div>`;
+
+      html += `<div class="fs-panel">
+        <div style="font-size:14px;font-weight:800;margin-bottom:8px;">🕰️ 숏폼화 타임라인 <span style="font-weight:400;color:#8a80a5;font-size:12px;">— 누가 언제 (오래된 순 · ${r.matchedCount}개)</span></div>
+        ${(r.timeline||[]).map((t,i)=>`
+          <div class="tl-row">
+            <span class="tl-rank">${i===0?"🥇":"#"+(i+1)}</span>
+            <span class="tl-date">${esc((t.published_at||"").slice(0,10))}</span>
+            <span class="tl-ch">${esc(t.channel||"?")}${t.gapDays!=null?` <span class="tl-sim">(원본+${t.gapDays}일)</span>`:""}</span>
+            <span class="tl-sim">일치 ${Math.round((t.similarity||0)*100)}%</span>
+            <a class="tl-open" href="${esc(t.url)}" target="_blank">열기 ↗</a>
+          </div>`).join("")}
+        <div class="note-box">${(r.notes||[]).map(n=>"· "+esc(n)).join("<br>")}</div>
+      </div>`;
+      box.innerHTML = html;
+    }
+  </script>
+</body>
+</html>
