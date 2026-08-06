@@ -553,5 +553,22 @@ python pipeline.py --init                              # 파이프라인 폴더 
     📊 조회수 구간 탭 신설(총 8탭): 검색/링크(min_views=1천)/현재표본 → 구간별 expander(썸네일·
     제목 갤러리 + 승리공식). 1만+ 구간만 분석·생성 표본으로 불러오기(그 아래는 1만 필터에
     걸려 분류·비교용). 검증: 경계 테스트(9900→8천~1만·10000→1만~3만) + AppTest 8탭 예외0.
+  - 🔗 **제목 조합(상위노출 규칙) + 나라별 제목·설명·태그**(2026-07-26, 같은 브랜치):
+    사장님 규칙 — "고른 두 표본 제목을 조합한 새 제목을 유튜브 검색하면 그 표본 2개가 둘 다
+    상위노출되어야 한다. 표본은 조회수 높고 **vph>300** 인 영상." + "한/일/영 각각 언어별
+    코드블록으로 제목·설명·태그" + "**상위노출은 나라별로 성립** — 한국 영상은 일본어 검색에
+    안 뜸 → 언어별로 그 나라 표본 2개를 써야 함".
+    · `viral_lab.py`: normalize 에 vph 추가(+`_vph_of`) · `vph_candidates`(조회수↑+vph>300) ·
+      `search_keywords`/`combine_coverage`(새 제목이 A·B 검색키워드 몇% 담았나=상위노출 가늠,
+      both_ok=각 60%+) · `youtube_search_url`(시크릿 검증용).
+    · `concept_maker.py`: `combine_one(a,b,lang,style_notes)` — 그 나라 표본 2개를 그 나라
+      언어로 조합, 기본규칙(양쪽 키워드 포함) 강제, 제목·설명·태그 JSON. 키 없으면 error.
+    · `lang_style.py` 신규 — 나라별 작성 관례 SEED(한:감성·|구분 / 일:【】·作業用BGM·정중한
+      설명 / 영:Title Case·lowercase태그) + 로컬 예시 저장(`lang_style.json` gitignore,
+      사장님이 일본 실제 예시 붙여넣어 학습) + `as_prompt()` 주입.
+    · `viral_lab_app.py`: **🔗 제목 조합 탭**(총 9탭) — 언어 선택 + 나라별 관례/내 예시 편집 +
+      언어별 `render_lang_combine`(그 나라 vph>300 후보 검색 → 표본 2개 → 조합 → 제목/설명/태그
+      3코드블록 + 커버리지 배지 + 🔍 유튜브 검색 검증 링크).
+    · 검증: vph_candidates·coverage·combine_one(JA mock 【】)·lang_style self-test·AppTest 9탭 예외0.
   - **다음**: eqO5N 머지(→ 사장님 화면 반영) → 실키 end-to-end → 수집 키워드 시드 튜닝.
 - (작업하며 갱신할 것)

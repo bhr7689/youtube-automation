@@ -81,7 +81,23 @@ def normalize(card: dict) -> dict:
         "multiplier": card.get("multiplier"),
         "subscribers": card.get("subscribers", 0),
         "keywords": card.get("keywords", []) or [],
+        "vph": card.get("vph") if card.get("vph") is not None else _vph_of(_views_of(card), pub),
     }
+
+
+def _vph_of(views: int, pub: str) -> float | None:
+    """시간당 조회수(views per hour). published 로부터 계산."""
+    if not pub:
+        return None
+    try:
+        t = _dt.datetime.fromisoformat(str(pub).replace("Z", "+00:00"))
+        now = _dt.datetime.now(_dt.timezone.utc)
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=_dt.timezone.utc)
+        hrs = max(1.0, (now - t).total_seconds() / 3600)
+        return round(views / hrs, 1)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def filter_hits(videos: list[dict], min_views: int = MIN_VIEWS) -> list[dict]:
@@ -90,6 +106,64 @@ def filter_hits(videos: list[dict], min_views: int = MIN_VIEWS) -> list[dict]:
     out = [v for v in out if v["views"] >= min_views]
     out.sort(key=lambda v: v["views"], reverse=True)
     return out
+
+
+# ── 🔗 제목 조합용: vph>300 + 고조회 후보 / 검색 키워드 커버리지 ──
+MIN_VPH = 300  # 제목 조합 표본 조건: 시간당 조회수 300 초과
+
+
+def vph_candidates(videos: list[dict], min_vph: int = MIN_VPH,
+                   min_views: int = MIN_VIEWS) -> list[dict]:
+    """표본 후보 = 조회수 높으면서 vph 가 기준 초과인 영상(조회수순)."""
+    out = []
+    for v in (videos or []):
+        nv = normalize(v)
+        if nv["views"] >= min_views and (nv.get("vph") or 0) > min_vph:
+            out.append(nv)
+    out.sort(key=lambda v: v["views"], reverse=True)
+    return out
+
+
+# 검색 키워드로 의미 없는 순수 장식/조사성 토큰 제외(검색 매칭 관점)
+_SEARCH_STOP = {"플레이리스트", "playlist", "the", "a", "of", "for", "with"}
+
+
+def search_keywords(title: str) -> list[str]:
+    """제목에서 유튜브 '검색 매칭'에 실제로 쓰일 키워드 토큰(중복 제거, 소문자)."""
+    seen = []
+    for t in T.tokenize(title or ""):
+        low = t.lower()
+        if low in _SEARCH_STOP or low in seen:
+            continue
+        seen.append(low)
+    return seen
+
+
+def combine_coverage(new_title: str, title_a: str, title_b: str) -> dict:
+    """새 제목이 A·B 각각의 검색 키워드를 얼마나 담았는지(=둘 다 상위노출 가늠).
+
+    반환: {a_covered,a_total,a_pct,missing_a, b_covered,b_total,b_pct,missing_b, both_ok}
+    """
+    na, nb = set(search_keywords(title_a)), set(search_keywords(title_b))
+    nn = set(search_keywords(new_title))
+    a_cov, b_cov = na & nn, nb & nn
+
+    def _pct(c, t):
+        return round(100 * len(c) / len(t)) if t else 0
+    a_pct, b_pct = _pct(a_cov, na), _pct(b_cov, nb)
+    return {
+        "a_covered": len(a_cov), "a_total": len(na), "a_pct": a_pct,
+        "b_covered": len(b_cov), "b_total": len(nb), "b_pct": b_pct,
+        "missing_a": sorted(na - nn), "missing_b": sorted(nb - nn),
+        # 두 원본의 '핵심'을 충분히 담으면(각 60%+) 둘 다 상위노출 가능성 높음
+        "both_ok": a_pct >= 60 and b_pct >= 60,
+    }
+
+
+def youtube_search_url(title: str) -> str:
+    """이 제목으로 유튜브 검색(시크릿 모드에서 열어 직접 검증)."""
+    import urllib.parse
+    return "https://www.youtube.com/results?search_query=" + urllib.parse.quote(title or "")
 
 
 # ── 검색(온라인) ─────────────────────────────────────────────

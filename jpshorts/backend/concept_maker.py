@@ -348,6 +348,85 @@ def analyze_titles_nuance(titles: list[str], vision_text: str = "") -> dict | No
             "engine": _engine_name()}
 
 
+COMBINE_PROMPT = """너는 유튜브 제목 SEO 전문가다. 아래 '검증된' 두 제목 A, B 를 **조합**해서
+새 제목을 만든다.
+
+[★ 제목 작성 기본 규칙 — 반드시 지켜라 ★]
+만든 제목을 유튜브에 그대로 검색하면 **A 영상과 B 영상이 둘 다 상위에 노출**되어야 한다.
+그러려면 A 가 노리는 핵심 검색 키워드와 B 가 노리는 핵심 검색 키워드를 **양쪽 다 빠짐없이**
+새 제목에 담아라(두 제목의 공통 키워드는 필수, 각자의 특징 키워드도 최대한 포함).
+억지스럽지 않고 자연스럽게. 원본 제목의 형식 골격(구분자·브랜드·태그줄·굵은글씨체·이모지)이
+있으면 그대로 유지하고, 가운데 후킹 문구만 두 제목의 키워드로 새로 짠다.
+{fmt}
+
+[언어별 출력] 한국어·일본어·영어 각각에 대해 그 나라 유튜브에서 자연스러운 방식으로
+**제목·설명란·태그**를 새로 쓴다(기계 번역이 아니라 그 언어권 현지화). 세 언어 모두 위 기본
+규칙(양쪽 키워드 포함)을 지킨다. 태그는 그 언어 검색어 위주 12~18개.
+
+아래 JSON 스키마 하나만 순수 JSON 으로 출력(코드펜스·설명 금지):
+{
+  "combined_core": "두 제목을 조합한 핵심 컨셉·공통 키워드 한 줄(한국어)",
+  "shared_keywords": ["A·B 공통 검색 키워드"],
+  "languages": {
+    "ko": {"title": "한국어 제목(원본 형식 유지)", "description": "설명란 3~6줄(복붙용)", "tags": "쉼표구분 태그 12~18개"},
+    "ja": {"title": "일본어 제목", "description": "일본어 설명란", "tags": "일본어 태그"},
+    "en": {"title": "English title", "description": "English description", "tags": "english,tags"}
+  }
+}
+빈 값도 키는 반드시 포함."""
+
+
+_LANG_NAME = {"ko": "한국어", "ja": "일본어(日本語)", "en": "영어(English)"}
+
+
+def combine_one(title_a: str, title_b: str, lang: str = "ko",
+                style_notes: str = "", fmt_hint: str = "") -> dict:
+    """그 나라 시장의 표본 2개를 그 나라 언어로 조합 → 제목·설명·태그.
+
+    ★ 상위노출 규칙은 나라별로 성립 → A·B 는 반드시 '그 언어(lang) 시장'의 영상이어야 한다.
+    Gemini/OpenAI 키 없으면 error 채워 반환.
+    """
+    if not (title_a.strip() and title_b.strip()):
+        return {"result": None, "error": "표본 제목 2개가 필요합니다."}
+    lname = _LANG_NAME.get(lang, lang)
+    fmt = ("[형식 참고]\n" + fmt_hint + "\n") if fmt_hint.strip() else ""
+    style = (style_notes + "\n") if style_notes.strip() else ""
+    prompt = (
+        f"너는 {lname} 유튜브 SEO 전문가다. 아래 두 개의 '검증된 {lname} 제목' A, B 를 "
+        f"**{lname}로 조합**해 새 제목을 만든다.\n\n"
+        "[★ 제목 작성 기본 규칙 — 반드시 ★]\n"
+        f"만든 제목을 {lname} 유튜브에 검색하면 **A 영상과 B 영상이 둘 다 상위 노출**되어야 한다. "
+        "그러려면 A 와 B 가 각각 노리는 핵심 검색 키워드를 **양쪽 다 빠짐없이** 새 제목에 담아라"
+        "(공통 키워드 필수 + 각자 특징 키워드 최대한). 자연스럽게, 원본 형식 골격(구분자·브랜드·"
+        "태그줄·특수 글씨체·이모지) 유지하고 가운데 후킹만 새로.\n"
+        f"{fmt}{style}\n"
+        f"제목·설명란·태그 모두 **{lname} 그 나라식으로 현지화**(기계번역 금지). 태그는 그 나라 "
+        "검색어 위주 12~18개.\n\n"
+        "아래 JSON 하나만 순수 JSON 으로(코드펜스·설명 금지):\n"
+        '{"title":"조합 제목","description":"설명란 3~6줄(복붙용)","tags":"쉼표구분 태그",'
+        '"shared_keywords":["A·B 공통/핵심 키워드"]}\n\n'
+        f"[A 제목]\n{title_a}\n[B 제목]\n{title_b}\n\n위 JSON 하나만 출력하라.")
+    out = _llm(prompt, json_mode=True)
+    if not out:
+        return {"result": None, "error": last_llm_error() or "생성 응답이 비었습니다."}
+    return {"result": _parse_json(out), "markdown": out, "engine": _engine_name(), "error": ""}
+
+
+def combine_titles_multilang(title_a: str, title_b: str, fmt_hint: str = "") -> dict | None:
+    """두 제목 조합 → 한/일/영 각각 제목·설명·태그. Gemini/OpenAI 키 없으면 None."""
+    if not (title_a.strip() and title_b.strip()):
+        return None
+    fmt = ("[형식 참고] " + fmt_hint) if fmt_hint.strip() else ""
+    prompt = (COMBINE_PROMPT.replace("{fmt}", fmt)
+              + f"\n\n[A 제목]\n{title_a}\n[B 제목]\n{title_b}\n\n위 JSON 하나만 출력하라.")
+    out = _llm(prompt, json_mode=True)
+    if not out:
+        return {"error": last_llm_error() or "생성 응답이 비었습니다.", "result": None}
+    parsed = _parse_json(out)
+    return {"result": parsed, "markdown": None if parsed else out,
+            "engine": _engine_name(), "error": ""}
+
+
 def _engine_name() -> str:
     if os.environ.get("OPENAI_API_KEY", "").strip():
         return "openai"
