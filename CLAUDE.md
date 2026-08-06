@@ -553,6 +553,33 @@ python pipeline.py --init                              # 파이프라인 폴더 
     📊 조회수 구간 탭 신설(총 8탭): 검색/링크(min_views=1천)/현재표본 → 구간별 expander(썸네일·
     제목 갤러리 + 승리공식). 1만+ 구간만 분석·생성 표본으로 불러오기(그 아래는 1만 필터에
     걸려 분류·비교용). 검증: 경계 테스트(9900→8천~1만·10000→1만~3만) + AppTest 8탭 예외0.
+  - 🔗 **제목 조합(상위노출 규칙) + 나라별 제목·설명·태그**(2026-07-26, 같은 브랜치):
+    사장님 규칙 — "고른 두 표본 제목을 조합한 새 제목을 유튜브 검색하면 그 표본 2개가 둘 다
+    상위노출되어야 한다. 표본은 조회수 높고 **vph>300** 인 영상." + "한/일/영 각각 언어별
+    코드블록으로 제목·설명·태그" + "**상위노출은 나라별로 성립** — 한국 영상은 일본어 검색에
+    안 뜸 → 언어별로 그 나라 표본 2개를 써야 함".
+    · `viral_lab.py`: normalize 에 vph 추가(+`_vph_of`) · `vph_candidates`(조회수↑+vph>300) ·
+      `search_keywords`/`combine_coverage`(새 제목이 A·B 검색키워드 몇% 담았나=상위노출 가늠,
+      both_ok=각 60%+) · `youtube_search_url`(시크릿 검증용).
+    · `concept_maker.py`: `combine_one(a,b,lang,style_notes)` — 그 나라 표본 2개를 그 나라
+      언어로 조합, 기본규칙(양쪽 키워드 포함) 강제, 제목·설명·태그 JSON. 키 없으면 error.
+    · `lang_style.py` 신규 — 나라별 작성 관례 SEED(한:감성·|구분 / 일:【】·作業用BGM·정중한
+      설명 / 영:Title Case·lowercase태그) + 로컬 예시 저장(`lang_style.json` gitignore,
+      사장님이 일본 실제 예시 붙여넣어 학습) + `as_prompt()` 주입.
+    · `viral_lab_app.py`: **🔗 제목 조합 탭**(총 9탭) — 언어 선택 + 나라별 관례/내 예시 편집 +
+      언어별 `render_lang_combine`(그 나라 vph>300 후보 검색 → 표본 2개 → 조합 → 제목/설명/태그
+      3코드블록 + 커버리지 배지 + 🔍 유튜브 검색 검증 링크).
+    · 검증: vph_candidates·coverage·combine_one(JA mock 【】)·lang_style self-test·AppTest 9탭 예외0.
+  - 🤝 **title_forge 와 병합 공존**(2026-08-06, 같은 브랜치): 그 사이 default(eqO5N)에 다른 세션이
+    `title_forge.py`(🔥 VPH 제목 대장간 — rank_by_vph·combine_titles·**validate_title**(API로 참고
+    2개 상위노출 자동검증)·render_forge)를 추가. 제목 조합의 '본체 엔진'으로 채택하고, 내 작업의
+    고유 가치(**다국어 나라별 표본 + 설명·태그 + lang_style 학습**)는 🔗 제목 조합 탭으로 공존시킴.
+    머지 충돌 해결: normalize.vph 는 _vph_of 폴백 버전 유지, import 둘 다(TF·LS), render_generation
+    안 `TF.render_forge` + render_hit_gallery 유지 + 내 render_lang_combine 유지. AppTest 9탭 예외0.
+  - 🇯🇵 **일본 실제 예시 학습(lang_style 시드)**(2026-08-06): 사장님이 준 진짜 일본 플리 2개
+    (ChillCozy『落ち着いた夏に聴きたい』· centralgrocery『playlist | 夏、桃ジャズ』)를 `lang_style.SEED["ja"]`
+    에 탑재 — 제목(짧고 감성·playlist| 접두어)·설명(감성詩 도입→[Tracklist] 日本語(英訳)→//MUSIC/VISUALS/
+    SUPPORT/COLLAB 섹션→해시태그 대량)·태그(日+英 20~35개) 관례를 실예시로 학습. 이후 생성이 이 결을 따름.
   - **다음**: eqO5N 머지(→ 사장님 화면 반영) → 실키 end-to-end → 수집 키워드 시드 튜닝.
 - [x] 🧬 **SRE-OS Phase 0~1 — 역설계 운영체제(기존 자산 위에 얹기)**(2026-08-02,
   elements-tools-planning-list-yqqo2t): 사장님이 준 "SRE-OS MASTER SPEC v1.0"을 기존

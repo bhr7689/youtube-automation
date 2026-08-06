@@ -40,6 +40,7 @@ import streamlit as st
 import viral_lab as V
 import viral_folders as F
 import viral_channels as VC
+import lang_style as LS
 import title_forge as TF
 
 # concept_maker (Vision·이미지생성·리포트) 재사용
@@ -234,6 +235,86 @@ def render_generation(top: list, src: str, kp: str) -> None:
         st.markdown(report["markdown"])
 
 
+# ── 🔗 언어별 제목 조합 (그 나라 표본 2개 → 그 나라 제목·설명·태그) ──
+_LANG_UI = {"ko": ("🇰🇷 한국어", ""), "ja": ("🇯🇵 일본어", "ja"), "en": ("🇺🇸 영어권", "en")}
+
+
+def render_lang_combine(lang: str) -> None:
+    name, slang = _LANG_UI[lang]
+    st.markdown(f"### {name}")
+    st.caption(f"⚠️ 표본 2개는 반드시 **{name} 시장(그 나라 검색)**의 vph 높은 영상이어야 "
+               f"그 언어 검색에서 상위노출됩니다. (한국 영상은 일본어 검색에 안 떠요.)")
+
+    kw = st.text_input(f"{name} 키워드로 후보 찾기", key=f"ckw_{lang}",
+                       placeholder="그 나라 말로 넣으면 더 정확 (예: 作業用BGM / summer pop playlist)")
+    if st.button(f"🔎 {name} vph>300 후보 찾기", key=f"csrch_{lang}",
+                 use_container_width=True):
+        if kw.strip():
+            with st.spinner(f"{name} 검색 중..."):
+                try:
+                    res = V.search_hits(kw, lang=slang, max_results=50, min_views=5000)
+                    cands = V.vph_candidates(res["hits"], min_views=5000)
+                    st.session_state[f"cand_{lang}"] = cands
+                    if res["demo"]:
+                        st.info("⚠️ 키가 없어 데모 데이터(그 나라 반영 안 됨). ⚙️ 설정에서 키 입력.")
+                    # 상위 2개 자동 채움(수정 가능)
+                    if len(cands) >= 2:
+                        st.session_state[f"pair_{lang}"] = cands[0]["title"] + "\n" + cands[1]["title"]
+                except Exception as e:      # noqa: BLE001
+                    st.error(f"검색 실패: {e}")
+        else:
+            st.warning("키워드를 넣어주세요.")
+
+    cands = st.session_state.get(f"cand_{lang}", [])
+    if cands:
+        with st.expander(f"vph>300 후보 {len(cands)}개 (조회수순) — 여기서 2개 골라 아래에 넣으세요"):
+            for c in cands[:20]:
+                st.caption(f"vph {int(c.get('vph') or 0)} · {c['views']:,}회 — {c['title']}")
+
+    pair = st.text_area(f"{name} 표본 제목 2개 (한 줄에 하나, 정확히 2개)",
+                        key=f"pair_{lang}", height=90)
+    if st.button(f"🔗 {name} 제목 조합 + 설명·태그 생성", type="primary",
+                 key=f"cgo_{lang}", use_container_width=True):
+        lines = [l.strip() for l in (pair or "").splitlines() if l.strip()][:2]
+        if len(lines) < 2:
+            st.warning("표본 제목을 정확히 2개 넣어주세요.")
+        elif CM is None:
+            st.error("생성 엔진을 불러오지 못했습니다.")
+        else:
+            with st.spinner("조합 중..."):
+                r = CM.combine_one(lines[0], lines[1], lang=lang,
+                                   style_notes=LS.as_prompt([lang]))
+            st.session_state[f"cres_{lang}"] = {"r": r, "a": lines[0], "b": lines[1]}
+
+    cres = st.session_state.get(f"cres_{lang}")
+    if cres:
+        r, a, b = cres["r"], cres["a"], cres["b"]
+        if r.get("error"):
+            st.error(f"실패: {r['error']}")
+        elif isinstance(r.get("result"), dict):
+            res = r["result"]
+            title = res.get("title", "")
+            st.markdown("**📌 조합 제목**")
+            st.code(title, language=None)
+            # 상위노출 규칙 커버리지
+            cov = V.combine_coverage(title, a, b)
+            badge = "✅ 둘 다 상위노출 가능성 높음" if cov["both_ok"] else "⚠️ 한쪽 키워드가 부족"
+            st.caption(f"{badge} — A 키워드 {cov['a_pct']}% · B 키워드 {cov['b_pct']}% 포함")
+            if cov["missing_a"] or cov["missing_b"]:
+                miss = []
+                if cov["missing_a"]:
+                    miss.append("A에서 빠진: " + " ".join(cov["missing_a"][:6]))
+                if cov["missing_b"]:
+                    miss.append("B에서 빠진: " + " ".join(cov["missing_b"][:6]))
+                st.caption(" / ".join(miss))
+            st.markdown("**📝 설명란**")
+            st.code(res.get("description", ""), language=None)
+            st.markdown("**🏷️ 태그**")
+            st.code(res.get("tags", ""), language=None)
+            st.markdown(f"[🔍 이 제목으로 유튜브 검색해 직접 검증(시크릿 모드로 열기)]"
+                        f"({V.youtube_search_url(title)})")
+
+
 def _real_video_id(vid: str) -> str:
     """캡처 업로드(upload-/title-) 같은 합성 ID 는 링크 없음. 실제 영상 ID만 반환."""
     if not vid:
@@ -287,9 +368,10 @@ def render_hit_gallery(hits: list, kp: str, limit: int = 30) -> None:
 
 _alert_n = VC.alert_count()
 _alarm_label = f"🔔 알림 ({_alert_n})" if _alert_n else "🔔 알림"
-tab_find, tab_cluster, tab_tier, tab_folder, tab_alarm, tab_gen, tab_store, tab_set = st.tabs(
+(tab_find, tab_cluster, tab_tier, tab_folder, tab_alarm, tab_gen,
+ tab_combine, tab_store, tab_set) = st.tabs(
     ["🔎 발굴·분석", "🧩 묶음·갈림", "📊 조회수 구간", "📁 감성 폴더", _alarm_label,
-     "✨ 생성", "📦 수집함", "⚙️ 설정"])
+     "✨ 생성", "🔗 제목 조합", "📦 수집함", "⚙️ 설정"])
 
 
 # ════════════════════════════════════════════════════════════
@@ -840,6 +922,37 @@ with tab_gen:
     else:
         render_generation(V.filter_hits(hits)[:9],
                           st.session_state.get("hits_src", "?"), "gen")
+
+
+# ════════════════════════════════════════════════════════════
+# 🔗 제목 조합 (두 표본 제목 조합 → 나라별 제목·설명·태그)
+# ════════════════════════════════════════════════════════════
+with tab_combine:
+    st.subheader("두 제목을 조합 → 나라별 제목·설명·태그")
+    st.info("**기본 규칙**: 만든 제목을 유튜브(시크릿)에서 검색하면 **표본 2개가 둘 다 상위노출**"
+            "되어야 합니다. 그러려면 두 표본의 검색 키워드를 새 제목이 모두 담아야 해요.\n\n"
+            "**표본 조건**: 조회수 높고 **vph>300** 인 영상의 제목. ⚠️ **나라별로 따로** — 일본어는 "
+            "일본 검색의 일본 영상, 영어는 영어권 영상으로 표본을 잡아야 그 언어에서 상위노출됩니다.")
+
+    langs = st.multiselect("언어 선택", ["ko", "ja", "en"], default=["ko", "ja", "en"],
+                           format_func=lambda l: _LANG_UI[l][0])
+
+    with st.expander("🌐 나라별 작성 관례 / 내 예시 학습 (일본식 제목·설명 예시 붙여넣기)"):
+        st.caption("나라마다 제목·설명·태그 관례가 다릅니다. 아래에 **그 나라 실제 예시**를 붙여넣으면 "
+                   "생성이 그 결을 따라갑니다. (비워두면 기본 관례로 작성)")
+        for l in ["ko", "ja", "en"]:
+            s = LS.get(l)
+            st.markdown(f"**{_LANG_UI[l][0]}**")
+            st.caption("제목 관례: " + s.get("title", ""))
+            ex = st.text_area(f"{_LANG_UI[l][0]} 실제 예시(제목/설명/태그 자유롭게)",
+                              value=s.get("examples", ""), key=f"ex_{l}", height=80)
+            if st.button(f"💾 {_LANG_UI[l][0]} 예시 저장", key=f"exsave_{l}"):
+                LS.save(l, {"examples": ex})
+                st.success("저장했습니다. 이후 생성에 반영됩니다.")
+
+    for l in langs:
+        st.divider()
+        render_lang_combine(l)
 
 
 # ════════════════════════════════════════════════════════════
