@@ -336,36 +336,36 @@ function selectedValue(rootEl) {
   return c ? c.dataset.v : undefined;
 }
 
-/* 🧬 SRE 역설계 메뉴 자동 주입 — 모든 페이지 사이드바에 한 번만 (개별 파일 수정 불필요) */
+/* 🧬 새 도구 메뉴 자동 주입 — 모든 페이지 사이드바에 (개별 파일 수정 불필요).
+   각 항목을 독립적으로 보장 → 일부 링크가 이미 있는 페이지에서도 나머지가 다 붙는다. */
 (function injectSRENav() {
   function build() {
     const nav = document.querySelector(".sidebar .nav-section");
     if (!nav) return;
-    if (nav.querySelector('a[href="sre.html"]')) return;   // 이미 있으면(sre.html 자신) 건너뜀
-    const a = document.createElement("a");
-    a.href = "sre.html";
-    a.className = "nav-item";
-    a.textContent = "🧬 SRE 역설계";
-    // '대본 작성' 앞에 넣어 분석→생성 흐름이 자연스럽게, 없으면 맨 끝
-    const before = nav.querySelector('a[href="scriptwriter.html"]');
-    if (before) nav.insertBefore(a, before);
-    else nav.appendChild(a);
+    const mk = (href, label) => {
+      const el = document.createElement("a");
+      el.href = href; el.className = "nav-item"; el.textContent = label;
+      return el;
+    };
+    const has = (href) => nav.querySelector(`a[href="${href}"]`);
+    const after = (node, ref) => {
+      if (ref && ref.parentNode === nav) nav.insertBefore(node, ref.nextSibling);
+      else nav.appendChild(node);
+    };
 
-    // 🎬 쇼츠 후킹 대본 — SRE 바로 뒤에 주입
-    if (!nav.querySelector('a[href="shorts_hook.html"]')) {
-      const h = document.createElement("a");
-      h.href = "shorts_hook.html"; h.className = "nav-item";
-      h.textContent = "🎬 쇼츠 후킹 대본";
-      nav.insertBefore(h, a.nextSibling);
+    // 🧬 SRE 역설계 — '대본 작성' 앞, 없으면 끝
+    if (!has("sre.html")) {
+      const before = nav.querySelector('a[href="scriptwriter.html"]');
+      if (before) nav.insertBefore(mk("sre.html", "🧬 SRE 역설계"), before);
+      else nav.appendChild(mk("sre.html", "🧬 SRE 역설계"));
     }
-    // 📋 작업 기록(공유) — 쇼츠 후킹 뒤에 주입
-    if (!nav.querySelector('a[href="work.html"]')) {
-      const hk = nav.querySelector('a[href="shorts_hook.html"]');
-      const w = document.createElement("a");
-      w.href = "work.html"; w.className = "nav-item";
-      w.textContent = "📋 작업 기록(공유)";
-      nav.insertBefore(w, hk ? hk.nextSibling : a.nextSibling);
-    }
+    // 🎬 쇼츠 후킹 대본 — SRE 뒤
+    if (!has("shorts_hook.html")) after(mk("shorts_hook.html", "🎬 쇼츠 후킹 대본"), has("sre.html"));
+    // 📋 작업 기록(공유) — 쇼츠 후킹 뒤
+    if (!has("work.html")) after(mk("work.html", "📋 작업 기록(공유)"), has("shorts_hook.html"));
+    // 🥇 누가 먼저 숏폼화 — 원본 소스 찾기 뒤(없으면 SRE 뒤)
+    if (!has("first_shorts.html"))
+      after(mk("first_shorts.html", "🥇 누가 먼저 숏폼화"), has("source_finder.html") || has("sre.html"));
   }
   if (document.readyState === "loading")
     document.addEventListener("DOMContentLoaded", build);

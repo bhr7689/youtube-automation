@@ -893,6 +893,7 @@ try:
     import sre_category as _sre_cat
     import shorts_hook as _hook
     import work_store as _work
+    import first_shorts as _first
     _SRE_OK, _SRE_ERR = True, ""
 except Exception as _e:            # 로드 실패해도 나머지 API 는 계속 동작
     _SRE_OK, _SRE_ERR = False, str(_e)
@@ -901,6 +902,7 @@ except Exception as _e:            # 로드 실패해도 나머지 API 는 계�
     _sre_cat = None
     _hook = None
     _work = None
+    _first = None
 
 import threading as _threading
 _WORK_LOCK = _threading.Lock()
@@ -1280,6 +1282,47 @@ def hook_tts_file(name: str):
     if not os.path.isfile(path):
         raise HTTPException(404, "음성 파일 없음")
     return FileResponse(path, media_type="audio/mpeg", filename=name)
+
+
+# ── 🥇 누가 먼저 숏폼화했나 (원본 → 최초 파생 쇼츠) ─────────
+class FirstShortsReq(BaseModel):
+    url: str = ""
+    title: str = ""
+    keywords: list[str] = Field(default_factory=list)
+    published_at: str = ""          # 원본 업로드일(알면 정확도↑) ISO or YYYY-MM-DD
+    max_results: int = 50
+
+
+@app.post("/api/first-shorts")
+def first_shorts_find(req: FirstShortsReq):
+    if not (_SRE_OK and _first):
+        raise HTTPException(500, "최초 숏폼화 모듈 미로드")
+    # 원본 정보 해석: url 있으면 oEmbed 로 제목 보강
+    title = (req.title or "").strip()
+    vid = ""
+    url = (req.url or "").strip()
+    if url and _sre_src:
+        vid = _sre_src.extract_video_id(url) or ""
+        if not title and vid:
+            meta = _sre_src.fetch_oembed(vid)
+            title = meta.get("title", "")
+    query = title or " ".join(req.keywords)
+    if not query.strip():
+        raise HTTPException(400, "원본 링크나 제목(또는 키워드)을 입력해주세요.")
+
+    # 파생 쇼츠 후보 수집: 제목 키워드로 쇼츠·날짜순 검색(키 없으면 데모)
+    try:
+        cands = yc.search_videos(query, video_type="shorts", order="date",
+                                 max_results=max(10, min(req.max_results, 50)))
+    except Exception as e:
+        raise HTTPException(500, f"검색 실패: {e}")
+
+    original = {"title": title, "keywords": req.keywords,
+                "published_at": req.published_at, "video_id": vid, "url": url}
+    result = _first.find_first_shorts(original, cands)
+    result["demo"] = not yc.has_key()
+    result["query"] = query
+    return result
 
 
 # ── 🔄 작업 공유(여러 PC 자동 동기화) ─────────────────────
