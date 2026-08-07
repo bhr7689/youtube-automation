@@ -842,6 +842,8 @@ def _keys_status_payload() -> dict:
                    "mask": _mask(os.environ.get("OPENAI_API_KEY", ""))},
         "anthropic": {"set": bool(os.environ.get("ANTHROPIC_API_KEY", "").strip()),
                       "mask": _mask(os.environ.get("ANTHROPIC_API_KEY", ""))},
+        "serpapi": {"set": bool(os.environ.get("SERPAPI_API_KEY", "").strip()),
+                    "mask": _mask(os.environ.get("SERPAPI_API_KEY", ""))},
         "env_exists": os.path.isfile(ENV_PATH),
     }
 
@@ -851,6 +853,7 @@ class KeysReq(BaseModel):
     gemini: str | None = None
     openai: str | None = None
     anthropic: str | None = None
+    serpapi: str | None = None
 
 
 @app.post("/api/keys/save")
@@ -860,6 +863,7 @@ def keys_save(req: KeysReq):
         "GEMINI_API_KEY": req.gemini,
         "OPENAI_API_KEY": req.openai,
         "ANTHROPIC_API_KEY": req.anthropic,
+        "SERPAPI_API_KEY": req.serpapi,
     }
     # 빈칸은 "변경 안 함" — 기존 키를 실수로 지우지 않도록
     updates = {k: v.strip() for k, v in mapping.items() if v is not None and v.strip()}
@@ -1323,6 +1327,110 @@ def first_shorts_find(req: FirstShortsReq):
     result["demo"] = not yc.has_key()
     result["query"] = query
     return result
+
+
+# ── 🕵️ 발견한 쇼츠로 원본·최초 역추적 (지문 + 구글 렌즈) ─────
+# 다운로드·지문·렌즈는 느려서 백그라운드 잡으로. 웹 컨테이너는 유튜브 차단 → graceful.
+try:
+    import origin_tracer as _otrace
+    import serp_lens as _serp
+    import frame_fingerprint as _ffp
+except Exception:
+    _otrace = _serp = _ffp = None
+
+_ORIGIN_JOBS: dict[str, dict] = {}
+_ORIGIN_LOCK = _threading.Lock()
+
+
+def _ytdlp_sig(video_id: str, n: int = 12) -> list[int]:
+    """video_id → 저해상 다운로드(yt-dlp) → 프레임 지문. 실패 시 [](사장님 PC 전용)."""
+    if not _ffp:
+        return []
+    import shutil as _sh, tempfile as _tf, subprocess as _sp
+    if not _sh.which("yt-dlp"):
+        return []
+    d = _tf.mkdtemp(prefix="otr_")
+    try:
+        out = os.path.join(d, "v.%(ext)s")
+        r = _sp.run(["yt-dlp", "-f", "worst[ext=mp4]/worst", "--no-playlist",
+                     "-o", out, f"https://www.youtube.com/watch?v={video_id}"],
+                    capture_output=True, timeout=120)
+        files = [os.path.join(d, f) for f in os.listdir(d)]
+        vid_file = next((f for f in files if os.path.isfile(f)), None)
+        return _ffp.signature_of_video(vid_file, n=n) if vid_file else []
+    except Exception:
+        return []
+    finally:
+        import shutil as _sh2
+        _sh2.rmtree(d, ignore_errors=True)
+
+
+def _video_meta(video_id: str) -> dict:
+    """video_id → {title,published_at,duration_sec,is_short,channel,url}. 키 있으면 API, 없으면 oEmbed 제목만."""
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    meta = {"url": url}
+    if yc.has_key():
+        try:
+            yt = yc._yt()
+            resp = yt.videos().list(part="snippet,contentDetails", id=video_id).execute()
+            items = resp.get("items", [])
+            if items:
+                sn = items[0]["snippet"]; cd = items[0]["contentDetails"]
+                import isodate as _iso
+                dur = int(_iso.parse_duration(cd.get("duration", "PT0S")).total_seconds())
+                meta.update({"title": sn.get("title", ""), "channel": sn.get("channelTitle", ""),
+                             "published_at": sn.get("publishedAt", ""), "duration_sec": dur,
+                             "is_short": dur <= 60})
+                return meta
+        except Exception:
+            pass
+    if _sre_src:
+        om = _sre_src.fetch_oembed(video_id)
+        meta.update({"title": om.get("title", ""), "channel": om.get("author", "")})
+    return meta
+
+
+class OriginReq(BaseModel):
+    url: str
+
+
+def _run_origin_job(job_id: str, short_url: str):
+    try:
+        res = _otrace.trace(
+            short_url,
+            sig_fn=_ytdlp_sig,
+            serp_fn=lambda vid: _serp.find_candidate_videos(vid),
+            meta_fn=_video_meta)
+    except Exception as e:
+        res = {"ok": False, "error": str(e)}
+    with _ORIGIN_LOCK:
+        _ORIGIN_JOBS[job_id] = {"status": "done", "result": res}
+
+
+@app.post("/api/origin-trace")
+def origin_trace_start(req: OriginReq):
+    if not (_otrace and _serp and _ffp):
+        raise HTTPException(500, "역추적 모듈 미로드")
+    if not (req.url or "").strip():
+        raise HTTPException(400, "발견한 쇼츠 URL 을 넣어주세요.")
+    import uuid as _uuid
+    job_id = "otr_" + _uuid.uuid4().hex[:10]
+    with _ORIGIN_LOCK:
+        _ORIGIN_JOBS[job_id] = {"status": "running", "result": None}
+    _threading.Thread(target=_run_origin_job, args=(job_id, req.url.strip()),
+                      daemon=True).start()
+    return {"job_id": job_id,
+            "serpapi": bool(os.environ.get("SERPAPI_API_KEY", "").strip()),
+            "ytdlp": bool(__import__("shutil").which("yt-dlp"))}
+
+
+@app.get("/api/origin-trace/{job_id}")
+def origin_trace_status(job_id: str):
+    with _ORIGIN_LOCK:
+        job = _ORIGIN_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(404, "작업을 찾을 수 없어요")
+    return job
 
 
 # ── 🔄 작업 공유(여러 PC 자동 동기화) ─────────────────────

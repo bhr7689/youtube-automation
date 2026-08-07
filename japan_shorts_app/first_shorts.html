@@ -46,9 +46,20 @@
     <main class="main">
       <span class="badge-dot">최초 추적</span>
       <h1 class="page-title"><span class="gradient-text">누가 먼저</span> 숏폼화했나</h1>
-      <p class="page-sub">원본 영상을 넣으면, 그걸 <b>가장 먼저 쇼츠로 만든 채널</b>과 링크를 날짜순으로 찾아줘요. <b>원본 업로드 날짜</b>를 같이 넣으면 정확도가 확 올라가요.</p>
+      <p class="page-sub"><b>발견한 쇼츠 하나만</b> 넣으면 → 화면 지문 + 구글 렌즈로 <b>원본과 '제일 먼저 숏폼화한 채널'</b>을 역추적해요.</p>
 
-      <div class="fs-panel">
+      <!-- 🎬 주 기능: 발견한 쇼츠로 역추적(지문) -->
+      <div class="fs-panel" style="border-color:#e9d5ff;">
+        <div style="font-size:15px;font-weight:800;margin-bottom:4px;">🎬 발견한 쇼츠로 역추적 <span style="font-weight:400;color:#7c3aed;font-size:12px;">— 화면 지문 + 구글 렌즈 (정밀)</span></div>
+        <div style="font-size:12px;color:#8a80a5;margin-bottom:10px;line-height:1.6;">원본을 몰라도 돼요. 쇼츠 링크만 넣으면 지문으로 같은 영상들을 찾아 <b>원본·최초</b>를 가려줘요. <span id="otEngine" style="font-weight:700;"></span></div>
+        <input class="fs-in" id="otUrl" placeholder="https://www.youtube.com/shorts/... (발견한 쇼츠)">
+        <div style="margin-top:12px;"><button class="btn-run" id="otBtn" onclick="runTrace(this)">🕵️ 원본·최초 역추적</button></div>
+        <div id="otResult" style="margin-top:14px;"></div>
+      </div>
+
+      <details style="margin-bottom:16px;">
+        <summary style="cursor:pointer;font-size:13px;color:#7c3aed;font-weight:700;">🔎 (간이) 원본 제목으로 찾기 — 지문 없이 제목·날짜만</summary>
+      <div class="fs-panel" style="margin-top:10px;">
         <div class="fs-label">🎬 원본 영상 링크 <span style="font-weight:400;color:#a99fc0;">(롱폼/원본)</span></div>
         <input class="fs-in" id="fsUrl" placeholder="https://www.youtube.com/watch?v=...">
         <div class="fs-label">📝 원본 제목 <span style="font-weight:400;color:#a99fc0;">(링크만 넣으면 자동 채움 / 직접 입력도 가능)</span></div>
@@ -63,12 +74,74 @@
           <button class="btn-run" id="fsBtn" onclick="run(this)">🥇 최초 숏폼화 찾기</button>
         </div>
       </div>
-
       <div class="hidden" id="result"></div>
+      </details>
     </main>
   </div>
 
   <script>
+    // ── 🎬 발견한 쇼츠 역추적(지문 + 렌즈) ──────────────
+    async function loadEngine(){
+      try{ const k = await api("/api/keys/status");
+        const serp = k.serpapi && k.serpapi.set;
+        document.getElementById("otEngine").innerHTML = serp
+          ? "🟢 구글 렌즈 연결됨" : "⚪ SerpAPI(구글 렌즈) 키 필요 — ⚙️ 설정에서 연결";
+      }catch(e){}
+    }
+    loadEngine();
+
+    let OT_TIMER = null;
+    async function runTrace(btn){
+      const url = document.getElementById("otUrl").value.trim();
+      if(!url) return toast("발견한 쇼츠 링크를 넣어주세요");
+      btn.classList.add("busy"); const o=btn.textContent; btn.textContent="역추적 중…";
+      document.getElementById("otResult").innerHTML = '<div style="color:#a99fc0;font-size:13px;">🕵️ 지문 추출 + 렌즈 후보 발굴 + 대조 중… (사장님 PC에선 다운로드로 몇 분 걸릴 수 있어요)</div>';
+      try{
+        const s = await api("/api/origin-trace",{method:"POST",body:JSON.stringify({url})});
+        if(!s.serpapi) toast("⚠️ SerpAPI 키가 없어 후보 발굴이 제한돼요 (설정에서 연결)");
+        pollTrace(s.job_id, btn, o);
+      }catch(e){ toast("오류: "+(e.message||e)); btn.classList.remove("busy"); btn.textContent=o; }
+    }
+    function pollTrace(jobId, btn, orig){
+      clearInterval(OT_TIMER);
+      OT_TIMER = setInterval(async ()=>{
+        try{
+          const j = await api("/api/origin-trace/"+jobId);
+          if(j.status === "done"){
+            clearInterval(OT_TIMER);
+            renderTrace(j.result);
+            btn.classList.remove("busy"); btn.textContent=orig;
+          }
+        }catch(e){ clearInterval(OT_TIMER); btn.classList.remove("busy"); btn.textContent=orig; toast("오류: "+e.message); }
+      }, 2000);
+    }
+    function renderTrace(r){
+      const box = document.getElementById("otResult");
+      if(!r || r.error){ box.innerHTML = `<div class="note-box">⚠️ ${esc((r&&r.error)||"실패")}</div>`; return; }
+      const conf = r.confidence || "LOW";
+      const confCls = conf==="HIGH"?"MEDIUM":conf;   // 색상 재사용
+      const card = (label,c)=> c ? `<div class="winner" style="background:linear-gradient(135deg,#f5f3ff,#fdf2f8);border-color:#e9d5ff;">
+        <div class="winner-t" style="color:#6b21a8;">${label}</div>
+        <div class="winner-ch">${esc(c.channel||"(채널)")}</div>
+        <div style="font-size:13px;color:#4b5563;margin:5px 0;">${esc(c.title||"")}</div>
+        <div style="font-size:12.5px;color:#6b21a8;">📅 ${esc((c.published_at||"").slice(0,10)||"날짜?")}${c.coverage!=null?` · 화면일치 ${Math.round(c.coverage*100)}%`:""}</div>
+        <div style="margin-top:8px;"><a class="tl-open" href="${esc(c.url)}" target="_blank">▶ 열기 ↗</a></div>
+      </div>` : "";
+      let html = "";
+      if(!r.fingerprinted) html += `<div class="note-box" style="background:#fef3c7;border-color:#fde68a;color:#92400e;margin-bottom:10px;">⚠️ 이 환경에선 영상 다운로드/지문이 안 돼요(웹 제한). 사장님 PC에서 실행하면 화면 지문 대조로 신뢰도가 올라가요. 지금은 렌즈 후보만 표시.</div>`;
+      if(!r.ok){ box.innerHTML = html + `<div class="note-box">${(r.notes||[]).map(n=>"· "+esc(n)).join("<br>")}</div>`; return; }
+      html += `<div style="font-size:12px;margin-bottom:8px;">신뢰도 <span class="conf ${confCls}">${conf}</span> · 지문 검증 ${r.verifiedCount}개 / 후보 ${r.candidateCount}개</div>`;
+      html += card("🎬 원본 롱폼(추정)", r.original) + card("🥇 제일 먼저 숏폼화한 채널", r.firstShort);
+      html += `<div class="fs-panel" style="margin-top:8px;"><div style="font-size:13.5px;font-weight:800;margin-bottom:6px;">🕰️ 타임라인 (오래된 순)</div>
+        ${(r.timeline||[]).map((t,i)=>`<div class="tl-row"><span class="tl-rank">${i===0?"🥇":"#"+(i+1)}</span>
+          <span class="tl-date">${esc((t.published_at||"").slice(0,10)||"?")}</span>
+          <span class="tl-ch">${esc(t.channel||t.video_id)}${t.is_short?"":" <span class='tl-sim'>(롱폼)</span>"}</span>
+          ${t.coverage!=null?`<span class="tl-sim">일치 ${Math.round(t.coverage*100)}%</span>`:""}
+          <a class="tl-open" href="${esc(t.url)}" target="_blank">열기 ↗</a></div>`).join("")}
+        <div class="note-box">${(r.notes||[]).map(n=>"· "+esc(n)).join("<br>")}</div></div>`;
+      box.innerHTML = html;
+    }
+
     async function run(btn){
       const url = document.getElementById("fsUrl").value.trim();
       const title = document.getElementById("fsTitle").value.trim();
