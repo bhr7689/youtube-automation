@@ -18,6 +18,7 @@ from lyrics_generator import DURATION_PRESETS, generate_lyrics
 import daily_signature as ds
 import nation_prompts as np
 import lyrics_evaluator as le
+import autosuno_export as ax
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -693,6 +694,7 @@ if go:
 
     # 언어별 섹션 — Suno Style 은 시그니처 + 곡별 액센트 기반
     card_no = 0
+    autosuno_songs: list[dict] = []  # 🔗 AutoSuno 대량 입력용 수집
     for lang, variants in results_by_lang.items():
         if not variants:
             continue
@@ -759,6 +761,11 @@ if go:
             st.markdown("**📝 가사 (Suno → Lyrics)**")
             st.code(suno_lyrics, language="text")
 
+            # 🔗 AutoSuno 대량 입력용 수집 (제목·스타일·가사)
+            autosuno_songs.append(
+                {"title": title, "styles": suno_style, "lyrics": suno_lyrics}
+            )
+
             bundle = (
                 f"=== SIGNATURE ===\n{current_sig.get('name','')} (Day {current_sig.get('day_count',1)})\n\n"
                 f"=== LANGUAGE ===\n{lang} ({LANGUAGES[lang]['english']})\n\n"
@@ -775,6 +782,33 @@ if go:
                 use_container_width=True,
             )
             st.markdown("---")
+
+    # ────────────────────────────────────────────────────────────────────
+    # 🔗 AutoSuno 로 한 번에 내보내기 (망구 AutoSuno 크롬 확장 자동 생성 연동)
+    # ────────────────────────────────────────────────────────────────────
+    if autosuno_songs:
+        autosuno_text = ax.to_autosuno_text(autosuno_songs)
+        st.markdown("## 🔗 AutoSuno 로 한 번에 곡 뽑기")
+        st.caption(
+            f"생성된 **{len(autosuno_songs)}곡**을 망구 AutoSuno(suno.com 자동화 확장) 포맷으로 묶었습니다. "
+            "아래 ①·② 중 편한 방법으로 넘기면 확장이 전 곡을 자동 생성·다운로드합니다."
+        )
+        st.markdown(
+            "**① 파일로 넘기기 (추천):** 아래 버튼으로 `.txt` 저장 → AutoSuno 사이드패널 "
+            "**곡 만들기 → 📁 파일 불러오기** 로 그 파일 선택 → **곡 만들기** 클릭.\n\n"
+            "**② 붙여넣기:** 아래 코드블록 우측 상단 📋 로 복사 → AutoSuno 텍스트박스에 붙여넣기 → **곡 만들기** 클릭."
+        )
+        st.download_button(
+            label=f"⬇️ AutoSuno 곡목록 .txt 다운로드  ({len(autosuno_songs)}곡)",
+            data=autosuno_text.encode("utf-8"),
+            file_name=f"AutoSuno_곡목록_{timestamp}.txt",
+            mime="text/plain",
+            key="autosuno_export_dl",
+            use_container_width=True,
+        )
+        with st.expander("📋 붙여넣기용 전체 텍스트 보기 (title / styles / lyrics)"):
+            st.code(autosuno_text, language="text")
+        st.markdown("---")
 
     # 곡 생성 완료 → 시리즈 day_count + 총 곡수만큼 증가
     for _ in range(total_songs):

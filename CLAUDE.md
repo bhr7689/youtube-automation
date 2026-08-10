@@ -688,4 +688,19 @@ python pipeline.py --init                              # 파이프라인 폴더 
     검증: self-test + 백엔드 라이브 + Playwright(생성→줄편집→SRT 다운로드 수정반영, JS예외0).
   - **다음**: 실키 end-to-end(사장님 PC OpenAI 키) → 카테고리별 공식 실수집 → shorts_hook 결과에
     카테고리 공식/시그니처 자동 주입 연동 → 리더보드·asset_ledger 성장.
+- [x] 🔗 **AutoSuno 연동 — 생성 가사·스타일을 Suno 자동 생성으로 넘기기**(2026-08-10, new-session-j6lt8y):
+  사장님이 준 "망구 AutoSuno" 크롬 확장(suno.com/create 자동화 — 여러 곡 자동 생성·파일명
+  규칙 다운로드)을 역설계 → 앱↔확장 handoff 계약 확정. 확장 "곡 만들기" 화면이 받는 유일한
+  포맷은 줄 단위 **`title:` / `styles:` / `lyrics:`** 텍스트(파서 `_S`, 정규식
+  `^(title|styles?|lyrics?)\s*:`; 새 `title:`이 곡을 가름; 파일 로더는 .txt/.json/.csv 를
+  텍스트로 읽어 같은 파서에 투입 — 별도 JSON 스키마 없음). 확장엔 externally_connectable/
+  onMessageExternal 없음 → 웹에서 직접 push 불가, **파일/붙여넣기 handoff가 정식 브리지**.
+  - 신규 모듈 `autosuno_export.py`(stdlib·Streamlit 비의존): `to_autosuno_text(songs)` 가
+    우리 여러 앱 출력키(title/제목, styles/style/suno_style/스타일, lyrics/suno_lyrics/
+    lyrics_text/가사)를 흡수해 AutoSuno 포맷 생성. `parse_autosuno_text`=확장 파서 파이썬
+    포팅(왕복 검증용). self-test 통과(곡2·왕복 일치·styles 한 줄 접힘·title 없으면 skip).
+  - `lyrics_app.py`: 생성된 전 곡을 수집 → 하단 **"🔗 AutoSuno 로 한 번에 곡 뽑기"** 섹션
+    (① `.txt` 다운로드 → 확장 파일 불러오기 → 곡 만들기 / ② 코드블록 복붙). AppTest 예외 0.
+  - **다음**: eqO5N 머지해야 사장님 화면 반영. 완전 무인(파일로드 클릭도 없이)은 확장 소스
+    수정 필요(로컬 파일 감시 or externally_connectable+로컬 브리지) — 사장님 GO 시 착수.
 - (작업하며 갱신할 것)
